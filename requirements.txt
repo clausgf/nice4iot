@@ -1,0 +1,4 @@
+NiceGUI
+uvicorn
+pydantic-settings
+pytest
