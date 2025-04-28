@@ -1,5 +1,7 @@
 import datetime
 
+from pydantic import BaseModel
+
 
 def flatten_dict(d, parent_key: str = "", sep: str = "_"):
     items = []
@@ -19,34 +21,20 @@ class TelemetryBackend:
     def __init__(self, project_name: str):
         self.project_name = project_name
 
-    def write(self, values: dict, device_name: str, kind: str = 'default', timestamp: datetime.datetime | None = None):
+    def write(self, device_name: str, values: dict, kind: str = 'default', timestamp: datetime.datetime | None = None):
         """
         Write telemetry data to the backend.
 
-        :param values: Dictionary of telemetry values.
         :param device_name: Name of the device.
+        :param values: Dictionary of telemetry values.
         :param kind: Type of telemetry data.
         :param timestamp: Timestamp of the telemetry data point. Defaults to current time if not provided.
         """
         raise NotImplementedError("Subclasses must implement this method.")
 
-
-class Influx2Backend(TelemetryBackend):
-    """
-    InfluxDB backend for telemetry data.
-    """
-    def __init__(self, project_name: str, config: dict):
-        super().__init__(project_name)
-        self.config = config
-        self.client = None
-
-    def write(self, values: dict, device_name: str, kind: str = 'default', timestamp: datetime.datetime | None = None):
-        timestamp = timestamp or datetime.datetime.now(datetime.timezone.utc)
-        payload = flatten_dict(payload)
-    
-    def read(self, device_name: str, kind: str = 'default', start: datetime.datetime | None = None, end: datetime.datetime | None = None):
+    async def read(self, device_name: str, kind: str = 'default', start: datetime.datetime | None = None, end: datetime.datetime | None = None):
         """
-        Read telemetry data from the backend.
+        Read telemetry data from the Mimir backend.
 
         :param device_name: Name of the device.
         :param kind: Type of telemetry data.
@@ -56,9 +44,10 @@ class Influx2Backend(TelemetryBackend):
         raise NotImplementedError("Subclasses must implement this method.")
 
 
+class Influx2Backend(TelemetryBackend):
+    pass
+
+
 class SqlBackend(TelemetryBackend):
     pass
 
-
-class MimirBackend(TelemetryBackend):
-    pass
