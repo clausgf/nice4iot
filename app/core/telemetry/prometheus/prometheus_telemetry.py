@@ -8,21 +8,21 @@ import snappy
 from app.core.telemetry.mimir import prom_spec_pb2, types_pb2
 
 
-class MimirConfig(BaseModel):
+class PrometheusConfig(BaseModel):
     """
-    Configuration model for Mimir backend.
+    Configuration model for Prometheus / Grafana Mimir backend.
     """
     url: str
-    auth: dict
+    auth: dict = None
     project_name: str
     retention_policy: str = "default"
     write_timeout: int = 10
     read_timeout: int = 10
 
 
-class MimirBackend:
+class PrometheusBackend:
     """
-    Grafana Mimir backend for telemetry data.
+    Prometheus / Grafana Mimir backend for telemetry data bases on the Prometheus Remote Write Spec.
     """
     def __init__(self, project_name: str, config: dict):
         super().__init__(project_name)
@@ -48,25 +48,15 @@ class MimirBackend:
         #metadata.unit = "bytes"
         wr.metadata.append(metadata)
 
-        device_label = types_pb2.Label()
-        device_label.name = "device"
-        device_label.value = device_name
-
-        kind_label = types_pb2.Label()
-        kind_label.name = "kind"
-        kind_label.value = kind
+        device_label = types_pb2.Label(name='device', value=device_name)
+        kind_label = types_pb2.Label(name='kind', value=kind)
 
         for k,v in values.items():
             # append to the timeseries
             ts = types_pb2.TimeSeries()
 
-            name_label = types_pb2.Label()
-            name_label.name = "__name__"
-            name_label.value = f'{self.project_name}_{k}'
-
-            sample = types_pb2.Sample()
-            sample.timestamp = round(time.time() * 1000)
-            sample.value = v
+            name_label = types_pb2.Label(name="__name__", value=f'{self.project_name}_{k}')
+            sample = types_pb2.Sample(timestamp=round(time.time() * 1000), value=v)
 
             ts.labels.append(name_label)
             ts.labels.append(device_label)
