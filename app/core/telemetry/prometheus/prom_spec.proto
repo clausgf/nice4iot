@@ -16,8 +16,8 @@ package prometheus;
 
 option go_package = "prompb";
 
-import "types.proto";
-import "protobuf/gogoproto/gogo.proto";
+import "app/core/telemetry/prometheus/types.proto";
+import "app/core/telemetry/prometheus/gogo.proto"; //changed path from normal definition
 
 message WriteRequest {
   repeated prometheus.TimeSeries timeseries = 1 [(gogoproto.nullable) = false];

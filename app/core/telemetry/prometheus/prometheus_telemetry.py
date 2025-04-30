@@ -2,33 +2,35 @@ import datetime
 import json
 import time
 import httpx
+import asyncio
 from pydantic import BaseModel
 import snappy
-
-from app.core.telemetry.mimir import prom_spec_pb2, types_pb2
-
+from fastapi import HTTPException
+from app.core.telemetry.telemetry import TelemetryBackend
+from app.core.telemetry.prometheus import prom_spec_pb2,types_pb2
 
 class PrometheusConfig(BaseModel):
     """
     Configuration model for Prometheus / Grafana Mimir backend.
     """
-    url: str
-    auth: dict = None
-    project_name: str
+    push_url: str = "http://localhost:8081/api/v1/metrics/write"
+    pull_url : str = "http://localhost:9009/prometheus/api/v1/"
+    default_pull_timeframe: datetime.timedelta = datetime.timedelta(hours=1)
+    #auth: dict = None
+    #project_name: str
     retention_policy: str = "default"
     write_timeout: int = 10
     read_timeout: int = 10
 
 
-class PrometheusBackend:
+class PrometheusBackend(TelemetryBackend):
     """
     Prometheus / Grafana Mimir backend for telemetry data bases on the Prometheus Remote Write Spec.
     """
-    def __init__(self, project_name: str, config: dict):
+    def __init__(self, project_name: str, config: PrometheusConfig = PrometheusConfig()):
         super().__init__(project_name)
         self.config = config
         self.client = None
-        self.write_url = "http://localhost:8081/api/v1/metrics/write"
 
     async def write(self, device_name: str, values: dict, kind: str = 'default', timestamp: datetime.datetime | None = None):
         """
@@ -73,11 +75,12 @@ class PrometheusBackend:
             "X-Prometheus-Remote-Write-Version": "0.1.0"
         }
         async with httpx.AsyncClient() as client:
-            r =  await client.post(self.write_url, data=str_data, headers=headers)
+            with asyncio.timeout(self.config.write_timeout):
+                r =  await client.post(self.config.push_url, data=str_data, headers=headers)
             print(r.status_code)
             print(r.content)
 
-    async def read(self, device_name: str, kind: str = 'default', start: datetime.datetime | None = None, end: datetime.datetime | None = None):
+    async def read(self, device_name: str, kind: str = 'default', start: datetime.datetime | None = None, end: datetime.datetime | None = None, timeframe: datetime.timedelta | None = None):
         """
         Read telemetry data from the Mimir backend.
 
@@ -92,15 +95,36 @@ class PrometheusBackend:
         #     "end": "2025-04-16T13:30:00%2B02:00",
         #     "step": "15s"
         # }
+        #Construct the query timeframe
+        query_type = "query_range"
+        if timeframe is None:
+            timeframe = self.config.default_pull_timeframe
         if start is not None:
+            if end is not None:
+                pass
+            else:
+                end = start + timeframe
+                if end > datetime.datetime.now():
+                    end = datetime.datetime.now()
+        else:
+            if end is not None:
+                start = end - timeframe
+            else:
+                query_type = "query" # Do an instant query if no timeframe can be constructed
+        if query_type == "query_range":
+            if start > end or end > datetime.date.now():
+                raise HTTPException(status_code=400, detail="Invalid timeframe")
             start = start.strftime("%Y-%m-%dT%H:%M:%S%z")
-        data = json.dumps(data)
+            end = end.strftime("%Y-%m-%dT%H:%M:%S%z")
+        #Construct the query
+        query = f'{{__name__=~"{self.project_name}_.*", device={device_name}, kind={kind}}}' #Get all metrics for specific device and kind
+        query_url = self.config.pull_url + '?' + query_type + "=" + query + "&start=" + start + "&end=" + end
         async with httpx.AsyncClient() as client:
             headers = {
                 "Content-Type": "application/x-www-form-urlencoded"
             }
             r = await client.get(
-                "http://localhost:9009/prometheus/api/v1/query_range?query=testapi_test&start=2025-04-16T00:00:00%2B02:00&end=2025-04-16T13:30:00%2B02:00&step=15s",
+                query_url,
                 headers=headers)
             
             #r = await client.post("http://localhost:9009/prometheus/api/v1/query_range",data=data,headers=headers)

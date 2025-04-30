@@ -2,6 +2,10 @@ from fastapi import APIRouter, HTTPException, Header, Request, Response, status
 from fastapi.responses import JSONResponse
 import os
 import json
+import numbers
+from app.core.telemetry.prometheus.prometheus_telemetry import PrometheusBackend,PrometheusConfig
+from app.core.project import get_project
+from app.core.device import get_device
 
 from app.util import logger, is_valid_filename
 
@@ -19,6 +23,16 @@ async def post_telemetry_with_names(project_name: str, device_name: str, kind: s
     """
     if not is_valid_filename(project_name) or not is_valid_filename(device_name) or not is_valid_filename(kind):
         raise HTTPException(status_code=400, detail='Invalid project, device, or kind')
+    tel_backend = PrometheusBackend(project_name)
+    get_project(project_name)
+    get_device(device_name) # Both raise HTTPException if project or device does not exist.
+    measurements = await request.json()
+    #measurements = json.loads(request_json)
+    for k,v in measurements.items(): #validate measurements before writing them
+        if not (isinstance(k,str) and isinstance(v,numbers.Number)):
+            return Response(status_code=400, detail='Not a valid measurement')
+    await tel_backend.write(device_name,values=measurements,kind=kind)
+    
     return Response(status_code=200)
 
 # consumes = {MediaType.APPLICATION_JSON_VALUE})
@@ -50,6 +64,8 @@ async def post_log_with_names(project_name: str, device_name: str, request: Requ
     """
     if not is_valid_filename(project_name) or not is_valid_filename(device_name):
         raise HTTPException(status_code=400, detail='Invalid project or device')
+    get_project(project_name)
+    get_device(device_name) # Both raise HTTPException if project or device does not exist.
     return Response(status_code=200)
 
 #  consumes = "text/plain"

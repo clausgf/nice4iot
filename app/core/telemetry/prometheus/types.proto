@@ -16,7 +16,7 @@ package prometheus;
 
 option go_package = "prompb";
 
-import "protobuf/gogoproto/gogo.proto";
+import "app/core/telemetry/prometheus/gogo.proto"; //changed path
 
 message MetricMetadata {
   enum MetricType {
