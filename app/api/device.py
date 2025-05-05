@@ -1,10 +1,11 @@
 from fastapi import APIRouter, HTTPException, Header, Request, Response, status
 from fastapi.responses import JSONResponse
+from pydantic.tools import parse_obj_as
 import os
 import json
 import numbers
-from app.core.telemetry.prometheus.prometheus_telemetry import PrometheusBackend,PrometheusConfig
-from app.core.project import get_project
+from app.core.telemetry.telemetry_util import getBackendByEnum,getBackendConfigByEnum
+from app.core.project import get_project_path, get_project
 from app.core.device import get_device
 
 from app.util import logger, is_valid_filename
@@ -15,24 +16,30 @@ from app.util import logger, is_valid_filename
 router = APIRouter()
 
 ###############################################################################
-
+        
 @router.post('/telemetry/{project_name}/{device_name}/{kind}')
 async def post_telemetry_with_names(project_name: str, device_name: str, kind: str, request: Request):
     """
     Post telemetry data to the time series database.
     """
+    #TODO Auth
     if not is_valid_filename(project_name) or not is_valid_filename(device_name) or not is_valid_filename(kind):
         raise HTTPException(status_code=400, detail='Invalid project, device, or kind')
-    tel_backend = PrometheusBackend(project_name)
-    get_project(project_name)
-    get_device(device_name) # Both raise HTTPException if project or device does not exist.
+
+
     measurements = await request.json()
     #measurements = json.loads(request_json)
+    project = get_project(project_name,True)
+    logging_conf_file_path = get_project_path(project_name) / '.logging.json'
+    with open(logging_conf_file_path) as f:
+        logging_conf = parse_obj_as(getBackendConfigByEnum(project.telemetryBackend),json.loads(f.read()))
+    tel_backend = getBackendByEnum(project.telemetryBackend)(project_name,logging_conf)
+    get_device(project_name,device_name) # Both raise HTTPException if project or device does not exist.
     for k,v in measurements.items(): #validate measurements before writing them
         if not (isinstance(k,str) and isinstance(v,numbers.Number)):
             return Response(status_code=400, detail='Not a valid measurement')
     await tel_backend.write(device_name,values=measurements,kind=kind)
-    
+
     return Response(status_code=200)
 
 # consumes = {MediaType.APPLICATION_JSON_VALUE})

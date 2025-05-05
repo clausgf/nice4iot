@@ -75,10 +75,8 @@ class PrometheusBackend(TelemetryBackend):
             "X-Prometheus-Remote-Write-Version": "0.1.0"
         }
         async with httpx.AsyncClient() as client:
-            with asyncio.timeout(self.config.write_timeout):
-                r =  await client.post(self.config.push_url, data=str_data, headers=headers)
-            print(r.status_code)
-            print(r.content)
+            async with asyncio.timeout(self.config.write_timeout):
+                await client.post(self.config.push_url, data=str_data, headers=headers)
 
     async def read(self, device_name: str, kind: str = 'default', start: datetime.datetime | None = None, end: datetime.datetime | None = None, timeframe: datetime.timedelta | None = None):
         """
@@ -117,6 +115,7 @@ class PrometheusBackend(TelemetryBackend):
             start = start.strftime("%Y-%m-%dT%H:%M:%S%z")
             end = end.strftime("%Y-%m-%dT%H:%M:%S%z")
         #Construct the query
+        #TODO enable more types of queries e.g. one metric for multiple devices
         query = f'{{__name__=~"{self.project_name}_.*", device={device_name}, kind={kind}}}' #Get all metrics for specific device and kind
         query_url = self.config.pull_url + '?' + query_type + "=" + query + "&start=" + start + "&end=" + end
         async with httpx.AsyncClient() as client:
