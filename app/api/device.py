@@ -1,10 +1,9 @@
 from fastapi import APIRouter, HTTPException, Header, Request, Response, status
 from fastapi.responses import JSONResponse
-from pydantic.tools import parse_obj_as
 import os
 import json
 import numbers
-from app.core.telemetry.telemetry_util import getBackendByEnum,getBackendConfigByEnum
+from app.core.telemetry.telemetry_util import get_tel
 from app.core.project import get_project_path, get_project
 from app.core.device import get_device
 
@@ -29,11 +28,8 @@ async def post_telemetry_with_names(project_name: str, device_name: str, kind: s
 
     measurements = await request.json()
     #measurements = json.loads(request_json)
-    project = get_project(project_name,True)
-    logging_conf_file_path = get_project_path(project_name) / '.logging.json'
-    with open(logging_conf_file_path) as f:
-        logging_conf = parse_obj_as(getBackendConfigByEnum(project.telemetryBackend),json.loads(f.read()))
-    tel_backend = getBackendByEnum(project.telemetryBackend)(project_name,logging_conf)
+    project = get_project(project_name)
+    tel_backend = get_tel(project_name,project.telemetryBackend)
     get_device(project_name,device_name) # Both raise HTTPException if project or device does not exist.
     for k,v in measurements.items(): #validate measurements before writing them
         if not (isinstance(k,str) and isinstance(v,numbers.Number)):

@@ -2,18 +2,23 @@ from contextlib import contextmanager
 import copy
 import datetime
 import os
-import random
+
+import pytz
+import plotly.graph_objects as go
+
 from typing import List, Optional
 from fastapi import APIRouter, Request
 from nicegui import app, ui
+
 
 from app.config import app_config
 from app.core.auth import generate_token, create_token
 from app.core.device import create_device, get_device, get_devices, update_device
 from app.core.models import AuthToken, Device, Project
-from app.core.project import create_project, delete_project, get_project, get_projects, update_project
+from app.core.project import create_project, delete_project, get_project, get_projects, update_project,get_project_path
 from app.ui.theme import frame
 from app.util import is_valid_filename, render_datetime
+from app.core.telemetry.telemetry_util import BackendTypes,get_tel,create_tel
 
 DEFAULT_PROVISIONING_TOKEN_LENGTH = 64
 DEFAULT_PROVISIONING_TOKEN_EXPIRY_DAYS = 7
@@ -104,11 +109,16 @@ class ProjectCreationDialog:
 
     def __init__(self):
         self.project_name = ''
+        self.telemetry_backend = BackendTypes.SQL
         with ui.dialog().style('width: 400px') as self.dialog:
             with ui.card().classes('w-full'):
                 ui.label('Create Project').classes('text-h6 center')
                 val_rules = { "Project name contains invalid characters. Please use letters, number, underscore, plus and minus only.": lambda x: is_valid_filename(x) }
                 ui.input(label='Project Name', placeholder='enter a project name here', validation=val_rules).bind_value(self, 'project_name').classes('w-full')
+                with ui.dropdown_button("Choose a Telemetry Backend",auto_close=True):
+                    ui.item('Prometheus',on_click=lambda: (lambda obj: setattr(obj,'telemetry_backend',BackendTypes.PROMETHEUS))(self))
+                    ui.item('InfluxDB',on_click=lambda: (lambda obj: setattr(obj,'telemetry_backend',BackendTypes.SQL))(self))
+                    ui.item('SQL',on_click=lambda: (lambda obj: setattr(obj,'telemetry_backend',BackendTypes.INFLUX2)(self)))
                 with ui.row().classes('w-full place-content-end'):
                     ui.space()
                     ui.button('Cancel').props('color=secondary').on_click(lambda: self.dialog.submit(False))
@@ -118,7 +128,9 @@ class ProjectCreationDialog:
         """Show the dialog."""
         result = await self.dialog
         if result and self.project_name and is_valid_filename(self.project_name):
+            #ui.notify(f'Chose telemetry {self.telemetry_backend}')
             project = create_project(Project(name=self.project_name))
+            create_tel(self.project_name,self.telemetry_backend)
             ui.notify(f"Created project {project.name}", type='positive'),
             ui.navigate.to(f'/projects/{project.name}?tab=Settings')
         else:
@@ -404,13 +416,27 @@ async def projects_project_page(project_name: str, request: Request, tab: Option
             dashboard_tab = ui.tab('Dashboard')
             devices_tab = ui.tab('Devices')
             settings_tab = ui.tab('Settings')
-
         with ui.tab_panels(tabs).classes('w-full'):
             with ui.tab_panel(dashboard_tab):
                 ui.textarea('This note is kept between visits') \
                     .classes('w-96').bind_value(app.storage.user, 'note')
                 ui.button('Click me')
-
+                project = get_project(project_name)
+                try:
+                    tel_backend = get_tel(project_name,project.telemetryBackend)
+                    metrics = await tel_backend.read(end=datetime.datetime.now(pytz.timezone(app_config.timezone)),timeframe=datetime.timedelta(days=3),step='1m')
+                    fig = go.Figure()
+                    fig['layout']['yaxis'].update(autorange=True)
+                    for metric in metrics:
+                        vals = metric["values"]
+                        name = metric["metric"]["__name__"].split("_")[-1]
+                        device = metric["metric"]["device"]
+                        kind = metric["metric"]["kind"]
+                        fig.add_trace(go.Scatter(x=[datetime.datetime.fromtimestamp(val[0],pytz.timezone(app_config.timezone)) for val in vals],y=[val[1] for val in vals]
+                                                ,name=f'{name},{device},{kind}'))
+                    ui.plotly(fig).classes('w-full h-100')
+                except Exception as e:
+                    ui.notify(f'Could not display metric graph:{e}')
             with ui.tab_panel(devices_tab):
                 device_card = ProjectDevicesTable(project_name)
                 with ui.column():

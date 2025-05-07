@@ -9,7 +9,6 @@ from app.config import app_config
 from app.core.auth import validate_token
 from app.core.models import Project
 from app.util import logger, is_valid_filename
-from app.core.telemetry.prometheus.prometheus_telemetry import PrometheusConfig
 
 ###############################################################################
 
@@ -69,11 +68,6 @@ def create_project(project: Project) -> Project:
         temp_file = project_file.with_suffix('.tmp')
         temp_file.write_text(project.model_dump_json())
         temp_file.rename(project_file)
-        logging_config_file = project_path / '.logging.json'
-        temp_logging_file = logging_config_file.with_suffix('.tmp')
-        #TODO support different backends
-        temp_logging_file.write_text(PrometheusConfig().model_dump_json())
-        temp_logging_file.rename(logging_config_file)
     except Exception as e:
         logger.error(f"Error creating project {project_path}: {str(e)}")
         shutil.rmtree(project_path, ignore_errors=True)
