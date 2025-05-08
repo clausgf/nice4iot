@@ -83,6 +83,7 @@ class PrometheusBackend(TelemetryBackend):
         Constructs a query timeframe based on the passed parameters:
         If start and end are passed, those are used. If only start or end are passed it constructs a timeframe by respectively adding or subtracting the passed timeframe.
         If no timeframe is passed as a function argument it uses the default timeframe in the config.
+        If both start and end are not passed, an instant query is constructed.
         :param device_name: Name of the device.
         :param kind: Type of telemetry data.
         :param start: Start time for the data range. Defaults to None.
@@ -125,6 +126,7 @@ class PrometheusBackend(TelemetryBackend):
         query_url = f'{self.config.pull_url}{query_type}?query={query}' 
         logger.error(f'Read query:{query_url}')
         async with httpx.AsyncClient() as client:
+            #async with asyncio.Timeout(self.config.read_timeout):
             headers = {
                 "Content-Type": "application/x-www-form-urlencoded"
             }
@@ -133,4 +135,4 @@ class PrometheusBackend(TelemetryBackend):
                 headers=headers)
         if r.status_code == 200:
             return r.json()["data"]["result"]
-        return r.json()
+        return []

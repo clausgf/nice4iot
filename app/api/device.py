@@ -1,10 +1,10 @@
 from fastapi import APIRouter, HTTPException, Header, Request, Response, status
 from fastapi.responses import JSONResponse
-import os
-import json
+
 import numbers
 from app.core.telemetry.telemetry_util import get_tel
-from app.core.project import get_project_path, get_project
+from app.core.logging.logging_util import get_log
+from app.core.project import get_project
 from app.core.device import get_device
 
 from app.util import logger, is_valid_filename
@@ -67,8 +67,14 @@ async def post_log_with_names(project_name: str, device_name: str, request: Requ
     """
     if not is_valid_filename(project_name) or not is_valid_filename(device_name):
         raise HTTPException(status_code=400, detail='Invalid project or device')
-    get_project(project_name)
-    get_device(device_name) # Both raise HTTPException if project or device does not exist.
+    project = get_project(project_name)
+    get_device(project_name,device_name) # Both raise HTTPException if project or device does not exist.
+    log_backend = get_log(project_name,project.loggingBackend)
+    try:
+        logmsg = (await request.body()).decode()
+    except Exception as e:
+        raise HTTPException(status_code=400,detail='Invalid logmsg')
+    await log_backend.write(device_name,logmsg)
     return Response(status_code=200)
 
 #  consumes = "text/plain"
