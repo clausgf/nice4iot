@@ -7,6 +7,6 @@ class AppConfig(BaseSettings):
     provisioning_token_length: int = 64
     device_token_length: int = 32
     max_upload_size: int = 1048576  # 1 MB
-
+    timezone : str = 'Europe/Berlin'
 
 app_config = AppConfig()

@@ -4,3 +4,5 @@ pydantic-settings
 pytest
 protobuf==6.30.2
 python-snappy==0.7.3
+pytz
+plotly

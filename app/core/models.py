@@ -1,7 +1,8 @@
 import datetime
 from pydantic import BaseModel, Field
 from app.config import app_config
-
+from app.core.telemetry.telemetry_util import TelemetryBackendTypes
+from app.core.logging.logging_util import LoggingBackendTypes
 
 NOW_FACTORY = lambda: datetime.datetime.now(datetime.timezone.utc)
 
@@ -29,7 +30,8 @@ class Project(BaseModel):
     is_autocreate_devices: bool = True
     is_provisioning_autoapproval: bool = True
     device_tokens_expire_in: datetime.timedelta = datetime.timedelta(days=7)
-
+    telemetryBackend: TelemetryBackendTypes = TelemetryBackendTypes.PROMETHEUS
+    loggingBackend: LoggingBackendTypes = LoggingBackendTypes.LOKI
     tags: list[str] = []
     provisioning_tokens: list[AuthToken] = []
 
