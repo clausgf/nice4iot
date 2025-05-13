@@ -3,11 +3,11 @@ from fastapi.responses import JSONResponse
 
 import numbers,json,httpx
 from app.api.dependencies import DeviceAuthInfo,device_auth
-from app.core.telemetry.telemetry_util import get_tel
-from app.core.logging.logging_util import get_log
+from app.core.telemetry.telemetry import get_tel
+from app.core.logging.logging import get_log
 from app.core.project import get_project,get_project_path
 from app.core.device import get_device
-from app.core.forwarding import forward
+from app.core.forwarding.forwarding import forward
 from app.util import logger, is_valid_filename
 
 
