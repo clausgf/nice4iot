@@ -94,7 +94,7 @@ async def post_log_with_names(project_name: str, device_name: str, request: Requ
 # ****************************************************************************
 
 @router.get('/forward/{project_name}/{forwarding_name}')
-async def get_forward_with_names(project_name: str, forwarding_name: str, request: Request):
+async def get_forward_with_names(project_name: str, forwarding_name: str, request: Request, dev : DeviceAuthInfo = Depends(device_auth)):
     """
     Forward a GET request to another URL.
     """

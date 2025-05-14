@@ -57,13 +57,15 @@ class ForwardingConfigCard:
                'forward_method': v.forward_method,
                'forward_url': v.forward_url,
            })
+        if getattr(self,"aggrid",None):
+            self.aggrid.update()
 
 
     def handle_cell_value_changed(self, event) -> None:
         """Handle cell value changed event."""
         row_data = event.args['data']
         colId = event.args['colId']
-        if colId == 'id':
+        if colId == 'id': 
             # update the key in the forwardings dict
             old_key = event.args['oldValue'].strip()
             new_key = event.args['newValue'].strip()
@@ -72,15 +74,26 @@ class ForwardingConfigCard:
         else:
             # update the value in the forwardings dict
             if colId == 'forward_method':
+                old_method = self.forwardings.forwards[row_data['id']].forward_method 
                 self.forwardings.forwards[row_data['id']].forward_method = row_data['forward_method']
             elif colId == 'forward_url':
+                old_url = self.forwardings.forwards[row_data['id']].forward_url
                 self.forwardings.forwards[row_data['id']].forward_url = row_data['forward_url']
         try:
-            ForwardingModelList.model_validate_json(self.forwardings.model_dump_json())
+            ForwardingModelList.model_validate(self.forwardings)
+            #ForwardingModelList.model_validate_json(self.forwardings.model_dump_json())
             # save the changes
             self.forwardings = update_forwadings(self.project_name, self.forwardings)
             ui.notify(f"Saved forwardings: {row_data}")
         except ValidationError:
+            match colId:
+                case 'id':
+                    self.forwardings.forwards[old_key] = self.forwardings.forwards.pop(new_key)
+                case 'forward_method':
+                    self.forwardings.forwards[row_data['id']].forward_method = old_method
+                case 'forward_url':
+                    self.forwardings.forwards[row_data['id']].forward_url = old_url
+            self.update_rows()
             ui.notify("Invalid")
 
         #ForwardingModel.model_validate(self.forwardings.forwards[row_data['id']])
