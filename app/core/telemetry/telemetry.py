@@ -1,6 +1,12 @@
-import datetime,json
+import json,typing
 
-from pydantic import BaseModel
+from pydantic.tools import parse_obj_as
+
+from app.core.telemetry.models import TelemetryBackend, TelemetryBackendTypes
+from app.core.telemetry.prometheus.prometheus_telemetry import PrometheusBackend,PrometheusConfig
+from app.config import app_config
+
+TEL_CONF_FILE_NAME = '.telemetry_config.json'
 
 
 def flatten_dict(d, parent_key: str = "", sep: str = "_"):
@@ -14,40 +20,48 @@ def flatten_dict(d, parent_key: str = "", sep: str = "_"):
     return dict(items)
 
 
-class TelemetryBackend:
-    """
-    Abstract base class for telemetry data handling.
-    """
-    def __init__(self, project_name: str):
-        self.project_name = project_name
-
-    def write(self, device_name: str, values: dict, kind: str = 'default', timestamp: datetime.datetime | None = None):
-        """
-        Write telemetry data to the backend.
-
-        :param device_name: Name of the device.
-        :param values: Dictionary of telemetry values.
-        :param kind: Type of telemetry data.
-        :param timestamp: Timestamp of the telemetry data point. Defaults to current time if not provided.
-        """
-        raise NotImplementedError("Subclasses must implement this method.")
-
-    async def read(self, device_name: str, kind: str = 'default', start: datetime.datetime | None = None, end: datetime.datetime | None = None):
-        """
-        Read telemetry data from the Mimir backend.
-
-        :param device_name: Name of the device.
-        :param kind: Type of telemetry data.
-        :param start: Start time for the data range. Defaults to None.
-        :param end: End time for the data range. Defaults to None.
-        """
-        raise NotImplementedError("Subclasses must implement this method.")
+def getTelBackendByEnum(type : TelemetryBackendTypes) -> TelemetryBackend:
+    match type:
+        case TelemetryBackendTypes.PROMETHEUS :
+            return PrometheusBackend
+        case TelemetryBackendTypes.INFLUX2:
+            return Influx2Backend
+        case TelemetryBackendTypes.SQL:
+            return SqlBackend
 
 
-class Influx2Backend(TelemetryBackend):
-    pass
+def getTelBackendConfigByEnum(type : TelemetryBackendTypes):
+    match type:
+        case TelemetryBackendTypes.PROMETHEUS :
+            return PrometheusConfig
 
 
-class SqlBackend(TelemetryBackend):
-    pass
+def create_tel(project_name: str, telemetry_backend: TelemetryBackendTypes):
+    project_path = app_config.projects_dir / project_name
+    tel_config_file = project_path / TEL_CONF_FILE_NAME
+    temp_tel_conf_file = tel_config_file.with_suffix('.tmp')
+    temp_tel_conf_file.write_text(getTelBackendConfigByEnum(telemetry_backend)().model_dump_json())
+    temp_tel_conf_file.rename(tel_config_file)
+
+
+def get_tel(project_name: str, telemetry_backend: TelemetryBackendTypes):
+    project_path = app_config.projects_dir / project_name
+    tel_conf_file_path = project_path / TEL_CONF_FILE_NAME
+    with open(tel_conf_file_path) as f:
+        tel_conf = parse_obj_as(getTelBackendConfigByEnum(telemetry_backend),json.loads(f.read()))
+    return getTelBackendByEnum(telemetry_backend)(project_name,tel_conf)
+
+
+def update_tel(project_name: str , telemetry_backend: TelemetryBackendTypes, config : dict[str,typing.Any]):
+    tel_conf = get_tel(project_name,telemetry_backend).config
+    for k,v in config.items():
+        try:
+            setattr(tel_conf,k,v)
+        except AttributeError:
+            pass
+    project_path = app_config.projects_dir / project_name
+    tel_config_file = project_path / TEL_CONF_FILE_NAME
+    temp_tel_conf_file = tel_config_file.with_suffix('.tmp')
+    temp_tel_conf_file.write_text(getTelBackendConfigByEnum(telemetry_backend)().model_dump_json())
+    temp_tel_conf_file.rename(tel_config_file)
 

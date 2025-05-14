@@ -1,8 +1,8 @@
 import datetime
 from pydantic import BaseModel, Field
 from app.config import app_config
-from app.core.telemetry.telemetry_util import TelemetryBackendTypes
-from app.core.logging.logging_util import LoggingBackendTypes
+from app.core.telemetry.telemetry import TelemetryBackendTypes
+from app.core.logging.logging import LoggingBackendTypes
 
 NOW_FACTORY = lambda: datetime.datetime.now(datetime.timezone.utc)
 
