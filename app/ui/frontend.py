@@ -510,7 +510,7 @@ class AuthTokenDialog:
 
         with ui.dialog().style('width: 400px') as self.dialog, ui.card():
             ui.label('Edit authentication token').classes('text-h6 center')
-            token_input = ui.input(label='Token').bind_value(self.token, 'token').classes('w-full')
+            token_input = ui.input(label='Token').bind_value(self.token, 'value').classes('w-full')
             with token_input.add_slot('after'):
                 ui.button(icon='content_copy').props('size=sm').on_click(lambda: ui.clipboard.write(self.token.value))
             with ui.row():
@@ -579,7 +579,7 @@ class DeviceSettingsCard:
         self.device_name = device_name
         self.device = get_device(project_name, device_name)
         self.authtoken_cols = [
-            {'name': 'token', 'label': 'Token', 'field': 'token' },
+            {'name': 'token', 'label': 'Token', 'field': 'value' },
             {'name': 'created_at', 'label': 'Created at', 'field': 'created_at' },
             {'name': 'expires_at', 'label': 'Expires at', 'field': 'expires_at' },
         ]
@@ -639,7 +639,7 @@ class DeviceSettingsCard:
         for token in self.device.tokens:
             self.authtoken_rows.append({
                 'id': token.value,
-                'token': (token.value[:17] + '...') if len(token.value) > 20 else token.value,
+                'value': (token.value[:17] + '...') if len(token.value) > 20 else token.value,
                 'created_at': render_datetime(token.created_at),
                 'expires_at': render_datetime(token.expires_at),
             })
