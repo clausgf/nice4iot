@@ -1,5 +1,5 @@
 import httpx,json,time
-from app.core.logging.logging import LoggingBackend
+from app.core.logging.models import LoggingBackend
 from pydantic import BaseModel
 
 class LokiConfig(BaseModel):

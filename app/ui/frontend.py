@@ -16,10 +16,11 @@ from app.core.auth import generate_token, create_token
 from app.core.device import create_device, get_device, get_devices, update_device
 from app.core.models import AuthToken, Device, Project
 from app.core.project import create_project, delete_project, get_project, get_projects, update_project,get_project_path
+from app.ui.forwarding_config_card import ForwardingConfigCard
 from app.ui.theme import frame
 from app.util import is_valid_filename, render_datetime
-from app.core.telemetry.telemetry_util import TelemetryBackendTypes,get_tel,create_tel
-from app.core.logging.logging_util import LoggingBackendTypes,get_log,create_log
+from app.core.telemetry.telemetry import TelemetryBackendTypes,get_tel,create_tel
+from app.core.logging.logging import LoggingBackendTypes,get_log,create_log
 
 DEFAULT_PROVISIONING_TOKEN_LENGTH = 64
 DEFAULT_PROVISIONING_TOKEN_EXPIRY_DAYS = 7
@@ -251,6 +252,9 @@ class ProjectSettingsCard:
             ui.checkbox(text='Auto create devices').bind_value(self.project, 'is_autocreate_devices')
             ui.checkbox(text='Auto approve provisioning').bind_value(self.project, 'is_provisioning_autoapproval')
             ui.number(label='Auth token expiry (days)').bind_value(self, 'token_expiry')
+
+            # forwardings
+            self.forwardings_card = ForwardingConfigCard(self.project_name)
 
             # table with provisioning tokens
             self.provisioning_table = ui.table(title='Provisioning Tokens', columns=self.provisioning_cols, rows=self.provisioning_rows).classes('w-full')
@@ -506,7 +510,7 @@ class AuthTokenDialog:
 
         with ui.dialog().style('width: 400px') as self.dialog, ui.card():
             ui.label('Edit authentication token').classes('text-h6 center')
-            token_input = ui.input(label='Token').bind_value(self.token, 'token').classes('w-full')
+            token_input = ui.input(label='Token').bind_value(self.token, 'value').classes('w-full')
             with token_input.add_slot('after'):
                 ui.button(icon='content_copy').props('size=sm').on_click(lambda: ui.clipboard.write(self.token.value))
             with ui.row():
@@ -575,7 +579,7 @@ class DeviceSettingsCard:
         self.device_name = device_name
         self.device = get_device(project_name, device_name)
         self.authtoken_cols = [
-            {'name': 'token', 'label': 'Token', 'field': 'token' },
+            {'name': 'token', 'label': 'Token', 'field': 'value' },
             {'name': 'created_at', 'label': 'Created at', 'field': 'created_at' },
             {'name': 'expires_at', 'label': 'Expires at', 'field': 'expires_at' },
         ]
@@ -635,7 +639,7 @@ class DeviceSettingsCard:
         for token in self.device.tokens:
             self.authtoken_rows.append({
                 'id': token.value,
-                'token': (token.value[:17] + '...') if len(token.value) > 20 else token.value,
+                'value': (token.value[:17] + '...') if len(token.value) > 20 else token.value,
                 'created_at': render_datetime(token.created_at),
                 'expires_at': render_datetime(token.expires_at),
             })
