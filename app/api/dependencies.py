@@ -27,7 +27,7 @@ async def device_auth(project_name: str, device_name: str, request: Request) -> 
     """
     # Extract the bearer token from the request header
     auth_header = request.headers.get("Authorization")
-    if not auth_header or not auth_header.startswith("Bearer "):
+    if not auth_header or not auth_header[:7].lower().startswith("bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid authentication token.")
 
     # Extract the token value
