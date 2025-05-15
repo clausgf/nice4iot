@@ -66,7 +66,7 @@ def create_project(project: Project) -> Project:
         project.created_at = now
         project.updated_at = now
         temp_file = project_file.with_suffix('.tmp')
-        temp_file.write_text(project.model_dump_json())
+        temp_file.write_text(project.model_dump_json(indent=2))
         temp_file.rename(project_file)
     except Exception as e:
         logger.error(f"Error creating project {project_path}: {str(e)}")
@@ -121,7 +121,7 @@ def update_project(project: Project) -> Project:
     try:
         project.updated_at = datetime.datetime.now(datetime.timezone.utc)
         temp_file = project_file.with_suffix('.tmp')
-        temp_file.write_text(project.model_dump_json())
+        temp_file.write_text(project.model_dump_json(indent=2))
         temp_file.rename(project_file)
     except Exception as e:
         logger.error(f"Error saving project {project_path}: {str(e)}")
