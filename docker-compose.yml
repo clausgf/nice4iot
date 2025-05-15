@@ -1,14 +1,22 @@
+networks:
+  loki:
+    name: loki
+    external: true
+  caddy_network:
+    name: caddy_network
+    external: true
 services:
   nicegui:
-    ports:
-      - 8080:8080
+    networks:
+      - loki
+      - caddy_network
     volumes:
-      - ./app:/usr/app # mounting local app directory
-      - ./data:/usr/data
+      - ./app:/app # mounting local app directory
+      - ./data:/data
     build: 
       context: .
       args:
-        - PUID=1000 # change this to your user id
-        - PGID=1000 # change this to your group id
+        - PUID=1003 # change this to your user id
+        - PGID=1003 # change this to your group id
     environment:
       - NICEGUI_STORAGE_SECRET="change-this-to-yor-own-private-secret"
