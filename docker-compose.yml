@@ -5,8 +5,11 @@ services:
     volumes:
       - ./app:/usr/app # mounting local app directory
       - ./data:/usr/data
-    build: .
+    build: 
+      context: .
+      args:
+        - PUID=1000 # change this to your user id
+        - PGID=1000 # change this to your group id
     environment:
-      - PUID=1000 # change this to your user id
-      - PGID=1000 # change this to your group id
+
       - NICEGUI_STORAGE_SECRET="change-this-to-yor-own-private-secret"

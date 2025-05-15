@@ -208,7 +208,7 @@ class ProvisioningTokenDialog:
         now = datetime.datetime.now(datetime.timezone.utc)
         if self.token_index < 0:
             self.token.created_at = now
-        self.token.updated_at = now
+        #self.token.updated_at = now
         self.project_settings.on_token_update(self.token_index, copy.copy(self.token))
         self.dialog.close()
 
