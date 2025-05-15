@@ -11,5 +11,4 @@ services:
         - PUID=1000 # change this to your user id
         - PGID=1000 # change this to your group id
     environment:
-
       - NICEGUI_STORAGE_SECRET="change-this-to-yor-own-private-secret"

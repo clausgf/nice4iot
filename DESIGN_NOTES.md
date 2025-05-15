@@ -24,7 +24,6 @@ Properties von Django Model Fields:
 - verbose_name: A human-readable name for the field. If the verbose name isn’t given, Django will automatically create it using the field’s attribute name, converting underscores to spaces.
 - validators: A list of validators to run for this field.
 
-
 - auch formfield(form_class=None, choices_form_class=None, **kwargs)
 - DB: primary_key, db_column, ...
 
@@ -33,6 +32,59 @@ ToDo
 - DateTime Handling inkl. TZ? -> Time, Date, DateTime
 - Relationships
 - class Meta in der Modellklasse mit verbose_name, verbose_name_plural, ordering
+
+
+### Django Class Based Views
+
+- View
+- TemplateView
+- DetailView
+- ListView
+- FormView
+- CreateView, UpdateView, DeleteView
+
+FormSets mit Cards realisieren
+
+#### ModelForm
+
+```python
+class GeeksForm(forms.ModelForm):
+    # specify the name of model to use
+    slug = CharField(validators=[validate_slug])
+    class Meta:
+        model = GeeksModel
+        fields = "__all__"
+        exclude = ["title"]
+        field_classes = {
+            "slug": MySlugFormField,
+        }
+        widgets = {
+            "name": Textarea(attrs={"cols": 80, "rows": 20}),
+        }
+        labels = {
+            "name": _("Writer"),
+        }
+        help_texts = {
+            "name": _("Some useful help text."),
+        }
+        error_messages = {
+            "name": {
+                "max_length": _("This writer's name is too long."),
+            },
+        }
+        formfield_callback = formfield_for_dbfield
+```
+
+There are two main steps involved in validating a ModelForm:
+
+1. Validating the form
+1. Validating the model instance
+
+Just like normal form validation, model form validation is triggered implicitly when calling is_valid() or accessing the errors attribute and explicitly when calling full_clean(), although you will typically not use the latter method in practice.
+
+You can override the clean() method on a model form to provide additional validation in the same way you can on a normal form.
+
+Every ModelForm also has a save() method. This method creates and saves a database object from the data bound to the form. A subclass of ModelForm can accept an existing model instance as the keyword argument instance; if this is supplied, save() will update that instance. If it’s not supplied, save() will create a new instance of the specified model.
 
 
 ### Python typing
