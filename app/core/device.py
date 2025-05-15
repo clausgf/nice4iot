@@ -106,7 +106,7 @@ def create_device(device: Device) -> Device:
         device.created_at = now
         device.updated_at = now
         temp_file = device_file.with_suffix('.tmp')
-        temp_file.write_text(device.model_dump_json())
+        temp_file.write_text(device.model_dump_json(indent=2))
         temp_file.rename(device_file)
     except Exception as e:
         logger.error(f"Error creating device {device_path}: {str(e)}")
@@ -168,7 +168,7 @@ def update_device(device: Device) -> Device:
     try:
         device.updated_at = datetime.datetime.now(datetime.timezone.utc)
         temp_file = device_file.with_suffix('.tmp')
-        temp_file.write_text(device.model_dump_json())
+        temp_file.write_text(device.model_dump_json(indent=2))
         temp_file.rename(device_file)
     except Exception as e:
         logger.error(f"Error saving device {device_path}: {str(e)}")

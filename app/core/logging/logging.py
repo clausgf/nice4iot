@@ -26,7 +26,7 @@ def create_log(project_name: str,logBackend: LoggingBackendTypes):
     project_path = app_config.projects_dir / project_name
     log_config_file = project_path / LOG_CONF_FILE_NAME
     temp_log_conf_file = log_config_file.with_suffix('.tmp')
-    temp_log_conf_file.write_text(getLogBackendConfigByEnum(logBackend)().model_dump_json())
+    temp_log_conf_file.write_text(getLogBackendConfigByEnum(logBackend)().model_dump_json(indent=2))
     temp_log_conf_file.rename(log_config_file)
 
 def get_log(project_name: str,logBackend: LoggingBackendTypes):
@@ -35,3 +35,4 @@ def get_log(project_name: str,logBackend: LoggingBackendTypes):
     with open(log_conf_file_path) as f:
         log_conf = parse_obj_as(getLogBackendConfigByEnum(logBackend),json.loads(f.read()))
     return getLogBackendByEnum(logBackend)(project_name,log_conf)
+

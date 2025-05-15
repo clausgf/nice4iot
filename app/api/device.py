@@ -22,40 +22,15 @@ async def post_telemetry_with_names(project_name: str, device_name: str, kind: s
     """
     Post telemetry data to the time series database.
     """
-    if not is_valid_filename(project_name) or not is_valid_filename(device_name) or not is_valid_filename(kind):
-        raise HTTPException(status_code=400, detail='Invalid project, device, or kind')
+    if not is_valid_filename(kind):
+        raise HTTPException(status_code=400, detail='Invalid kind in url')
 
     measurements = await request.json()
     #measurements = json.loads(request_json)
-    project = get_project(project_name)
-    tel_backend = get_tel(project_name,project.telemetryBackend)
-    get_device(project_name,device_name) # Both raise HTTPException if project or device does not exist.
-    for k,v in measurements.items(): #validate measurements before writing them
-        if not (isinstance(k,str) and isinstance(v,numbers.Number)):
-            raise HTTPException(status_code=400, detail='Not a valid measurement')
-    await tel_backend.write(device_name,values=measurements,kind=kind)
+    tel_backend = get_tel(project_name, dev.project.telemetryBackend)
+    await tel_backend.write(device_name, values=measurements, kind=kind)
 
     return Response(status_code=200)
-
-# consumes = {MediaType.APPLICATION_JSON_VALUE})
-# request body data
-
-# ServiceUtils.checkAuthentication( projectName, deviceName );
-# ServiceUtils.checkName( kind );
-
-# // determine the device
-# Device device = deviceService.findByProjectNameAndName(projectName, deviceName)
-#         .orElseThrow(() -> new ResponseStatusException(
-#                 HttpStatus.NOT_FOUND,
-#                 "Device not found: projectName=" + projectName + " deviceName=" + deviceName));
-
-# try {
-#     timeseriesService.writeTelemetryJson(device, kind, data);
-# } catch (JsonProcessingException e) {
-#     throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-#             "Bad json body: " + e.getMessage());
-# }
-# return ResponseEntity.status(HttpStatus.OK).body("");
 
 # ****************************************************************************
 
@@ -64,31 +39,13 @@ async def post_log_with_names(project_name: str, device_name: str, request: Requ
     """
     Post log data to the time series database.
     """
-    if not is_valid_filename(project_name) or not is_valid_filename(device_name):
-        raise HTTPException(status_code=400, detail='Invalid project or device')
-    project = get_project(project_name)
-    get_device(project_name,device_name) # Both raise HTTPException if project or device does not exist.
-    log_backend = get_log(project_name,project.loggingBackend)
+    log_backend = get_log(project_name, dev.project.loggingBackend)
     try:
         logmsg = (await request.body()).decode()
     except Exception as e:
-        raise HTTPException(status_code=400,detail='Invalid logmsg')
-    await log_backend.write(device_name,logmsg)
+        raise HTTPException(status_code=400, detail='Invalid logmsg')
+    await log_backend.write(device_name, logmsg)
     return Response(status_code=200)
-
-#  consumes = "text/plain"
-#  request body body
-
-# ServiceUtils.checkAuthentication( projectName, deviceName );
-
-# // determine the device
-# Device device = deviceService.findByProjectNameAndName(projectName, deviceName)
-#         .orElseThrow(() -> new ResponseStatusException(
-#                 HttpStatus.NOT_FOUND,
-#                 "Device not found: projectName=" + projectName + " deviceName=" + deviceName));
-
-# timeseriesService.writeLog(device, body);
-# return ResponseEntity.status(HttpStatus.OK).body("");
 
 # ****************************************************************************
 
@@ -98,7 +55,7 @@ async def get_forward_with_names(project_name: str, device_name: str, forwarding
     Forward a GET request to another URL.
     """
     if not is_valid_filename(forwarding_name):
-        raise HTTPException(status_code=400, detail='Invalid forwarding name')
+        raise HTTPException(status_code=400, detail='Invalid forwarding_name in url')
     forwarding = get_forwarding(project_name, forwarding_name)
 
     headers = request.headers.mutablecopy()

@@ -54,7 +54,7 @@ def update_forwadings(project_name: str, forwarding_model_list: ForwardingModelL
     forwardings_filename = get_project_path(project_name) / FORWARD_FILE_NAME
     try:
         temp_file = forwardings_filename.with_suffix('.tmp')
-        temp_file.write_text(forwarding_model_list.model_dump_json())
+        temp_file.write_text(forwarding_model_list.model_dump_json(indent=2))
         temp_file.rename(forwardings_filename)
     except Exception as e:
         logger.error(f"Error saving forwardings {forwardings_filename}: {str(e)}")

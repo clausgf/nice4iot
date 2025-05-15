@@ -45,5 +45,3 @@ class TelemetryBackendTypes(Enum):
     PROMETHEUS = 1
     INFLUX2 = 2
     SQL = 3
-
-
