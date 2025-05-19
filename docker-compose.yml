@@ -11,8 +11,8 @@ services:
       - loki
       - caddy_network
     volumes:
-      - ./app:/app # mounting local app directory
-      - ./data:/data
+      - ./app:/home/iot/app # mounting local app directory
+      - ./data:/home/iot/data
     build: 
       context: .
       args:

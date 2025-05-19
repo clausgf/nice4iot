@@ -1,4 +1,4 @@
-import datetime,pytz,time
+import datetime,pytz,time,numbers
 import httpx,asyncio
 from pydantic import BaseModel
 import snappy
@@ -40,6 +40,8 @@ class PrometheusBackend(TelemetryBackend):
         kind_label = types_pb2.Label(name='kind', value=kind)
 
         for k,v in values.items():
+            if not isinstance(v,numbers.Number):
+                continue
             # append to the timeseries
             ts = types_pb2.TimeSeries()
 
