@@ -63,7 +63,7 @@ def update_forwadings(project_name: str, forwarding_model_list: ForwardingModelL
 
 ###############################################################################
 
-async def forward(forwarding: ForwardingModelList, remaining_url: str, data: str, headers: dict, timeout: int):
+async def forward(forwarding: ForwardingModelList, remaining_url: str, data: str, headers: dict,query_params : dict, timeout: int):
     """
     Forward a request to another URL.
     :param forwarding: The forwarding model.
@@ -83,6 +83,8 @@ async def forward(forwarding: ForwardingModelList, remaining_url: str, data: str
     if remaining_url.startswith("/"):
         remaining_url = remaining_url[1:]
     fwd_url = fwd_url_prefix + "/" + remaining_url
+    if query_params is not None and len(query_params) > 0:
+        fwd_url = fwd_url + f'?{query_params}'
 
     async with httpx.AsyncClient() as client:
         # timeout also ends circular requests (when forwarding to the forwarding url)

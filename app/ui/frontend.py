@@ -437,7 +437,7 @@ async def projects_project_page(project_name: str, request: Request, tab: Option
                         name = metric["metric"]["__name__"].split("_")[-1]
                         device = metric["metric"]["device"]
                         kind = metric["metric"]["kind"]
-                        fig.add_trace(go.Scatter(x=[datetime.datetime.fromtimestamp(val[0],pytz.timezone(app_config.timezone)) for val in vals],y=[int(val[1]) for val in vals]
+                        fig.add_trace(go.Scatter(x=[datetime.datetime.fromtimestamp(val[0],pytz.timezone(app_config.timezone)) for val in vals],y=[float(val[1]) for val in vals]
                                                 ,name=f'{name},{device},{kind}'))
                     #fig['layout']['yaxis'].update(autorange=True)
                     ui.plotly(fig).classes('w-full h-100')

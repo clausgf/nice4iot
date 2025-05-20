@@ -62,6 +62,7 @@ async def get_forward_with_names(project_name: str, device_name: str, forwarding
     del headers["Authorization"]   # Remove the Authorization header to avoid circular forwarding
     del headers["Content-Length"]
     data = await request.body()
-    forward_response = await forward(forwarding, remaining_url, data, headers, 10)
+    url_params = request.query_params
+    forward_response = await forward(forwarding, remaining_url, data, headers,url_params, 10)
 
     return Response(status_code=forward_response.status_code, headers=forward_response.headers, content=forward_response.content)
