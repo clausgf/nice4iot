@@ -278,7 +278,7 @@ def device_provision(project: Project, device_name: str) -> str:
             # Create a new device
             device = create_device(Device(name=device_name, project_name=project.name, is_provisioning_approved=project.is_provisioning_autoapproval))
         else:
-            raise
+            raise e
 
     device.last_provisioning_request_at = now
 

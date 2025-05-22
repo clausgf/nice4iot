@@ -32,8 +32,11 @@ async def device_auth(project_name: str, device_name: str, request: Request) -> 
 
     # Extract the token value
     token_value = auth_header.split(" ")[1]
-
-    # Validate the token and get the project + device objects
-    project, device = get_auth_project_device(project_name, device_name, token_value)
-
+    try:
+        # Validate the token and get the project + device objects
+        project, device = get_auth_project_device(project_name, device_name, token_value)
+    except HTTPException as e:
+        if 400 <= e.status_code < 500:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Project, device or auth token.")
+    
     return DeviceAuthInfo(project_name=project_name, project=project, device_name=device_name, device=device)
