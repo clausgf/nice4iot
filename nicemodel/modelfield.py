@@ -14,6 +14,7 @@ class _NmFieldInfoInputs(typing_extensions.TypedDict, total=False):
     hidden: bool | None
     editable: bool | None
     help_text: str | None
+    form_widget_cls: str | None
     props: str | None
     classes: str | None
     tailwind: str | None
@@ -83,6 +84,7 @@ class NmFieldInfo():
     suffix: str | None = None
     format: str | None = None
 
+
     def __init__(self, **kwargs: Unpack[_NmFieldInfoInputs]):
         # Initialize the field with the provided keyword arguments.
         for key, value in kwargs.items():
@@ -150,6 +152,7 @@ class NmFieldsMixin:
         else:
             raise ValueError(f"Invalid field name: {fields}")
 
+
     def _create_field_infos(self, model_cls: type[BaseModel], field_infos: dict[str, NmFieldInfo] | None = None):
         """
         Update the field information for the model class.
@@ -180,6 +183,7 @@ class NmFieldsMixin:
                     raise ValueError(f"Invalid field name: {field_name} not in model fields")
                 # merge the provided field info with the existing field info
                 self._ui_field_infos[field_name] = NmFieldInfo(**{**self._ui_field_infos[field_name], **field_info})
+
 
     def _nice_field_label(self, name: str) -> str:
         """

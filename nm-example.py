@@ -7,18 +7,19 @@ from nicemodel.modelform import ModelForm
 from nicemodel.modeltable import ModelGrid, ModelTable
 
 class User(BaseModel):
-    name: Annotated[str, Field(max_length=30, title="Name", description="Full name of the user", extra_argument="abc"), {'testkey': 'testvalue'}]
+    name: Annotated[str, Field(max_length=8, title="Name", description="Full name of the user", extra_argument="abc"), {'testkey': 'testvalue'}]
     age: Annotated[int, NmField(min=0, max=150, label="User's Age")]
     num: int
+    is_active: bool = True
+    is_admin: Annotated[bool, Field(default=True), NmField(form_widget_cls='ui.checkbox', classes='text-red-500')]
 
+user = User(name='John Doe', age=30, num=42)
 
 with ui.row():
-    user_form = ModelForm(User, classes='w-full')
+    user_form = ModelForm(user, classes='w-full')
     with ui.card():
         ui.label('Example for a User Form:')
         user_form.render()
-    user = User(name='John Doe', age=30, num=42)
-    user_form.bind_model(user)
 
     with ui.card():
         ui.label('Binding example - Values of the User Form fields:')
@@ -28,6 +29,7 @@ with ui.row():
         with ui.row():
             ui.button('num++', on_click=lambda: setattr(user, 'num', user.num + 1))
             ui.button('num--', on_click=lambda: setattr(user, 'num', user.num - 1))
+
 
 user_list = [user, User(name='Jane Doe', age=25, num=43)]#, User(name='Alice', age=28, num=44), User(name='Bob', age=35, num=45), User(name='Charlie', age=40, num=46), User(name='Dave', age=45, num=47), User(name='Eve', age=50, num=48), User(name='Frank', age=55, num=49), User(name='Grace', age=60, num=50)]
 

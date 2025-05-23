@@ -1,4 +1,4 @@
-from typing import Any, Callable, Literal, Union, Unpack
+from typing import Any, Callable, Literal, Self, Union, Unpack
 import typing_extensions
 from pydantic import BaseModel, ValidationError
 from nicegui import ui
@@ -45,7 +45,7 @@ class ModelTable(NmFieldsMixin):
     _cols: list[dict[str, str]] = []
     _rows: list[dict[str, Any]] = []
 
-    def __init__(self, model_cls: type[BaseModel], **kwargs: Unpack[_ModelTableOptionInputs]):
+    def __init__(self, model_cls: type[BaseModel], **kwargs: Unpack[_ModelTableOptionInputs]) -> None:
         self._model_cls = model_cls
         if not isinstance(self._model_cls, type) or not issubclass(self._model_cls, BaseModel):
             raise TypeError(f"cls must be a subclass of BaseModel, got {type(self._model_cls)}")
@@ -84,7 +84,8 @@ class ModelTable(NmFieldsMixin):
             # add the column
             self._cols.append(col)
 
-    def update_rows(self):
+
+    def update_rows(self) -> Self:
         """
         Re-Render the rows of the table.
         """
@@ -106,8 +107,10 @@ class ModelTable(NmFieldsMixin):
                 self._rows.append(row)
         if self.widget:
             self.widget.update()
+        return self
 
-    def bind_model(self, list_model: list[BaseModel]):
+
+    def bind_model(self, list_model: list[BaseModel]) -> Self:
         """
         Bind the table to a model instance.
         """
@@ -115,8 +118,10 @@ class ModelTable(NmFieldsMixin):
             raise TypeError(f"model must be a list of {self._model_cls}, got {type(list_model)}")
         self._list_model = list_model
         self.update_rows()
+        return self
 
-    def render(self, list_model: list[BaseModel] | None = None):
+
+    def render(self, list_model: list[BaseModel] | None = None) -> Self:
         """
         Render the table. If the model is given, it will be bound to the table.
         """
@@ -133,6 +138,8 @@ class ModelTable(NmFieldsMixin):
         self.widget.tailwind(self.tailwind)
         self.widget.style(self.style)
         self.widget.props(self.props)
+
+        return self
 
 
 class _ModelGridOptionInputs(typing_extensions.TypedDict, total=False):
@@ -175,7 +182,7 @@ class ModelGrid(NmFieldsMixin):
     _cols: list[dict[str, str]] = []
     _rows: list[dict[str, Any]] = []
 
-    def __init__(self, model_cls: type[BaseModel], **kwargs: Unpack[_ModelGridOptionInputs]):
+    def __init__(self, model_cls: type[BaseModel], **kwargs: Unpack[_ModelGridOptionInputs]) -> None:
         self._model_cls = model_cls
         if not isinstance(self._model_cls, type) or not issubclass(self._model_cls, BaseModel):
             raise TypeError(f"cls must be a subclass of BaseModel, got {type(self._model_cls)}")
@@ -213,7 +220,8 @@ class ModelGrid(NmFieldsMixin):
             # add the column
             self._cols.append(col)
 
-    def update_rows(self):
+
+    def update_rows(self) -> Self:
         """
         Re-Render the rows of the table.
         """
@@ -235,8 +243,10 @@ class ModelGrid(NmFieldsMixin):
                 self._rows.append(row)
         if self.widget:
             self.widget.update()
+        return self
 
-    def bind_model(self, list_model: list[BaseModel]):
+
+    def bind_model(self, list_model: list[BaseModel]) -> Self:
         """
         Bind the table to a model instance.
         """
@@ -244,8 +254,10 @@ class ModelGrid(NmFieldsMixin):
             raise TypeError(f"model must be a list of {self._model_cls}, got {type(list_model)}")
         self._list_model = list_model
         self.update_rows()
+        return self
 
-    def render(self, list_model: list[BaseModel] | None = None):
+
+    def render(self, list_model: list[BaseModel] | None = None) -> Self:
         """
         Render the table. If the model is given, it will be bound to the grid.
         """
@@ -268,6 +280,8 @@ class ModelGrid(NmFieldsMixin):
         self.widget.style(self.style)
         self.widget.props(self.props)
         self.widget.on('cellValueChanged', self.handle_cell_value_changed)
+        return self
+
 
     def handle_cell_value_changed(self, event) -> None:
         """
