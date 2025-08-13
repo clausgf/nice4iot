@@ -5,15 +5,6 @@ from app.core.forwarding.models import ForwardingModel, ForwardingModelList
 from app.core.project import get_project
 from pydantic import ValidationError
 
-def flatten_dict(d, parent_key: str = "", sep: str = "_"):
-    items = []
-    for k, v in d.items():
-        new_key = parent_key + sep + k if parent_key else k
-        if isinstance(v, dict):
-            items.extend(flatten_dict(v, new_key, sep=sep).items())
-        else:
-            items.append((new_key, v))
-    return dict(items)
 
 class ForwardingConfigCard:
     """Card for forwarding configuration."""
@@ -99,9 +90,6 @@ class ForwardingConfigCard:
         #ForwardingModel.model_validate(self.forwardings.forwards[row_data['id']])
         #ForwardingModel.model_validate(self.forwardings.forwards[row_data['id']])
         
-
-
-
 
     def add_row(self) -> None:
         """Add a new row to the table."""

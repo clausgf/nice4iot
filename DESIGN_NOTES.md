@@ -87,7 +87,53 @@ You can override the clean() method on a model form to provide additional valida
 Every ModelForm also has a save() method. This method creates and saves a database object from the data bound to the form. A subclass of ModelForm can accept an existing model instance as the keyword argument instance; if this is supplied, save() will update that instance. If it’s not supplied, save() will create a new instance of the specified model.
 
 
+### Django Tables
+
+#### Data Sources
+
+- in general: any _iterable_ that supports _len()_ and _contains items_ that exposes key-based access to column values
+- example: list of dicts
+  ```python
+    data = [
+        {"name": "Bradley"},
+        {"name": "Stevie"},
+    ]
+
+    class NameTable(tables.Table):
+        name = tables.Column()
+
+    table = NameTable(data)
+  ```
+- Django ORM QuerySet example:
+  ```python
+    class Person(models.Model):
+        first_name = models.CharField(max_length=200)
+        last_name = models.CharField(max_length=200)
+        user = models.ForeignKey(get_user_model(), null=True, on_delete=models.CASCADE)
+        birth_date = models.DateField()
+
+    # tables.py
+    import django_tables2 as tables
+
+    class PersonTable(tables.Table):
+        class Meta:
+            model = Person
+            # fields = ...
+            sequence = ("last_name", "first_name", "birth_date", )
+            exclude = ("user", )
+
+    # views.py
+    def person_list(request):
+        table = PersonTable(Person.objects.all())
+
+        return render(request, "person_list.html", {
+            "table": table
+        })
+  ```
+
+
 ### Python typing
+
 Add metadata x to type T: Annotated[T, x]
 If a library or tool encounters an annotation Annotated[T, x] and has no special logic for the metadata, it should ignore the metadata and simply treat the annotation as T. As such, Annotated can be useful for code that wants to use annotations for purposes outside Python’s static typing system.
 

@@ -8,7 +8,7 @@ import plotly.graph_objects as go
 
 from typing import List, Optional
 from fastapi import APIRouter, Request
-from nicegui import app, ui
+from nicegui import PageArguments, app, ui
 
 
 from app.config import app_config
@@ -21,6 +21,10 @@ from app.ui.theme import frame
 from app.util import is_valid_filename, render_datetime
 from app.core.telemetry.telemetry import TelemetryBackendTypes,get_tel,create_tel
 from app.core.logging.logging import LoggingBackendTypes,get_log,create_log
+from nicemodel.modeltable import ModelGrid
+
+import logging
+log = logging.getLogger('uvicorn')
 
 DEFAULT_PROVISIONING_TOKEN_LENGTH = 64
 DEFAULT_PROVISIONING_TOKEN_EXPIRY_DAYS = 7
@@ -372,18 +376,17 @@ class ProjectDevicesTable:
         self.project_name = project_name
         self.device_new_dialog = DeviceCreationDialog(project_name)
         self.devices = get_devices(project_name)
-        self.devices_cols = [
-            {'name': 'is_active', 'label': 'Active', 'field': 'is_active', 'sortable': True },
-            {'name': 'name', 'label': 'Name', 'field': 'name', 'sortable': True },
-            {'name': 'location', 'label': 'Location', 'field': 'location', 'sortable': True },
-            {'name': 'last_seen_at', 'label': 'Last seen', 'field': 'last_seen_at', 'sortable': True },
-            {'name': 'is_provisioning_approved', 'label': 'Last seen', 'field': 'is_provisioning_approved', 'sortable': True },
-        ]
-        self.devices_rows = []
-        self.update_devices_rows()
+
+        self.table = ModelGrid(Device, 
+                               title=f'{project_name.capitalize()}\'s Devices',
+                               fields=['is_active', 'name', 'location', 'last_seen_at', 'is_provisioning_approved'], 
+                               defaultColDef = {'sortable': True, 'editable': True},
+                               
+                               classes='w-full')
 
         # table with devices
-        self.devices_table = ui.table(title=f'{project_name.capitalize()}\'s Devices', columns=self.devices_cols, rows=self.devices_rows).classes('w-full')
+        self.devices_table = ui.table(title=f'{project_name.capitalize()}\'s Devices', 
+                                      columns=self.devices_cols, rows=self.devices_rows).classes('w-full')
         with self.devices_table.add_slot('top-right'):
             with ui.row():
                 with ui.input(placeholder='Search').props('type=search').bind_value(self.devices_table, 'filter').add_slot('append'):
@@ -392,19 +395,6 @@ class ProjectDevicesTable:
         self.devices_table.on('row-click', lambda msg: (
             ui.navigate.to(f'/projects/{self.project_name}/devices/{msg.args[1]["id"]}?tab=Settings'),
         ))
-
-    def update_devices_rows(self) -> None:
-        """Update the provisioning rows in the table."""
-        self.devices_rows.clear()
-        for device in self.devices:
-            self.devices_rows.append({
-                'id': device.name,
-                'is_active': device.is_active,
-                'name': device.name,
-                'location': device.location,
-                'last_seen_at': render_datetime(device.last_seen_at),
-                'is_provisioning_approved': device.is_provisioning_approved,
-            })
 
 
 @ui.page('/projects/{project_name:str}')
@@ -716,7 +706,145 @@ async def devices_page(project_name: str, device_name: str, tab: Optional[str] =
             tabs.set_value(dashboard_tab)
 
 
-@ui.page('/')
-def home_page():
-    ui.navigate.to(projects_page)
+# @ui.page('/')
+# def home_page():
+#     ui.navigate.to(projects_page)
 
+async def page_args_card(args: PageArguments):
+    with ui.card().props('flat bordered'):
+        with ui.card_section().props('header').classes('text-bold w-full'):
+            ui.label('args')
+            ui.separator()
+        with ui.card_section().props('content').classes('w-full'):
+            with ui.grid(columns=2):
+                ui.label('path')
+                ui.label(str(args.path))
+                ui.label('path_parameters')
+                ui.label(str(args.path_parameters))
+                ui.label('query_parameters')
+                ui.label(str(args.query_parameters))
+                ui.label('data')
+                ui.label(str(args.data))
+
+async def all_projects_page(args: PageArguments, title: ui.label, breadcrumbs: ui.element):
+    log.info(f'project_main_page {args=}')
+    title.text = 'Projects'
+    breadcrumbs.clear()
+    with breadcrumbs:
+        ui.element('q-breadcrumbs-el').props('icon=home').on('click', lambda: ui.navigate.to('/'))
+
+    ui.label('Projects').classes('text-h6 font-bold')
+    ui.button('Edit Project TestProject').on_click(lambda: ui.navigate.to('/TestProject'))
+
+
+async def project_page(args: PageArguments, title: ui.label, breadcrumbs: ui.element, project_id: str, tab: Optional[str] = None):
+    title.text = 'Project ' + project_id
+    breadcrumbs.clear()
+    with breadcrumbs:
+        ui.element('q-breadcrumbs-el').props('icon=home').on('click', lambda: ui.navigate.to('/'))
+        ui.element('q-breadcrumbs-el').props(f'label={project_id}').on('click', lambda: ui.navigate.to(f'/{project_id}'))
+
+    with ui.tabs().classes('w-full') as tabs:
+        dashboard_tab = ui.tab('Dashboard')
+        settings_tab = ui.tab('Settings')
+        devices_tab = ui.tab('Devices')
+    tab = 'Dashboard' if not tab else tab
+    with ui.tab_panels(tabs, value=tab) as panels:
+        with ui.tab_panel(dashboard_tab):
+            ui.label('Alarms').classes('text-h6 font-bold')
+            ui.label('Monitoring').classes('text-h6 font-bold')
+        with ui.tab_panel(settings_tab):
+            ui.label('Project Settings').classes('text-h6 font-bold')
+            ui.label('Provisioning Tokens').classes('text-h6 font-bold')
+        with ui.tab_panel(devices_tab):
+            ui.label('Project Devices').classes('text-h6 font-bold')
+            ui.button('Edit Device MyDevice').on_click(lambda: ui.navigate.to(f'/{project_id}/MyDevice'))
+
+
+async def device_page(args: PageArguments, title: ui.label, breadcrumbs: ui.element, project_id: str, device_id: str, tab: Optional[str] = None):
+    title.text = f'Device {project_id}/{device_id}'
+    breadcrumbs.clear()
+    with breadcrumbs:
+        ui.element('q-breadcrumbs-el').props('icon=home').on('click', lambda: ui.navigate.to('/'))
+        ui.element('q-breadcrumbs-el').props(f'label={project_id}').on('click', lambda: ui.navigate.to(f'/{project_id}'))
+        ui.element('q-breadcrumbs-el').props(f'label={device_id}').on('click', lambda: ui.navigate.to(f'/{project_id}/{device_id}'))
+
+    with ui.tabs().classes('w-full') as tabs:
+        dashboard_tab = ui.tab('Dashboard')
+        settings_tab = ui.tab('Settings')
+        data_explorer_tab = ui.tab('Data')
+        log_explorer_tab = ui.tab('Logs')
+    tab = 'Dashboard' if not tab else tab
+    with ui.tab_panels(tabs, value=tab) as panels:
+        with ui.tab_panel(dashboard_tab):
+            ui.label('Alarms').classes('text-h6 font-bold')
+            ui.label('Monitoring').classes('text-h6 font-bold')
+            ui.label('Logs').classes('text-h6 font-bold')
+        with ui.tab_panel(settings_tab):
+            ui.label('Device Settings').classes('text-h6 font-bold')
+            ui.label('Authentication Tokens').classes('text-h6 font-bold')
+        with ui.tab_panel(data_explorer_tab):
+            ui.label('Data Visualization').classes('text-h6 font-bold')
+        with ui.tab_panel(log_explorer_tab):
+            ui.label('Logs').classes('text-h6 font-bold')
+
+logo = '''
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="32" height="32">
+  <g fill="none" stroke="white" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Globe outline -->
+    <circle cx="32" cy="32" r="15.37"/>
+    <!-- Parallels -->
+    <ellipse cx="32" cy="32" rx="15.37" ry="5.13"/>
+    <ellipse cx="32" cy="32" rx="15.37" ry="10.26"/>
+    <!-- Meridians -->
+    <ellipse cx="32" cy="32" rx="5.13" ry="15.37"/>
+    <ellipse cx="32" cy="32" rx="10.26" ry="15.37"/>
+    <!-- Spokes to outer nodes -->
+    <line x1="47.37" y1="32" x2="53.33" y2="32"/>
+    <line x1="41.03" y1="17.33" x2="43.59" y2="12.11"/>
+    <line x1="22.97" y1="17.33" x2="20.41" y2="12.11"/>
+    <line x1="16.63" y1="32" x2="10.67" y2="32"/>
+    <line x1="22.97" y1="46.67" x2="20.41" y2="51.89"/>
+    <line x1="41.03" y1="46.67" x2="43.59" y2="51.89"/>
+    <!-- Nodes -->
+    <circle cx="53.33" cy="32" r="1.92"/>
+    <circle cx="43.59" cy="12.11" r="1.92"/>
+    <circle cx="20.41" cy="12.11" r="1.92"/>
+    <circle cx="10.67" cy="32" r="1.92"/>
+    <circle cx="20.41" cy="51.89" r="1.92"/>
+    <circle cx="43.59" cy="51.89" r="1.92"/>
+  </g>
+</svg>
+'''
+
+
+@ui.page('/')
+@ui.page('/{_:path}')
+async def alt_home_page():
+    with ui.header(elevated=True).classes('items-center justify-between'):
+        ui.html(logo).props('width=16 height=16').classes('text-white')
+        ui.label('4IoT').classes('text-h6 font-bold')
+        breadcrumbs = ui.element('q-breadcrumbs').props('active-color=white')
+        with breadcrumbs:
+            ui.element('q-breadcrumbs-el').props('icon=home').on('click', lambda: ui.navigate.to('/'))
+        ui.space()
+        title = ui.label().classes('text-h6 font-bold')
+        ui.space()
+        search = ui.input(placeholder='Search').props('type=search clearable rounded outlined dense bg-color=white').classes('w-64')
+        user_menu = ui.button(icon='person').props('outline round size=md dense color=white')
+        
+
+    # left_drawer = ui.left_drawer(fixed=False).props('bordered')
+
+    with ui.column().classes('w-full'):
+        ui.sub_pages({
+                '/': all_projects_page,
+                '/{project_id}': project_page,
+                '/{project_id}/{device_id}': device_page,
+            },
+            data={
+                'title': title,
+                'breadcrumbs': breadcrumbs
+            },
+        )
