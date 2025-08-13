@@ -21,9 +21,11 @@ from app.ui.theme import frame
 from app.util import is_valid_filename, render_datetime
 from app.core.telemetry.telemetry import TelemetryBackendTypes,get_tel,create_tel
 from app.core.logging.logging import LoggingBackendTypes,get_log,create_log
-from nicemodel.modeltable import ModelGrid
+from niceview.modelgrid import ModelGrid
 
 import logging
+
+from niceview.dataadapter import ListModelAdapter
 log = logging.getLogger('uvicorn')
 
 DEFAULT_PROVISIONING_TOKEN_LENGTH = 64
@@ -733,8 +735,20 @@ async def all_projects_page(args: PageArguments, title: ui.label, breadcrumbs: u
     with breadcrumbs:
         ui.element('q-breadcrumbs-el').props('icon=home').on('click', lambda: ui.navigate.to('/'))
 
-    ui.label('Projects').classes('text-h6 font-bold')
-    ui.button('Edit Project TestProject').on_click(lambda: ui.navigate.to('/TestProject'))
+    with ui.column().classes('w-full'):
+        #ui.label('Projects').classes('text-h6 font-bold')
+        #ui.button('Edit Project TestProject').on_click(lambda: ui.navigate.to('/TestProject'))
+
+        with ui.card().classes('w-full'):
+            ui.label('Projects').classes('text-h6 font-bold')
+            project_list = get_projects()
+            project_grid = ModelGrid(
+                Project, ListModelAdapter(Project, project_list), 
+                fields=['name', 'created_at', 'updated_at'],
+                classes='w-full'
+            )
+            project_grid.render()
+            project_grid.on_select(lambda e: log.info(f'inline on_change: {e.value=} {e.sender=} {e.client=}'))
 
 
 async def project_page(args: PageArguments, title: ui.label, breadcrumbs: ui.element, project_id: str, tab: Optional[str] = None):

@@ -60,7 +60,7 @@ class Fields(typing.Mapping[str, FieldInfo]):
             for f in self._include:
                 if not isinstance(f, str):
                     raise ValueError(f"Invalid field name to include: {include} must be '__all__', a string of comma separated field names or a list of field names")
-                if not hasattr(self._item_type, f):
+                if f not in getattr(self._item_type, 'model_fields', {}):
                     raise ValueError(f"Invalid field name to include: {f} is not '__all__' or a field of {self._item_type.__name__}")
 
         # prepare a list of fields to exclude
@@ -169,7 +169,7 @@ class Fields(typing.Mapping[str, FieldInfo]):
                 nv_field_info.widget_type = 'editgrid'
                 if nv_field_info.item_type is None:
                     for arg in typing.get_args(field_type):
-                        if isinstance(arg, type) and issubclass(arg, pydantic.BaseModel):
+                        if isinstance(arg, type): # TODO ... and issubclass(arg, pydantic.BaseModel):
                             nv_field_info.item_type = arg
                             break
                 if nv_field_info.item_type is None:
