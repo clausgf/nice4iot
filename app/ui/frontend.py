@@ -736,8 +736,8 @@ async def all_projects_page(args: PageArguments, title: ui.label, breadcrumbs: u
         ui.element('q-breadcrumbs-el').props('icon=home').on('click', lambda: ui.navigate.to('/'))
 
     with ui.column().classes('w-full'):
-        #ui.label('Projects').classes('text-h6 font-bold')
-        #ui.button('Edit Project TestProject').on_click(lambda: ui.navigate.to('/TestProject'))
+        ui.label('Projects').classes('text-h6 font-bold')
+        ui.button('Edit Project TestProject').on_click(lambda: ui.navigate.to('/TestProject'))
 
         with ui.card().classes('w-full'):
             ui.label('Projects').classes('text-h6 font-bold')
