@@ -10,7 +10,6 @@ from app.core.logging.logging import LoggingBackendTypes, create_log
 from app.core.telemetry.models import TelemetryBackendTypes
 from app.core.telemetry.telemetry import create_tel
 from app.ui.forwarding_config_card import ForwardingConfigCard
-from app.ui.util import build_dialog
 from app.util import is_valid_filename, render_datetime
 from app.config import app_config
 from app.core.models import AuthToken, Project
