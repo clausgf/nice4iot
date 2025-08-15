@@ -40,21 +40,6 @@ class EditProjectGridWrapper(EditGridWrapper):
             return
         ui.navigate.to(f"/{project_name}")
     
-    async def delete_item(self, event: ClickEventArguments) -> None:
-        project_name = await self._get_selected_row_key()
-        if not project_name:
-            ui.notify('No project selected. Please select a project first!')
-            return
-        result = await build_dialog('Delete Project', 
-                                    f'Are you sure you want to delete the project {project_name}?', 
-                                    ['|2Cancel', '-Delete'])
-        if result == 'Delete':
-            ui.notify(f"Delete project {project_name}", type='positive')
-        else:
-            ui.notify('Project deletion cancelled', type='negative')
-
-        ui.navigate.to(f"/")
-
 
 async def all_projects_subpage(args: PageArguments, title: ui.label, breadcrumbs: ui.element):
     log.info(f'project_main_page {args=}')
