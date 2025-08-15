@@ -22,7 +22,7 @@ class AuthToken(BaseModel):
 
 class Project(BaseModel):
     is_active: bool = True
-    name: str
+    name: str # project name is unique and used as a key
     description: str = ""
     created_at: datetime.datetime = Field(default_factory=NOW_FACTORY)
     updated_at: datetime.datetime = Field(default_factory=NOW_FACTORY)

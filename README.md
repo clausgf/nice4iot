@@ -4,7 +4,7 @@ Nice4iot is a IoT management platform written in python with a web frontend util
 
 # Development
 
-#### Pull latest niceview relesed to its split branch
+### Pull latest niceview relesed to its split branch
 ```bash
 git subtree pull --prefix=niceview niceview niceview-split --squash
 ````
@@ -15,7 +15,12 @@ rm -rf niceview
 git subtree add --prefix=niceview niceview niceview-split --squash
 ```
 
-#### Push latest niceview changes to niceview repository (___not recommended!!!___)
+Alternative bei "unrelated histories":
+```bash
+git subtree pull --prefix=niceview niceview niceview-split --squash --allow-unrelated-histories
+```
+
+### Push latest niceview changes to niceview repository (___not recommended!!!___)
 ```bash
 git subtree push --prefix=niceview niceview niceview-split
 ````

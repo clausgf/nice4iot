@@ -7,7 +7,6 @@ from app.api.provisioning import router as provisioning_router
 from app.api.device import router as device_router
 from app.api.file import router as file_router
 
-from app.ui.frontend import router as ui_router
 import app.ui.frontend as frontend
 
 app = FastAPI()
