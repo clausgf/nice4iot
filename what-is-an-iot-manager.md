@@ -69,15 +69,11 @@ Collected data is rarely consumed exclusively within the IoT platform. Export AP
 
 When a platform serves multiple customers, sites, or organisational units, strong isolation between tenants is required: data, credentials, and configuration must not bleed across boundaries. Horizontal scalability (multiple stateless backend instances behind a load balancer) ensures the platform grows with the device fleet.
 
-### 14. Edge Computing and Aggregation
-
-Sending every raw sensor reading to the cloud becomes expensive and slow at high device counts or high sampling rates. Edge nodes (gateways or local brokers) can pre-aggregate, filter, or transform data before forwarding a reduced stream to the central platform.
-
-### 15. Backup and Restore
+### 14. Backup and Restore
 
 Configuration data, device registries, and time-series data must be recoverable after hardware failure or accidental deletion. A clear backup strategy — including the time-series database, not just configuration files — and documented restore procedures are part of a production-ready platform.
 
-### 16. Certificate Management
+### 15. Certificate Management
 
 When TLS client certificates are used, the platform must handle the full certificate lifecycle: issuance (via an internal CA or ACME), distribution to devices, expiry monitoring, and revocation. This is often the most operationally demanding aspect of a certificate-based security model.
 
@@ -113,6 +109,5 @@ nice4iot is a lightweight, self-hosted IoT manager designed for small-to-medium 
 | **REST API for third-party export** | ⚠️ Device API is REST; no dedicated data-export API (Prometheus scraping covers this) |
 | **Multi-tenancy (project isolation)** | ✅ Project-level isolation for devices, tokens, config, and telemetry |
 | **Horizontal scalability** | ❌ Single-process; filesystem state is not shared across instances |
-| **Edge computing / aggregation** | ❌ Not implemented; all processing on the central server |
 | **Platform backup / restore** | ⚠️ Config: `rsync data/projects/` suffices; no tooling provided. TSDB backup: Prometheus responsibility |
 | **Certificate management** | ❌ Not implemented |
