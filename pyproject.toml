@@ -13,6 +13,7 @@ requires-python = ">=3.12"
 dependencies = [
     "nicegui",
     "uvicorn",
+    "anyio",
     "pydantic-settings",
     "protobuf>=6.33.5,<8",
     "python-snappy>=0.7.3",
@@ -31,6 +32,20 @@ dev = [
     "httpx>=0.28.1",
     "httpx2>=2.5.0",
     "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--tb=short"
+
+[tool.coverage.run]
+source = ["app"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
 ]
 
 [tool.uv.sources]
