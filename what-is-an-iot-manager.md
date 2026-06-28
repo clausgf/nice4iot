@@ -2,6 +2,8 @@
 
 An IoT manager (also called an IoT platform or IoT backend) is the server-side software that connects, organises, and monitors a fleet of embedded devices. It sits between the physical hardware and the applications that consume device data. Its job is to abstract away the operational complexity of running many devices in the field: authentication, connectivity, data ingestion, configuration delivery, firmware updates, and alerting — so that application developers can focus on business logic rather than infrastructure.
 
+Commercial IoT platforms (AWS IoT Core, Azure IoT Hub, Google Cloud IoT) cover the full feature set below at the cost of significant operational complexity, vendor lock-in, and per-message pricing that scales poorly for high-frequency telemetry. At the other end of the spectrum, a self-hosted platform can deliberately stay simple: a single process, a single tenant, no distributed state. This is the approach taken by **nice4iot** — it targets small-to-medium device fleets in a single organisational context where operational simplicity, full data ownership, and zero cloud dependency outweigh the benefits of massive scalability. Features that would require horizontal scaling or multi-tenant isolation are explicitly out of scope.
+
 ---
 
 ## Core Features
