@@ -1,9 +1,9 @@
+import os
 import copy
 import datetime
-from typing import Optional, Unpack
+from typing import Optional
 
 from nicegui import PageArguments, app, ui
-from nicegui.events import ClickEventArguments
 
 from app.core.auth import generate_token
 from app.core.logging.logging import LoggingBackendTypes, create_log
@@ -16,8 +16,8 @@ from app.core.models import AuthToken, Project
 from app.core.project import ProjectModelAdapter, create_project, get_project, get_projects, update_project
 from app.ui.theme import frame
 
-from niceview.modeledit import _EditGridWrapperInputs, EditGridWrapper
-from niceview.modelgrid import ModelGrid
+from niceview.wrapper import EditGridWrapper
+from niceview.grid import ModelGrid
 
 import logging
 log = logging.getLogger("uvicorn")
@@ -29,16 +29,23 @@ DEFAULT_PROVISIONING_TOKEN_EXPIRY_DAYS = 7
 # ***************************************************************************
 
 class EditProjectGridWrapper(EditGridWrapper):
-    def __init__(self, project_grid: ModelGrid) -> None:
+    """Wraps the project ModelGrid: Edit navigates to project page, Add opens the creation dialog."""
+
+    def __init__(self, project_grid: ModelGrid, creation_dialog: 'ProjectCreationDialog') -> None:
         super().__init__(project_grid, title='Projects')
-    
-    async def update_item(self, event: ClickEventArguments) -> None:
+        self._creation_dialog = creation_dialog
+
+    async def create_item(self) -> None:
+        await self._creation_dialog.show()
+        self.grid.update_rows()
+
+    async def update_item(self) -> None:
         project_name = await self._get_selected_row_key()
         if not project_name:
             ui.notify('No project selected. Please select a project first!')
             return
         ui.navigate.to(f"/{project_name}")
-    
+
 
 async def all_projects_subpage(args: PageArguments, title: ui.label, breadcrumbs: ui.element):
     log.info(f'project_main_page {args=}')
@@ -47,14 +54,16 @@ async def all_projects_subpage(args: PageArguments, title: ui.label, breadcrumbs
     with breadcrumbs:
         ui.element('q-breadcrumbs-el').props('icon=home').on('click', lambda: ui.navigate.to('/'))
 
+    project_new_dialog = ProjectCreationDialog()
     project_grid = ModelGrid(
         Project, ProjectModelAdapter(),
         include=['name', 'tags', 'created_at', 'updated_at'],
         rowSelection='single',
     )
-    project_edit = EditProjectGridWrapper(project_grid)
-    # project_grid.on_select(lambda e: ui.navigate.to(f"/{e.value['name']}"))
+    project_edit = EditProjectGridWrapper(project_grid, project_new_dialog)
     project_edit.render()
+    if project_edit.grid.widget:
+        project_edit.grid.widget.classes('w-full')
 
 # ***************************************************************************
 
@@ -126,17 +135,27 @@ class ProjectCreationDialog:
 
     def __init__(self):
         self.project_name = ''
-        self.telemetry_backend = TelemetryBackendTypes.SQL
+        self.telemetry_backend = TelemetryBackendTypes.PROMETHEUS
         self.logging_backend = LoggingBackendTypes.LOKI
         with ui.dialog().style('width: 400px') as self.dialog:
             with ui.card().classes('w-full'):
                 ui.label('Create Project').classes('text-h6 center')
-                val_rules = { "Project name contains invalid characters. Please use letters, number, underscore, plus and minus only.": lambda x: is_valid_filename(x) }
-                ui.input(label='Project Name', placeholder='enter a project name here', validation=val_rules).bind_value(self, 'project_name').classes('w-full')
-                with ui.dropdown_button("Choose a Telemetry Backend",auto_close=True):
-                    ui.item('Prometheus',on_click=lambda: (lambda obj: setattr(obj,'telemetry_backend',TelemetryBackendTypes.PROMETHEUS))(self))
-                    ui.item('InfluxDB',on_click=lambda: (lambda obj: setattr(obj,'telemetry_backend',TelemetryBackendTypes.SQL))(self))
-                    ui.item('SQL',on_click=lambda: (lambda obj: setattr(obj,'telemetry_backend',TelemetryBackendTypes.INFLUX2)(self)))
+                val_rules = {
+                    "Invalid name: use letters, digits, underscore, plus, minus only.": lambda x: is_valid_filename(x)
+                }
+                ui.input(
+                    label='Project Name',
+                    placeholder='enter a project name here',
+                    validation=val_rules,
+                ).bind_value(self, 'project_name').classes('w-full')
+                ui.select(
+                    label='Telemetry Backend',
+                    options={t: t.name.capitalize() for t in TelemetryBackendTypes},
+                ).bind_value(self, 'telemetry_backend').classes('w-full')
+                ui.select(
+                    label='Logging Backend',
+                    options={l: l.name.capitalize() for l in LoggingBackendTypes},
+                ).bind_value(self, 'logging_backend').classes('w-full')
                 with ui.row().classes('w-full place-content-end'):
                     ui.space()
                     ui.button('Cancel').props('color=secondary').on_click(lambda: self.dialog.submit(False))
@@ -146,10 +165,14 @@ class ProjectCreationDialog:
         """Show the dialog."""
         result = await self.dialog
         if result and self.project_name and is_valid_filename(self.project_name):
-            project = create_project(Project(name=self.project_name,telemetryBackend=self.telemetry_backend,logging_backend=self.logging_backend))
-            create_tel(self.project_name,self.telemetry_backend)
-            create_log(self.project_name,self.logging_backend)
-            ui.notify(f"Created project {project.name}", type='positive'),
+            project = create_project(Project(
+                name=self.project_name,
+                telemetryBackend=self.telemetry_backend,
+                loggingBackend=self.logging_backend,
+            ))
+            create_tel(self.project_name, self.telemetry_backend)
+            create_log(self.project_name, self.logging_backend)
+            ui.notify(f"Created project {project.name}", type='positive')
             ui.navigate.to(f'/projects/{project.name}?tab=Settings')
         else:
             ui.notify("Project creation cancelled", type='negative')
@@ -182,7 +205,7 @@ class ProvisioningTokenDialog:
                 ))
                 ui.button('Copy', icon='content_copy').props('color=primary').on_click(lambda: (
                     ui.clipboard.write(self.token.value),
-                    ui.notify(f"Copied token {self.token.value} to clipboard", type='positive'),
+                    ui.notify(f"Copied token to clipboard", type='positive'),
                 ))
             ui.label().bind_text_from(self, 'last_use').classes('text-sm text-gray-500')
             ui.label().bind_text_from(self, 'creation').classes('text-sm text-gray-500')
@@ -195,16 +218,13 @@ class ProvisioningTokenDialog:
 
     def show(self, token_index: int = -1, token: AuthToken = None) -> None:
         """Open the dialog for editing/creating a provisioning token."""
-        # setup values
         self.token_index = token_index
         if token:
-            # copy contents to the self.token instance
             for field, value in token.model_dump().items():
                 setattr(self.token, field, value)
             self.heading = 'Edit Provisioning Token'
             self.ok_button = 'Save'
         else:
-            # copy contents to the self.token instance
             for field, value in AuthToken(value='').model_dump().items():
                 setattr(self.token, field, value)
             self.set_random_token()
@@ -212,32 +232,30 @@ class ProvisioningTokenDialog:
             self.ok_button = 'Create'
         self.token_length = DEFAULT_PROVISIONING_TOKEN_LENGTH
         self.last_use = f'Last use at {render_datetime(token.last_use_at)}' if token_index >= 0 else 'never'
-        self.creation = f'Created at {render_datetime(token.created_at)}, last update at {render_datetime(token.updated_at)}' if token_index >= 0 else ''
+        self.creation = f'Created at {render_datetime(token.created_at)}' if token_index >= 0 else ''
         self.delete_button.set_visibility(self.token_index >= 0)
         self.dialog.open()
 
     def set_random_token(self) -> None:
-        """Create a random token of given length."""
         self.token.value = generate_token(self.token_length)
 
     def on_ok(self) -> None:
-        """Handle the OK button click."""
         now = datetime.datetime.now(datetime.timezone.utc)
         if self.token_index < 0:
             self.token.created_at = now
-        #self.token.updated_at = now
         self.project_settings.on_token_update(self.token_index, copy.copy(self.token))
         self.dialog.close()
 
     def on_cancel(self) -> None:
-        """Handle the cancel button click."""
         self.dialog.close()
 
     async def on_delete(self) -> None:
-        """Handle the delete button click."""
-        result = await build_dialog('Delete Provisioning Token', 
-                                    f'Are you sure you want to delete the provisioning token {self.token.value}?', 
-                                    ['|2Cancel', '-Delete'])
+        from app.ui.util import build_dialog
+        result = await build_dialog(
+            'Delete Provisioning Token',
+            f'Are you sure you want to delete the provisioning token?',
+            ['|2Cancel', '-Delete'],
+        )
         if result == 'Delete':
             self.project_settings.on_token_delete(self.token_index)
         else:
@@ -253,11 +271,11 @@ class ProjectSettingsCard:
     def __init__(self, project_name: str):
         self.project_name = project_name
         self.project = get_project(project_name)
-        self.token_expiry = self.project.device_tokens_expire_in.days   # has to be stored separately for editing
+        self.token_expiry = self.project.device_tokens_expire_in.days
         self.provisioning_cols = [
-            {'name': 'is_active', 'label': 'Active', 'field': 'is_active', 'sortable': True },
-            {'name': 'token', 'label': 'Token', 'field': 'value', 'sortable': True },
-            {'name': 'last_use_at', 'label': 'Last use', 'field': 'last_use_at', 'sortable': True },
+            {'name': 'is_active', 'label': 'Active', 'field': 'is_active', 'sortable': True},
+            {'name': 'token', 'label': 'Token', 'field': 'value', 'sortable': True},
+            {'name': 'last_use_at', 'label': 'Last use', 'field': 'last_use_at', 'sortable': True},
         ]
         self.provisioning_rows = []
         self.update_provisioning_rows()
@@ -272,16 +290,20 @@ class ProjectSettingsCard:
             ui.checkbox(text='Auto approve provisioning').bind_value(self.project, 'is_provisioning_autoapproval')
             ui.number(label='Auth token expiry (days)').bind_value(self, 'token_expiry')
 
-            # forwardings
             self.forwardings_card = ForwardingConfigCard(self.project_name)
 
-            # table with provisioning tokens
-            self.provisioning_table = ui.table(title='Provisioning Tokens', columns=self.provisioning_cols, rows=self.provisioning_rows).classes('w-full')
+            self.provisioning_table = ui.table(
+                title='Provisioning Tokens',
+                columns=self.provisioning_cols,
+                rows=self.provisioning_rows,
+            ).classes('w-full')
             with self.provisioning_table.add_slot('top-right'):
                 with ui.row():
                     with ui.input(placeholder='Search').props('type=search').bind_value(self.provisioning_table, 'filter').add_slot('append'):
                         ui.icon('search')
-                    ui.button('New', icon='add').props('color=primary').classes('w-24').on_click(lambda: self.provisioning_token_dialog.show())
+                    ui.button('New', icon='add').props('color=primary').classes('w-24').on_click(
+                        lambda: self.provisioning_token_dialog.show()
+                    )
             self.provisioning_table.on('row-click', lambda msg: (
                 id := msg.args[1]['id'],
                 index := next((i for i, t in enumerate(self.provisioning_rows) if t['id'] == id), -1),
@@ -289,68 +311,71 @@ class ProjectSettingsCard:
                 self.provisioning_token_dialog.show(index, token),
             ))
 
-            ui.label(f'Project created at {render_datetime(self.project.created_at)}, last update at {render_datetime(self.project.updated_at)}')
+            ui.label(
+                f'Project created at {render_datetime(self.project.created_at)}, '
+                f'last update at {render_datetime(self.project.updated_at)}'
+            )
             with ui.row().classes('w-full place-content-end'):
                 ui.button('Delete').props('color=red').on_click(lambda: (
-                    # TODO confirm delete dialog
-                    # delete_project(project.name),
                     ui.notify(f"TODO Deleted {self.project.name}", type='positive'),
                     ui.navigate.to('/projects'),
                 ))
                 ui.space()
                 ui.button('Reload').props('color=secondary').on_click(lambda: (
-                    project := get_project(self.project_name),
-                    self.update_provisioning_rows(),
-                    ui.notify(f"Reloaded project {self.project.name}", type='positive'),
+                    self.reload(),
                 ))
-                ui.button('Save').props('color=primary').on_click(lambda: (
-                    self.save(),
-                ))
+                ui.button('Save').props('color=primary').on_click(lambda: self.save())
+
+    def reload(self) -> None:
+        self.project = get_project(self.project_name)
+        self.update_provisioning_rows()
+        self.provisioning_table.update()
+        ui.notify(f"Reloaded project {self.project.name}", type='positive')
 
     def update_provisioning_rows(self) -> None:
-        """Update the provisioning rows in the table."""
         self.provisioning_rows.clear()
         for token in self.project.provisioning_tokens:
             self.provisioning_rows.append({
                 'id': token.value,
                 'is_active': token.is_active,
-                'token': (token.value[:17] + '...') if len(token.value) > 20 else token.value,
+                'value': (token.value[:17] + '...') if len(token.value) > 20 else token.value,
                 'last_use_at': render_datetime(token.last_use_at),
             })
 
     def save(self) -> None:
-        """Save self.project."""
         self.project.device_tokens_expire_in = datetime.timedelta(days=self.token_expiry)
         if self.project.name != self.project_name:
             if not is_valid_filename(self.project.name):
                 ui.notify(f"Invalid project name {self.project.name}, project was not saved", type='negative')
                 return
-            if os.path.exists(os.path.join(app_config.projects_dir, self.project.name)):
+            new_path = os.path.join(app_config.projects_dir, self.project.name)
+            if os.path.exists(new_path):
                 ui.notify(f"Project {self.project.name} already exists, project was not saved", type='negative')
                 return
-            # rename project
-            os.rename(os.path.join(app_config.projects_dir, self.project_name), os.path.join(app_config.projects_dir, self.project.name))
+            os.rename(
+                os.path.join(app_config.projects_dir, self.project_name),
+                new_path,
+            )
             self.project = update_project(self.project)
-            ui.notify(f"Renamed project {self.project_name} to {self.project.name} & saved project", type='positive')
+            ui.notify(f"Renamed & saved project {self.project.name}", type='positive')
             ui.navigate.to(f'/projects/{self.project.name}')
+            return
         self.project = update_project(self.project)
         ui.notify(f"Saved project {self.project.name}", type='positive')
 
     def on_token_delete(self, token_index: int) -> None:
-        """Handle token deletion."""
         deleted = self.project.provisioning_tokens.pop(token_index)
-        self.provisioning_rows.remove(next((t for t in self.provisioning_rows if t['id'] == deleted.value), None))
+        row = next((t for t in self.provisioning_rows if t['id'] == deleted.value), None)
+        if row:
+            self.provisioning_rows.remove(row)
         self.provisioning_table.update()
-        ui.notify(f"Deleted provisioning token {deleted.value}", type='positive')
+        ui.notify(f"Deleted provisioning token", type='positive')
 
     def on_token_update(self, token_index: int, token: AuthToken) -> None:
-        """Handle token change."""
         if token_index < 0:
             self.project.provisioning_tokens.append(token)
         else:
             self.project.provisioning_tokens[token_index] = token
         self.update_provisioning_rows()
         self.provisioning_table.update()
-        ui.notify(f"Updated provisioning token {token.value}", type='positive')
-
-
+        ui.notify(f"Updated provisioning token", type='positive')

@@ -14,8 +14,6 @@ from app.ui.theme import frame
 from app.util import is_valid_filename, render_datetime
 from app.core.telemetry.telemetry import TelemetryBackendTypes,get_tel,create_tel
 from app.core.logging.logging import LoggingBackendTypes,get_log,create_log
-from niceview.modelgrid import ModelGrid
-
 import logging
 log = logging.getLogger('uvicorn')
 
