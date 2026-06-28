@@ -1,118 +1,258 @@
+"""
+Device File API
+===============
+
+Provides device-specific file storage with per-project fallback.
+Primary use cases:
+
+* **Config delivery** — serve per-device or project-wide configuration files
+  to devices on demand (e.g. ``config.json``, ``ca.crt``).
+* **OTA firmware updates** — serve firmware binaries (e.g. ``firmware.bin``).
+* **Device uploads** — receive small files pushed by devices (e.g. diagnostic dumps).
+
+File lookup for GET and HEAD
+----------------------------
+Files are looked up in two locations:
+
+1. ``<projects_dir>/<project>/<device>/<filename>``  (device-specific)
+2. ``<projects_dir>/<project>/<filename>``           (project-wide fallback)
+
+The device-specific file takes priority. If neither exists, 404 is returned.
+
+PUT always writes to the device-specific path.
+
+Cache-validation (ETag / If-None-Match)
+---------------------------------------
+All responses include an ``ETag`` header (MD5 of ``mtime + file_size``).
+Clients should cache the ETag and send it as ``If-None-Match`` on subsequent
+requests. When the ETag matches, the server returns 304 and the client reuses
+its cached copy — this minimises download traffic for firmware that has not changed.
+
+Authentication
+--------------
+All endpoints require a valid device bearer token (see ``POST /api/provision``).
+Send it as ``Authorization: Bearer <accessToken>``.
+"""
+
 from email.utils import formatdate
 import hashlib
 from pathlib import Path
-from typing import Any
 import anyio
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Response, status
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 import os
 import stat
-import json
 
 from app.api.dependencies import DeviceAuthInfo, device_auth
 from app.core.device import get_file_path
 from app.util import logger
 from app.config import app_config
 
-
 ###############################################################################
 
 router = APIRouter()
 
-##############################################################################
+###############################################################################
 
-# https://stackoverflow.com/questions/69588611/how-using-browser-cache-when-fetching-files-from-fastapi
+
 async def get_headers(file_path: Path) -> dict[str, str]:
+    """
+    Compute and return caching headers for the given file path.
+
+    Returns a dict with: ``Cache-Control``, ``Content-Location``, ``Date``,
+    and ``ETag``. The ETag is an MD5 hex digest of ``"<mtime>-<size>"``.
+
+    :raises HTTPException 404: File does not exist.
+    :raises RuntimeError: Path exists but is not a regular file.
+    """
     try:
         stat_info = await anyio.to_thread.run_sync(os.stat, file_path)
     except FileNotFoundError:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, f"File at path {file_path} does not exist.")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"File not found: {file_path.name}")
 
     mode = stat_info.st_mode
     if not stat.S_ISREG(mode):
-        raise RuntimeError(f"File at path {file_path} is not a file.")
+        raise RuntimeError(f"Path {file_path} is not a regular file.")
 
     last_modified = formatdate(stat_info.st_mtime, usegmt=True)
     etag_base = f"{stat_info.st_mtime}-{stat_info.st_size}"
     etag = hashlib.md5(etag_base.encode()).hexdigest()
 
-    headers = {
+    return {
         "Cache-Control": "no-cache",
         "Content-Location": str(file_path),
         "Date": last_modified,
         "ETag": etag,
     }
-    return headers
 
-##############################################################################
+
+###############################################################################
+
 
 @router.head(
-        '/file/{project_name}/{device_name}/{filename}',
-        summary="Get headers for a resource from the file system, but not the resource itself; if the device specific resource is not available, return a project wide default",
-        response_description="The requested resource",
-        responses={
-            status.HTTP_200_OK: { "description": "File found with modifications" },
-            status.HTTP_304_NOT_MODIFIED: { "description": "File found but not modified" },
-            status.HTTP_404_NOT_FOUND: { "description": "File not found", "detail": "str" },
-            status.HTTP_400_BAD_REQUEST: { "description": "Bad request", "detail": "str", },
+    '/file/{project_name}/{device_name}/{filename}',
+    summary="Check whether a file exists and retrieve its cache headers",
+    response_description="Cache headers (ETag, Cache-Control, Date, Content-Location)",
+    responses={
+        200: {
+            "description": (
+                "File found. Response headers include ``ETag``, ``Cache-Control``, "
+                "``Date``, and ``Content-Location``. No response body."
+            )
         },
+        304: {
+            "description": (
+                "File found but ETag matches ``If-None-Match`` — "
+                "client's cached copy is still valid. No response body."
+            )
+        },
+        401: {"description": "Missing, invalid, or expired bearer token."},
+        404: {
+            "description": (
+                "Neither a device-specific nor a project-wide file with this name exists."
+            )
+        },
+    },
 )
 async def head_resource(
-    project_name: str, 
-    device_name: str, 
+    project_name: str,
+    device_name: str,
     filename: str,
     if_none_match: str | None = Header(default=None),
-    dev: DeviceAuthInfo = Depends(device_auth)
-):
+    dev: DeviceAuthInfo = Depends(device_auth),
+) -> Response:
+    """
+    Return cache headers for a file without transferring its contents.
+
+    Useful for checking whether a new firmware or config file is available
+    before deciding to download it. The ETag can be compared locally without
+    issuing a full GET.
+
+    **File lookup**: device-specific path first, project-wide fallback if not found.
+
+    **If-None-Match**: if the request includes ``If-None-Match: <etag>`` and the
+    ETag matches the current file, responds with **304 Not Modified**.
+    """
     file_path = get_file_path(project_name, device_name, filename)
     headers = await get_headers(file_path)
-    file_etag = headers['ETag'] # await get_etag(file_path)
 
-    if if_none_match == file_etag:
-        # shall return these headers: Cache-Control, Content-Location, Date, ETag, Expires, and Vary
+    if if_none_match == headers['ETag']:
         return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers=headers)
-    else:
-        # return all the headers
-        return Response(status_code=status.HTTP_200_OK, headers=headers)
+    return Response(status_code=status.HTTP_200_OK, headers=headers)
 
-##############################################################################
+
+###############################################################################
+
 
 @router.get(
-        '/file/{project_name}/{device_name}/{filename}',
-        summary="Get a resource from the file system; if the device specific resource is not available, return a project wide default",
-        response_description="The requested resource",
+    '/file/{project_name}/{device_name}/{filename}',
+    summary="Download a file (device-specific or project-wide fallback)",
+    response_description="File contents with cache headers",
+    responses={
+        200: {
+            "description": (
+                "File contents. Response includes ``ETag``, ``Cache-Control``, "
+                "``Date``, and ``Content-Location`` headers."
+            )
+        },
+        304: {
+            "description": (
+                "ETag matches ``If-None-Match`` — file has not changed since "
+                "the client last downloaded it. No response body."
+            )
+        },
+        401: {"description": "Missing, invalid, or expired bearer token."},
+        404: {
+            "description": (
+                "Neither a device-specific nor a project-wide file with this name exists."
+            )
+        },
+    },
 )
 async def get_resource(
-    project_name: str, 
-    device_name: str, 
+    project_name: str,
+    device_name: str,
     filename: str,
     if_none_match: str | None = Header(default=None),
-    dev: DeviceAuthInfo = Depends(device_auth)
-):
+    dev: DeviceAuthInfo = Depends(device_auth),
+) -> Response:
+    """
+    Download a file from device-specific storage or the project-wide fallback.
+
+    **File lookup** (in order):
+
+    1. ``<projects_dir>/<project>/<device>/<filename>`` — device-specific file.
+    2. ``<projects_dir>/<project>/<filename>`` — project-wide default.
+
+    If neither exists, returns **404**.
+
+    **ETag caching**
+
+    The response always includes an ``ETag`` header. On subsequent requests,
+    send the received ETag as ``If-None-Match: <etag>``; the server returns
+    **304 Not Modified** without a body if the file has not changed.
+    This is the recommended pattern for firmware OTA: the device checks with
+    HEAD or GET + If-None-Match on every boot and skips the download when the
+    ETag matches its locally stored value.
+    """
     file_path = get_file_path(project_name, device_name, filename)
     headers = await get_headers(file_path)
-    file_etag = headers['ETag'] # await get_etag(file_path)
 
-    if if_none_match == file_etag:
+    if if_none_match == headers['ETag']:
         return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers=headers)
-    else:
-        return FileResponse(file_path, headers=headers)
+    return FileResponse(file_path, headers=headers)
 
-##############################################################################
+
+###############################################################################
+
 
 @router.put(
-        '/file/{project_name}/{device_name}/{filename}',
-        summary="Put a resource to the file system",
+    '/file/{project_name}/{device_name}/{filename}',
+    summary="Upload a file to device-specific storage",
+    response_description="Empty 200 on success",
+    responses={
+        200: {"description": "File written successfully."},
+        401: {"description": "Missing, invalid, or expired bearer token."},
+        404: {"description": "Project or device not found."},
+        413: {
+            "description": (
+                f"File exceeds the configured maximum upload size "
+                f"(``app_config.max_upload_size`` bytes). "
+                "The file is truncated and the request is rejected."
+            )
+        },
+    },
 )
 async def put_resource(
-    project_name: str, 
-    device_name: str, 
+    project_name: str,
+    device_name: str,
     filename: str,
     request: Request,
-    dev: DeviceAuthInfo = Depends(device_auth)
-):
+    dev: DeviceAuthInfo = Depends(device_auth),
+) -> Response:
+    """
+    Upload a file to the device-specific directory.
+
+    The request body is written verbatim to::
+
+        <projects_dir>/<project>/<device>/<filename>
+
+    The file is created if it does not exist; overwritten if it does.
+    Writing always goes to the **device-specific** path — there is no way
+    for a device to write to the project-wide fallback path via this endpoint.
+
+    **Size limit**
+
+    The upload is streamed and the size is checked chunk by chunk.
+    If the total body length exceeds ``app_config.max_upload_size``, the
+    partially-written file is left on disk (truncated at the limit) and
+    **413 Request Entity Too Large** is returned.
+
+    **Content-Type**
+
+    Not validated; the file is stored as raw bytes regardless of content type.
+    """
     file_path = get_file_path(project_name, device_name, filename, check_file_exists=False)
-    # write incoming body to file
     with Path(file_path).open("wb") as f:
         length = 0
         async for chunk in request.stream():
@@ -124,3 +264,4 @@ async def put_resource(
             else:
                 f.write(chunk)
     logger.debug(f"wrote {length} bytes to {file_path}")
+    return Response(status_code=200)
