@@ -1,7 +1,6 @@
 import json,typing
 
 from pydantic import BaseModel
-from pydantic.tools import parse_obj_as
 
 from app.core.telemetry.models import TelemetryBackend, TelemetryBackendTypes
 from app.core.telemetry.prometheus.prometheus_telemetry import PrometheusBackend,PrometheusConfig

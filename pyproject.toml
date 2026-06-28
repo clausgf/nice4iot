@@ -14,7 +14,6 @@ dependencies = [
     "nicegui",
     "uvicorn",
     "pydantic-settings",
-    "sqlmodel",
     "protobuf>=6.33.5,<8",
     "python-snappy>=0.7.3",
     "pytz",

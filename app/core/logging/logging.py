@@ -1,8 +1,6 @@
 import json
-
 from enum import Enum
-from pydantic.tools import parse_obj_as
-
+from pydantic import TypeAdapter
 
 from app.core.logging.loki.logging_loki_backend import LokiBackend, LokiConfig
 from app.core.logging.file.logging_file_backend import FileLogBackend, FileLogConfig
@@ -39,6 +37,6 @@ def get_log(project_name: str,logBackend: LoggingBackendTypes):
     project_path = app_config.projects_dir / project_name
     log_conf_file_path = project_path / LOG_CONF_FILE_NAME
     with open(log_conf_file_path) as f:
-        log_conf = parse_obj_as(getLogBackendConfigByEnum(logBackend),json.loads(f.read()))
+        log_conf = TypeAdapter(getLogBackendConfigByEnum(logBackend)).validate_python(json.loads(f.read()))
     return getLogBackendByEnum(logBackend)(project_name,log_conf)
 
