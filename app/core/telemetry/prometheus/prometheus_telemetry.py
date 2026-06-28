@@ -29,23 +29,29 @@ class PrometheusBackend(TelemetryBackend):
         """
         wr = prom_spec_pb2.WriteRequest()
 
-        metadata = types_pb2.MetricMetadata()
-        metadata.type = types_pb2.MetricMetadata.MetricType.GAUGE  # 1
-        metadata.metric_family_name = self.project_name
-        #metadata.help = "4Iot telemetry data"
-        #metadata.unit = "bytes"
-        wr.metadata.append(metadata)
-
         device_label = types_pb2.Label(name='device', value=device_name)
         kind_label = types_pb2.Label(name='kind', value=kind)
 
-        for k,v in values.items():
-            if not isinstance(v,numbers.Number):
+        for k, v in values.items():
+            if not isinstance(v, numbers.Number):
+                logger.debug(f"Skipping non-numeric telemetry field '{k}' from {device_name}: {v!r}")
                 continue
+
+            # Fields ending in _total follow the Prometheus counter convention
+            is_counter = k.endswith('_total')
+            metric_type = (types_pb2.MetricMetadata.MetricType.COUNTER if is_counter
+                           else types_pb2.MetricMetadata.MetricType.GAUGE)
+            metric_name = f'{self.project_name}_{k}'
+
+            metadata = types_pb2.MetricMetadata()
+            metadata.type = metric_type
+            metadata.metric_family_name = metric_name
+            wr.metadata.append(metadata)
+
             # append to the timeseries
             ts = types_pb2.TimeSeries()
 
-            name_label = types_pb2.Label(name="__name__", value=f'{self.project_name}_{k}')
+            name_label = types_pb2.Label(name="__name__", value=metric_name)
             sample = types_pb2.Sample(timestamp=round(time.time() * 1000), value=v)
 
             ts.labels.append(name_label)

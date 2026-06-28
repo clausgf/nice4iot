@@ -4,23 +4,29 @@ from enum import Enum
 from pydantic.tools import parse_obj_as
 
 
-from app.core.logging.loki.logging_loki_backend import LokiBackend,LokiConfig
+from app.core.logging.loki.logging_loki_backend import LokiBackend, LokiConfig
+from app.core.logging.file.logging_file_backend import FileLogBackend, FileLogConfig
 from app.config import app_config
 
 LOG_CONF_FILE_NAME = '.logging_config.json'
 
 class LoggingBackendTypes(Enum):
-    LOKI=1
+    LOKI = 1
+    FILE = 2
 
 def getLogBackendConfigByEnum(logBackend: LoggingBackendTypes):
     match logBackend:
         case LoggingBackendTypes.LOKI:
             return LokiConfig
-        
-def getLogBackendByEnum(logBackend : LoggingBackendTypes):
+        case LoggingBackendTypes.FILE:
+            return FileLogConfig
+
+def getLogBackendByEnum(logBackend: LoggingBackendTypes):
     match logBackend:
         case LoggingBackendTypes.LOKI:
             return LokiBackend
+        case LoggingBackendTypes.FILE:
+            return FileLogBackend
         
 def create_log(project_name: str,logBackend: LoggingBackendTypes):
     project_path = app_config.projects_dir / project_name

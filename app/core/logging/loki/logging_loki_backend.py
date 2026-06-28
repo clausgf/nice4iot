@@ -15,7 +15,7 @@ class LokiBackend(LoggingBackend):
         logstr = {
             "streams": [ {
                 "stream": {"project": self.project_name, "device": device_name},
-                "values": [[str(round(time.time() * 1000)), logmsg]]
+                "values": [[str(round(time.time() * 1_000_000_000)), logmsg]]
             }]
             }
         logstr = json.dumps(logstr)
