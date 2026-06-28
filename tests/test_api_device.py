@@ -1,81 +1,146 @@
+"""
+Device API tests — telemetry and log endpoints as sent by arduino4iot.
+
+POST /api/telemetry/{project}/{device}/{kind}
+  Authorization: bearer <device_token>
+  Content-Type:  application/json
+  Body:          {"field": value, ...}   (flat JSON, arbitrary numeric fields)
+
+POST /api/log/{project}/{device}
+  Authorization: bearer <device_token>
+  Content-Type:  text/plain
+  Body:          "<timestamp> I (tag) message"
+"""
 import pytest
-from fastapi.testclient import TestClient
-from fastapi import HTTPException, status
-from app.api.device import router
-from app.config import app_config
-from app.core.device import device_provision
-from app.core.models import Project
-from app.core.project import create_project
-from app.core.forwarding.forwarding import update_forwadings, ForwardingModelList
+from unittest.mock import AsyncMock, patch
 
-# Create a TestClient for the router
-client = TestClient(router)
 
-@pytest.fixture
-def setup_test_environment(tmp_path):
-    """
-    Set up a temporary test environment with a project and forwarding configuration.
-    """
-    # Create the base directory for projects
-    base_dir = tmp_path / "projects"
-    base_dir.mkdir()
+# ---------------------------------------------------------------------------
+# Telemetry
+# ---------------------------------------------------------------------------
 
-    # Update the app config to use the temporary directory
-    app_config.projects_dir = str(base_dir)
+TELEMETRY_PAYLOAD = {
+    "battery_V": 3.71,
+    "wifi_rssi": -67,
+    "boot_count": 12,
+    "active_ms": 823,
+    "temperature": 22.4,
+}
 
-    # Create a project
-    project_name = "test_project"
-    project = Project(name=project_name, is_autocreate_devices=True, is_provisioning_autoapproval=True)
-    project = create_project(project)
 
-    device_name = "test_device"
-    device_token = device_provision(project, device_name)
-
-    # Add forwarding configuration
-    forwardings = ForwardingModelList(forwards={
-        "valid_forwarding": {
-            "forward_url": "http://httpbin.org/anything",
-            "forward_method": "GET"
-        }
-    })
-    update_forwadings(project_name, forwardings)
-
-    return {
-        "base_dir": base_dir,
-        "project_name": project_name,
-        "device_name": device_name,
-        "device_token": device_token,
-        "forwarding_name": "valid_forwarding",
-        "invalid_forwarding_name": "invalid_forwarding",
-    }
-
-def test_forward_no_auth_token(setup_test_environment):
-    """
-    Test the forward endpoint when no auth token is provided.
-    """
-    env = setup_test_environment
-
-    # Make a HEAD request to the endpoint without an auth token
-    with pytest.raises(HTTPException) as err:
-        client.get(
-            f"/forward/{env['project_name']}/{env['device_name']}/{env['forwarding_name']}/remaining/path"
-        )
-
-    # Assertions
-    assert err.value.status_code == status.HTTP_401_UNAUTHORIZED
-
-def test_forward_success(setup_test_environment):
-    """
-    Test the forward endpoint with a valid forwarding configuration.
-    """
-    env = setup_test_environment
-
-    # Make a GET request to the /forward endpoint
-    response = client.get(
-        f"/forward/{env['project_name']}/{env['device_name']}/{env['forwarding_name']}/remaining/path",
-        headers={"Authorization": f"Bearer {env['device_token']}"}
+def test_telemetry_no_auth_rejected(client, provisioned):
+    resp = client.post(
+        f"/api/telemetry/{provisioned['project_name']}/{provisioned['device_name']}/sensors",
+        json=TELEMETRY_PAYLOAD,
     )
+    assert resp.status_code == 401
 
-    # Assertions
-    assert response.status_code == 200
-    assert response.json() is not None  # Assuming the forwarded response has a JSON body
+
+def test_telemetry_wrong_token_rejected(client, provisioned):
+    resp = client.post(
+        f"/api/telemetry/{provisioned['project_name']}/{provisioned['device_name']}/sensors",
+        headers={"Authorization": "bearer " + "x" * 32},
+        json=TELEMETRY_PAYLOAD,
+    )
+    assert resp.status_code == 401
+
+
+@patch("app.core.telemetry.prometheus.prometheus_telemetry.PrometheusBackend.write", new_callable=AsyncMock)
+def test_telemetry_accepted(mock_write, client, provisioned):
+    """Valid device token + flat JSON payload → 200, backend.write called once."""
+    mock_write.return_value = None
+    resp = client.post(
+        f"/api/telemetry/{provisioned['project_name']}/{provisioned['device_name']}/sensors",
+        headers={"Authorization": f"bearer {provisioned['device_token']}"},
+        json=TELEMETRY_PAYLOAD,
+    )
+    assert resp.status_code == 200
+    mock_write.assert_called_once()
+
+
+@patch("app.core.telemetry.prometheus.prometheus_telemetry.PrometheusBackend.write", new_callable=AsyncMock)
+def test_telemetry_system_kind(mock_write, client, provisioned):
+    """arduino4iot posts system telemetry under the 'system' kind."""
+    mock_write.return_value = None
+    system_payload = {
+        "battery_V": 3.7,
+        "wifi_rssi": -65,
+        "boot_count": 42,
+        "active_ms": 900,
+        "lastSleep_s": 300,
+        "firmware_version": "1.2.3",
+    }
+    resp = client.post(
+        f"/api/telemetry/{provisioned['project_name']}/{provisioned['device_name']}/system",
+        headers={"Authorization": f"bearer {provisioned['device_token']}"},
+        json=system_payload,
+    )
+    assert resp.status_code == 200
+
+
+def test_telemetry_invalid_kind_rejected(client, provisioned):
+    """Kind must be a valid filename — path traversal characters are rejected."""
+    resp = client.post(
+        f"/api/telemetry/{provisioned['project_name']}/{provisioned['device_name']}/../evil",
+        headers={"Authorization": f"bearer {provisioned['device_token']}"},
+        json=TELEMETRY_PAYLOAD,
+    )
+    assert resp.status_code in (400, 404)
+
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+
+LOG_MESSAGE = "[2024-01-15 12:34:56] I (app) sensor read ok"
+
+
+def test_log_no_auth_rejected(client, provisioned):
+    resp = client.post(
+        f"/api/log/{provisioned['project_name']}/{provisioned['device_name']}",
+        content=LOG_MESSAGE,
+        headers={"Content-Type": "text/plain"},
+    )
+    assert resp.status_code == 401
+
+
+def test_log_wrong_token_rejected(client, provisioned):
+    resp = client.post(
+        f"/api/log/{provisioned['project_name']}/{provisioned['device_name']}",
+        content=LOG_MESSAGE,
+        headers={
+            "Authorization": "bearer " + "x" * 32,
+            "Content-Type": "text/plain",
+        },
+    )
+    assert resp.status_code == 401
+
+
+def test_log_accepted(client, provisioned):
+    """Plain-text log message with valid device token is accepted."""
+    resp = client.post(
+        f"/api/log/{provisioned['project_name']}/{provisioned['device_name']}",
+        content=LOG_MESSAGE,
+        headers={
+            "Authorization": f"bearer {provisioned['device_token']}",
+            "Content-Type": "text/plain",
+        },
+    )
+    assert resp.status_code == 200
+
+
+def test_log_written_to_file(client, provisioned, projects_dir):
+    """File logging backend appends the message to the project log file."""
+    resp = client.post(
+        f"/api/log/{provisioned['project_name']}/{provisioned['device_name']}",
+        content=LOG_MESSAGE,
+        headers={
+            "Authorization": f"bearer {provisioned['device_token']}",
+            "Content-Type": "text/plain",
+        },
+    )
+    assert resp.status_code == 200
+
+    log_file = projects_dir / provisioned["project_name"] / ".device.log"
+    assert log_file.exists()
+    assert provisioned["device_name"] in log_file.read_text()

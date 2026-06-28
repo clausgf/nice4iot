@@ -1,213 +1,222 @@
+"""
+Provisioning API tests — simulates the arduino4iot device provisioning flow.
+
+POST /api/provision
+  Body:     {"projectName": "...", "deviceName": "...", "provisioningToken": "..."}
+  Response: {"tokenType": "bearer", "accessToken": "..."}
+"""
 import datetime
 import pytest
-from fastapi.testclient import TestClient
-from fastapi import HTTPException, status
-from app.api.provisioning import router
-from app.config import app_config
+
 from app.core.auth import generate_token
 from app.core.models import AuthToken, Project
 from app.core.project import create_project
+from tests.conftest import make_provisioning_token
 
-# Create a TestClient for the router
-client = TestClient(router)
 
-def add_provisioning_token(project: Project, expires_in: datetime.timedelta = datetime.timedelta(days=7)) -> str:
-    """
-    Add a provisioning token to the project and return the token value
-    """
-    now = datetime.datetime.now(datetime.timezone.utc)
-    value = generate_token(length=32)
-    token = AuthToken(value=value, created_at=now, expires_at=now + expires_in)
-    project.provisioning_tokens.append(token)
-    return value
+# ---------------------------------------------------------------------------
+# Happy path
+# ---------------------------------------------------------------------------
 
-@pytest.fixture
-def setup_test_environment(tmp_path):
-    """
-    Set up a temporary test environment with a project.
-    """
-    # Create the base directory for projects
-    base_dir = tmp_path / "projects"
-    base_dir.mkdir()
+def test_provision_new_device(client, project_autoapprove):
+    """New device is auto-created and provisioned in one call."""
+    project, prov_token = project_autoapprove
+    resp = client.post("/api/provision", json={
+        "projectName": project.name,
+        "deviceName": "e32-aabb1234",
+        "provisioningToken": prov_token,
+    })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["tokenType"] == "bearer"
+    assert len(body["accessToken"]) >= 16
 
-    # Update the app config to use the temporary directory
-    app_config.projects_dir = str(base_dir)
 
-    # Create a project
-    project_name = "test_project_autocreate_autoapprove"
-    project = Project(name=project_name, is_autocreate_devices=True, is_provisioning_autoapproval=True)
-    provisioning_token = add_provisioning_token(project)
-    project = create_project(project)
+def test_provision_returns_usable_device_token(client, project_autoapprove):
+    """The returned device token can immediately authenticate a telemetry request."""
+    project, prov_token = project_autoapprove
 
-    return {
-        "base_dir": base_dir,
-        "project_name": project_name,
-        "provisioning_token": provisioning_token,
-    }
+    # Provision
+    resp = client.post("/api/provision", json={
+        "projectName": project.name,
+        "deviceName": "e32-aabb1234",
+        "provisioningToken": prov_token,
+    })
+    assert resp.status_code == 200
+    device_token = resp.json()["accessToken"]
 
-def test_provision_success(setup_test_environment):
-    """
-    Test the /provision endpoint with valid data.
-    """
-    env = setup_test_environment
+    # The health endpoint isn't auth-protected; use file endpoint to verify token
+    # (actual telemetry would need a backend config)
+    from app.core.project import get_project_path
+    config_file = get_project_path(project.name) / "e32-aabb1234" / "test.txt"
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    config_file.write_text("hello")
 
-    # Make a POST request to the /provision endpoint
-    response = client.post(
-        "/provision",
-        json={
-            "projectName": env["project_name"],
-            "deviceName": "test_device",
-            "provisioningToken": env["provisioning_token"],
-        },
+    resp2 = client.get(
+        f"/api/file/{project.name}/e32-aabb1234/test.txt",
+        headers={"Authorization": f"bearer {device_token}"},
     )
+    assert resp2.status_code == 200
 
-    # Assertions
-    assert response.status_code == 200
-    assert response.json()["tokenType"] == "bearer"
-    assert "accessToken" in response.json()
 
-def test_provision_nonexistent_project(setup_test_environment):
+def test_provision_existing_device(client, provisioned):
+    """Re-provisioning an existing approved device issues a fresh token."""
+    resp = client.post("/api/provision", json={
+        "projectName": provisioned["project_name"],
+        "deviceName": provisioned["device_name"],
+        "provisioningToken": provisioned["provisioning_token"],
+    })
+    assert resp.status_code == 200
+    new_token = resp.json()["accessToken"]
+    assert new_token != provisioned["device_token"]
+
+
+def test_provision_purges_expired_tokens(client, project_autoapprove):
     """
-    Test the /provision endpoint with an invalid project name.
+    After several provisions the device token list must not grow unboundedly.
+    Expired tokens are purged before each new one is appended.
     """
-    env = setup_test_environment
+    from app.core.device import get_device, create_device
+    from app.core.models import Device
 
-    # Make a POST request with an invalid project name
-    with pytest.raises(HTTPException) as err:
-        response = client.post(
-            "/provision",
-            json={
-                "projectName": "invalid_project",
-                "deviceName": "test_device",
-                "provisioningToken": env["provisioning_token"],
-            },
-        )
+    project, prov_token = project_autoapprove
+    device_name = "e32-tokentest"
 
-    # Assertions
-    assert err.value.status_code == status.HTTP_404_NOT_FOUND
+    # Provision three times
+    for _ in range(3):
+        resp = client.post("/api/provision", json={
+            "projectName": project.name,
+            "deviceName": device_name,
+            "provisioningToken": prov_token,
+        })
+        assert resp.status_code == 200
 
-def test_provision_invalid_token(setup_test_environment):
-    """
-    Test the /provision endpoint with an invalid provisioning token.
-    """
-    env = setup_test_environment
+    # Expire all existing tokens by re-reading the device and back-dating them
+    device = get_device(project.name, device_name)
+    from app.core.device import update_device
+    past = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)
+    for t in device.tokens:
+        t.expires_at = past
+    update_device(device)
 
-    # Make a POST request with an invalid provisioning token
-    with pytest.raises(HTTPException) as err:
-        response = client.post(
-            "/provision",
-            json={
-                "projectName": env["project_name"],
-                "deviceName": "test_device",
-                "provisioningToken": "invalid_token",
-            },
-        )
+    # One more provision — expired tokens should be purged first
+    resp = client.post("/api/provision", json={
+        "projectName": project.name,
+        "deviceName": device_name,
+        "provisioningToken": prov_token,
+    })
+    assert resp.status_code == 200
 
-    # Assertions
-    assert err.value.status_code == status.HTTP_401_UNAUTHORIZED
+    device = get_device(project.name, device_name)
+    assert len(device.tokens) == 1  # only the fresh token remains
 
-def test_provision_inactive_token(setup_test_environment):
-    """
-    Test the /provision endpoint with an inactive provisioning token.
-    """
-    env = setup_test_environment
 
-    # Create a project
-    project_name = "test_project_inactive_token"
-    project = Project(name=project_name, is_autocreate_devices=True, is_provisioning_autoapproval=True)
-    provisioning_token = add_provisioning_token(project)
-    project.provisioning_tokens[-1].is_active = False
-    project = create_project(project)
+# ---------------------------------------------------------------------------
+# Auth failures
+# ---------------------------------------------------------------------------
 
-    # Make a POST request to the /provision endpoint
-    with pytest.raises(HTTPException) as err:
-        response = client.post(
-            "/provision",
-            json={
-                "projectName": project_name,
-                "deviceName": "test_device",
-                "provisioningToken": provisioning_token,
-            },
-        )
+def test_provision_invalid_token_rejected(client, project_autoapprove):
+    project, _ = project_autoapprove
+    resp = client.post("/api/provision", json={
+        "projectName": project.name,
+        "deviceName": "e32-aabb1234",
+        "provisioningToken": "x" * 32,  # wrong but long enough to pass format check
+    })
+    assert resp.status_code == 401
 
-    # Assertions
-    assert err.value.status_code == status.HTTP_401_UNAUTHORIZED
 
-def test_provision_inactive_project(setup_test_environment):
-    """
-    Test the /provision endpoint with an inactive project.
-    """
-    env = setup_test_environment
+def test_provision_short_token_rejected(client, project_autoapprove):
+    project, _ = project_autoapprove
+    resp = client.post("/api/provision", json={
+        "projectName": project.name,
+        "deviceName": "e32-aabb1234",
+        "provisioningToken": "tooshort",
+    })
+    assert resp.status_code == 401
 
-    # Create a project
-    project_name = "test_project_inactive"
-    project = Project(name=project_name, is_active=False, is_autocreate_devices=True, is_provisioning_autoapproval=True)
-    provisioning_token = add_provisioning_token(project)
-    project = create_project(project)
 
-    # Make a POST request to the /provision endpoint
-    with pytest.raises(HTTPException) as err:
-        response = client.post(
-            "/provision",
-            json={
-                "projectName": project_name,
-                "deviceName": "test_device",
-                "provisioningToken": provisioning_token,
-            },
-        )
+def test_provision_expired_token_rejected(client, projects_dir):
+    project = Project(name="proj_expired", is_autocreate_devices=True, is_provisioning_autoapproval=True)
+    token, value = make_provisioning_token(expires_in=datetime.timedelta(seconds=-1))
+    project.provisioning_tokens.append(token)
+    create_project(project)
 
-    # Assertions
-    assert err.value.status_code == status.HTTP_403_FORBIDDEN
+    resp = client.post("/api/provision", json={
+        "projectName": "proj_expired",
+        "deviceName": "e32-aabb1234",
+        "provisioningToken": value,
+    })
+    assert resp.status_code == 401
 
-def test_provision_device_no_autocreate(setup_test_environment):
-    """
-    Test the /provision endpoint with new device but without autocreate.
-    """
-    env = setup_test_environment
 
-    # Create a project
-    project_name = "test_project_no_autocreate"
-    project = Project(name=project_name, is_autocreate_devices=False, is_provisioning_autoapproval=True)
-    provisioning_token = add_provisioning_token(project)
-    project = create_project(project)
+def test_provision_inactive_token_rejected(client, projects_dir):
+    project = Project(name="proj_inactive_tok", is_autocreate_devices=True, is_provisioning_autoapproval=True)
+    token, value = make_provisioning_token()
+    token.is_active = False
+    project.provisioning_tokens.append(token)
+    create_project(project)
 
-    # Make a POST request to the /provision endpoint
-    with pytest.raises(HTTPException) as err:
-        response = client.post(
-            "/provision",
-            json={
-                "projectName": project_name,
-                "deviceName": "test_device",
-                "provisioningToken": provisioning_token,
-            },
-        )
+    resp = client.post("/api/provision", json={
+        "projectName": "proj_inactive_tok",
+        "deviceName": "e32-aabb1234",
+        "provisioningToken": value,
+    })
+    assert resp.status_code == 401
 
-    # Assertions
-    assert err.value.status_code == status.HTTP_404_NOT_FOUND
 
-def test_provision_device_no_autoapprove(setup_test_environment):
-    """
-    Test the /provision endpoint with new device but without autoapprove.
-    """
-    env = setup_test_environment
+# ---------------------------------------------------------------------------
+# Project / device state failures
+# ---------------------------------------------------------------------------
 
-    # Create a project
-    project_name = "test_project_no_autoapprove"
-    project = Project(name=project_name, is_autocreate_devices=True, is_provisioning_autoapproval=False)
-    provisioning_token = add_provisioning_token(project)
-    project = create_project(project)
+def test_provision_nonexistent_project(client, projects_dir):
+    resp = client.post("/api/provision", json={
+        "projectName": "does_not_exist",
+        "deviceName": "e32-aabb1234",
+        "provisioningToken": "x" * 32,
+    })
+    assert resp.status_code == 404
 
-    # Make a POST request to the /provision endpoint
-    with pytest.raises(HTTPException) as err:
-        response = client.post(
-            "/provision",
-            json={
-                "projectName": project_name,
-                "deviceName": "test_device",
-                "provisioningToken": provisioning_token,
-            },
-        )
 
-    # Assertions
-    assert err.value.status_code == status.HTTP_403_FORBIDDEN
-    
+def test_provision_inactive_project_rejected(client, projects_dir):
+    project = Project(name="proj_inactive", is_active=False,
+                      is_autocreate_devices=True, is_provisioning_autoapproval=True)
+    token, value = make_provisioning_token()
+    project.provisioning_tokens.append(token)
+    create_project(project)
+
+    resp = client.post("/api/provision", json={
+        "projectName": "proj_inactive",
+        "deviceName": "e32-aabb1234",
+        "provisioningToken": value,
+    })
+    assert resp.status_code == 403
+
+
+def test_provision_no_autocreate_rejected(client, projects_dir):
+    project = Project(name="proj_no_autocreate", is_autocreate_devices=False,
+                      is_provisioning_autoapproval=True)
+    token, value = make_provisioning_token()
+    project.provisioning_tokens.append(token)
+    create_project(project)
+
+    resp = client.post("/api/provision", json={
+        "projectName": "proj_no_autocreate",
+        "deviceName": "brand_new_device",
+        "provisioningToken": value,
+    })
+    assert resp.status_code == 404
+
+
+def test_provision_no_autoapproval_rejected(client, projects_dir):
+    project = Project(name="proj_no_autoapproval", is_autocreate_devices=True,
+                      is_provisioning_autoapproval=False)
+    token, value = make_provisioning_token()
+    project.provisioning_tokens.append(token)
+    create_project(project)
+
+    resp = client.post("/api/provision", json={
+        "projectName": "proj_no_autoapproval",
+        "deviceName": "brand_new_device",
+        "provisioningToken": value,
+    })
+    assert resp.status_code == 403

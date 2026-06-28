@@ -27,5 +27,12 @@ dev = [
     "pytest",
 ]
 
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "httpx2>=2.5.0",
+    "pytest>=9.1.1",
+]
+
 [tool.uv.sources]
 niceview = { git = "https://github.com/clausgf/niceview.git" }

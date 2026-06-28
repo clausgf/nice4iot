@@ -1,231 +1,187 @@
-import pytest
-from fastapi.testclient import TestClient
-from fastapi import HTTPException, status
-from pathlib import Path
-from app.api.file import router
-from app.config import app_config
-from app.core.device import create_device, device_provision, get_file_path
-from app.core.models import Device, Project
-from app.core.project import create_project, get_project_path
+"""
+File API tests — config/firmware download flow as used by arduino4iot.
 
-# Create a TestClient for the router
-client = TestClient(router)
+HEAD /api/file/{project}/{device}/{filename}   — ETag-based cache check
+GET  /api/file/{project}/{device}/{filename}   — download with conditional 304
+PUT  /api/file/{project}/{device}/{filename}   — device uploads a file
+
+The device sends If-None-Match on subsequent requests and expects 304
+when the file has not changed (avoids unnecessary downloads).
+
+File lookup: device-specific path first, project-level fallback if absent.
+"""
+import pytest
+from pathlib import Path
+
+from app.core.device import get_file_path
+from app.core.project import get_project_path
+
+
+FILE_CONTENT = "firmware=v1.2.3\nserver=https://example.com\n"
+
 
 @pytest.fixture
-def setup_test_environment(tmp_path: Path):
-    """
-    Set up a temporary test environment with a project, device, and file structure.
-    """
-    # Create the base directory for projects
-    base_dir = tmp_path / "projects"
-    base_dir.mkdir()
-
-    # Update the app config to use the temporary directory
-    app_config.projects_dir = str(base_dir)
-
-    # Create a project and a device
-    project_name = "test_project"
-    project = Project(name=project_name, is_autocreate_devices=True, is_provisioning_autoapproval=True)
-    project = create_project(project)
-
-    device_name = "test_device"
-    device_token = device_provision(project, device_name)
-
-    # Create a file in the device directory
-    filename_dev = "test_file_dev.txt"
-    file_path_dev = get_file_path(project_name, device_name, filename_dev, check_file_exists=False)
-    file_path_dev.write_text("This is a test file in the device directory.")
-
-    # Create a file in the project directory
-    filename_proj = "test_file_proj.txt"
-    file_path_proj = get_project_path(project_name) / filename_proj
-    file_path_proj.write_text("This is a test file in the project directory.")
-
-    # Return the paths for use in the test
-    return {
-        "base_dir": base_dir,
-        "project_name": project_name,
-        "device_name": device_name,
-        "device_token": device_token,
-        "filename_dev": filename_dev,
-        "filename_proj": filename_proj,
-    }
-
-def test_head_no_auth_token(setup_test_environment):
-    """
-    Test the head_resource endpoint when no auth token is provided.
-    """
-    env = setup_test_environment
-
-    # Make a HEAD request to the endpoint without an auth token
-    with pytest.raises(HTTPException) as err:
-        client.head(
-            f"/file/{env['project_name']}/{env['device_name']}/{env['filename_dev']}"
-        )
-
-    # Assertions
-    assert err.value.status_code == status.HTTP_401_UNAUTHORIZED
-
-def test_head_wrong_auth_token(setup_test_environment):
-    """
-    Test the head_resource endpoint when a wrong auth token is provided.
-    """
-    env = setup_test_environment
-
-    # Make a HEAD request to the endpoint with a wrong auth token
-    with pytest.raises(HTTPException) as err:
-        client.head(
-            f"/file/{env['project_name']}/{env['device_name']}/{env['filename_dev']}",
-            headers={"Authorization": "Bearer wrong_token_which_is_long_enough"}
-        )
-
-    # Assertions
-    assert err.value.status_code == status.HTTP_401_UNAUTHORIZED
-
-def test_head_no_etag(setup_test_environment):
-    """
-    Test the head_resource endpoint when the file exists, no if-none-match given.
-    """
-    env = setup_test_environment
-
-    # Make a HEAD request to the endpoint
-    response = client.head(
-        f"/file/{env['project_name']}/{env['device_name']}/{env['filename_dev']}",
-        headers={"Authorization": f"Bearer {env['device_token']}"}
+def device_file(provisioned, projects_dir):
+    """A config file in the device directory."""
+    path = get_file_path(
+        provisioned["project_name"],
+        provisioned["device_name"],
+        "config.txt",
+        check_file_exists=False,
     )
+    path.write_text(FILE_CONTENT)
+    return path
 
-    # Assertions
-    assert response.status_code == 200
-    assert "etag" in response.headers
 
-def test_head_file_modified(setup_test_environment):
-    """
-    Test the head_resource endpoint when the file exists and has been modified.
-    """
-    env = setup_test_environment
+@pytest.fixture
+def project_file(provisioned, projects_dir):
+    """A file in the project directory (fallback for devices without their own copy)."""
+    path = get_project_path(provisioned["project_name"]) / "default.txt"
+    path.write_text("project-level default content")
+    return path
 
-    # Make a HEAD request to the endpoint
-    response = client.head(
-        f"/file/{env['project_name']}/{env['device_name']}/{env['filename_dev']}",
-        headers={"Authorization": f"Bearer {env['device_token']}",
-                 "If-None-Match": "different-etag"}
+
+# ---------------------------------------------------------------------------
+# HEAD — auth
+# ---------------------------------------------------------------------------
+
+def test_head_no_auth_rejected(client, provisioned, device_file):
+    resp = client.head(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/config.txt"
     )
+    assert resp.status_code == 401
 
-    # Assertions
-    assert response.status_code == 200
-    assert "etag" in response.headers
 
-def test_head_file_not_modified(setup_test_environment):
-    """
-    Test the head_resource endpoint when the file exists but has not been modified.
-    """
-    env = setup_test_environment
-
-    # Get the ETag of the file
-    response = client.head(
-        f"/file/{env['project_name']}/{env['device_name']}/{env['filename_dev']}",
-        headers={"Authorization": f"Bearer {env['device_token']}"}
+def test_head_wrong_token_rejected(client, provisioned, device_file):
+    resp = client.head(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/config.txt",
+        headers={"Authorization": "bearer " + "x" * 32},
     )
-    assert response.status_code == 200
-    etag = response.headers.get("etag")
-    assert etag is not None
+    assert resp.status_code == 401
 
-    # Make another HEAD request with the same ETag
-    response = client.head(
-        f"/file/{env['project_name']}/{env['device_name']}/{env['filename_dev']}",
-        headers={"Authorization": f"Bearer {env['device_token']}",
-                 "If-None-Match": etag}
+
+# ---------------------------------------------------------------------------
+# HEAD — ETag caching (arduino4iot uses If-None-Match to skip downloads)
+# ---------------------------------------------------------------------------
+
+def test_head_returns_etag(client, provisioned, device_file):
+    resp = client.head(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/config.txt",
+        headers={"Authorization": f"bearer {provisioned['device_token']}"},
     )
+    assert resp.status_code == 200
+    assert resp.headers.get("etag")
 
-    # Assertions
-    assert response.status_code == 304
 
-def test_head_file_not_found(setup_test_environment):
-    """
-    Test the head_resource endpoint when the file does not exist.
-    """
-    env = setup_test_environment
-
-    # # Make a HEAD request to a non-existent file
-    # response = client.head(
-    #     f"/file/{env['project_name']}/{env['device_name']}/nonexistent.txt",
-    #     headers={"Authorization": f"Bearer {env['device_token']}"}
-    # )
-
-    # # Assertions
-    # assert response.status_code == 404
-
-    # TODO for some strange reason the above test fails (HTTPException not caught)
-    # but this one works
-    with pytest.raises(HTTPException) as err:
-        client.head(
-            f"/file/{env['project_name']}/{env['device_name']}/nonexistent.txt",
-            headers={"Authorization": f"Bearer {env['device_token']}"}
-        )
-    assert err.value.status_code == 404
-
-def test_get_file_modified(setup_test_environment):
-    """
-    Test the get_resource endpoint when the file exists and has been modified.
-    """
-    env = setup_test_environment
-
-    # Make a GET request to the endpoint
-    response = client.get(
-        f"/file/{env['project_name']}/{env['device_name']}/{env['filename_dev']}",
-        headers={"Authorization": f"Bearer {env['device_token']}",
-                 "If-None-Match": "different-etag"}
+def test_head_304_when_etag_matches(client, provisioned, device_file):
+    """Second request with the same ETag must return 304 Not Modified."""
+    resp1 = client.head(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/config.txt",
+        headers={"Authorization": f"bearer {provisioned['device_token']}"},
     )
+    etag = resp1.headers["etag"]
 
-    # Assertions
-    assert response.status_code == 200
-    assert response.headers["Content-Type"] == "text/plain; charset=utf-8"
-    assert response.text == "This is a test file in the device directory."
-    etag = response.headers.get("etag")
-    assert etag is not None and len(etag) > 0
-
-def test_put_new_file(setup_test_environment):
-    """
-    Test the put_resource endpoint to create a new file.
-    """
-    env = setup_test_environment
-
-    # Create a new file content
-    new_file_content = "This is a new test file content."
-
-    # Make a PUT request to the endpoint
-    response = client.put(
-        f"/file/{env['project_name']}/{env['device_name']}/new_file.txt",
-        headers={"Authorization": f"Bearer {env['device_token']}"},
-        data=new_file_content
+    resp2 = client.head(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/config.txt",
+        headers={
+            "Authorization": f"bearer {provisioned['device_token']}",
+            "If-None-Match": etag,
+        },
     )
+    assert resp2.status_code == 304
 
-    # Assertions
-    assert response.status_code == 200
 
-    # Verify the file content
-    file_path = get_file_path(env['project_name'], env['device_name'], "new_file.txt")
-    assert file_path.read_text() == new_file_content
-
-def test_put_modify_file(setup_test_environment):
-    """
-    Test the put_resource endpoint to modify an existing file.
-    """
-    env = setup_test_environment
-
-    # Create new content for the existing file
-    new_file_content = "This is modified content."
-
-    # Make a PUT request to the endpoint
-    response = client.put(
-        f"/file/{env['project_name']}/{env['device_name']}/{env['filename_dev']}",
-        headers={"Authorization": f"Bearer {env['device_token']}"},
-        data=new_file_content
+def test_head_200_when_etag_differs(client, provisioned, device_file):
+    resp = client.head(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/config.txt",
+        headers={
+            "Authorization": f"bearer {provisioned['device_token']}",
+            "If-None-Match": "stale-etag-value",
+        },
     )
+    assert resp.status_code == 200
 
-    # Assertions
-    assert response.status_code == 200
 
-    # Verify the file content
-    file_path = get_file_path(env['project_name'], env['device_name'], env['filename_dev'])
-    assert file_path.read_text() == new_file_content
+def test_head_404_when_file_missing(client, provisioned, projects_dir):
+    resp = client.head(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/nonexistent.bin",
+        headers={"Authorization": f"bearer {provisioned['device_token']}"},
+    )
+    assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# GET — download
+# ---------------------------------------------------------------------------
+
+def test_get_returns_file_content(client, provisioned, device_file):
+    resp = client.get(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/config.txt",
+        headers={"Authorization": f"bearer {provisioned['device_token']}"},
+    )
+    assert resp.status_code == 200
+    assert resp.text == FILE_CONTENT
+
+
+def test_get_304_when_etag_matches(client, provisioned, device_file):
+    resp1 = client.get(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/config.txt",
+        headers={"Authorization": f"bearer {provisioned['device_token']}"},
+    )
+    etag = resp1.headers["etag"]
+
+    resp2 = client.get(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/config.txt",
+        headers={
+            "Authorization": f"bearer {provisioned['device_token']}",
+            "If-None-Match": etag,
+        },
+    )
+    assert resp2.status_code == 304
+
+
+def test_get_project_fallback(client, provisioned, project_file):
+    """If device has no own copy, the project-level file is served."""
+    resp = client.get(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/default.txt",
+        headers={"Authorization": f"bearer {provisioned['device_token']}"},
+    )
+    assert resp.status_code == 200
+    assert resp.text == "project-level default content"
+
+
+# ---------------------------------------------------------------------------
+# PUT — device uploads a file (e.g. crash dump, sensor log)
+# ---------------------------------------------------------------------------
+
+def test_put_creates_new_file(client, provisioned, projects_dir):
+    resp = client.put(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/upload.txt",
+        headers={"Authorization": f"bearer {provisioned['device_token']}"},
+        content=b"uploaded content",
+    )
+    assert resp.status_code == 200
+    path = get_file_path(
+        provisioned["project_name"],
+        provisioned["device_name"],
+        "upload.txt",
+    )
+    assert path.read_text() == "uploaded content"
+
+
+def test_put_overwrites_existing_file(client, provisioned, device_file):
+    resp = client.put(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/config.txt",
+        headers={"Authorization": f"bearer {provisioned['device_token']}"},
+        content=b"new content",
+    )
+    assert resp.status_code == 200
+    assert device_file.read_text() == "new content"
+
+
+def test_put_no_auth_rejected(client, provisioned):
+    resp = client.put(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/upload.txt",
+        content=b"data",
+    )
+    assert resp.status_code == 401
