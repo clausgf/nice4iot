@@ -10,7 +10,6 @@ from app.config import app_config
 from app.core.auth import validate_token
 from app.core.models import Project
 from app.util import logger, is_valid_filename
-from niceview.dataadapter import ModelDataAdapter
 
 ###############################################################################
 
@@ -223,53 +222,34 @@ def get_auth_project(project_name: str, provisioning_token: str) -> Project:
 # Provide operations on the Project model in a nice interface for the UI
 ###################################################################################
 
-class ProjectModelAdapter(ModelDataAdapter[Project]):
+class ProjectModelAdapter:
     """
-    An adapter for a list of projects to work with the ModelGrid.
+    Adapter for projects implementing the niceview CollectionAdapter protocol.
+    Key = project directory name.
     """
     def __init__(self) -> None:
-        pass
+        self._last_read_key: str | None = None
 
     def __iter__(self) -> Iterator[Project]:
-        projects = get_projects()
-        return iter(projects)
+        return iter(get_projects())
 
-    def query_all_strs(self) -> Iterator[tuple[str, str]]:
-        projects = get_projects()
-        for index, item in enumerate(projects):
-            yield self.key_from_item(item, index), item.name
-
-    def key_from_item(self, item: Project, index: int = -1) -> str:
-        key = item.name
-        return key
-
-    def key_from_str(self, key: str | int) -> str:
-        return str(key)
+    def key_from_item(self, item: Project) -> str:
+        return item.name
 
     def create(self, item: Project) -> Project:
-        if not isinstance(item, Project):
-            raise TypeError(f"Expected item to be an instance of 'Project', got '{type(item)}'")
-        create_project(item)
-        return item
+        return create_project(item)
 
-    def read(self, key: str | int) -> Project:
-        if not isinstance(key, str):
-            raise TypeError(f"Expected key to be a string, got {type(key)}")
-        project = get_project(key)
-        return project
+    def read(self, key: str) -> Project:
+        self._last_read_key = key
+        return get_project(key)
 
-    def update(self, item: Project, key: str) -> Project:
-        if not isinstance(item, Project):
-            raise TypeError(f"Expected item to be an instance of 'Project', got '{type(item)}'")
-        if not isinstance(key, str):
-            raise TypeError(f"Expected key to be a string, got {type(key)}")
-        if key != item.name:
-           rename_project(old_project_name=key, new_project_name=item.name)
-        project = update_project(item)
-        return project
+    def update(self, item: Project) -> Project:
+        # Detect rename: niceview calls read(old_key) then update(item_with_new_name)
+        new_path = get_project_path(item.name, check_project_exists=False)
+        if not new_path.is_dir() and self._last_read_key and self._last_read_key != item.name:
+            rename_project(old_project_name=self._last_read_key, new_project_name=item.name)
+        return update_project(item)
 
     def delete(self, key: str) -> None:
-        if not isinstance(key, str):
-            raise TypeError(f"Expected key to be a string, got {type(key)}")
         delete_project(key)
 

@@ -14,8 +14,6 @@ from app.core.project import get_project
 from app.core.telemetry.telemetry import get_tel
 from app.ui.util import build_dialog
 
-from niceview.modelgrid import ModelGrid
-
 import logging
 log = logging.getLogger("uvicorn")
 
@@ -101,16 +99,30 @@ class ProjectDevicesTable:
         self.device_new_dialog = DeviceCreationDialog(project_name)
         self.devices = get_devices(project_name)
 
-        self.table = ModelGrid(Device, 
-                               title=f'{project_name.capitalize()}\'s Devices',
-                               fields=['is_active', 'name', 'location', 'last_seen_at', 'is_provisioning_approved'], 
-                               defaultColDef = {'sortable': True, 'editable': True},
-                               
-                               classes='w-full')
+        devices_cols = [
+            {'name': 'name', 'label': 'Name', 'field': 'name', 'required': True, 'sortable': True},
+            {'name': 'is_active', 'label': 'Active', 'field': 'is_active', 'sortable': True},
+            {'name': 'location', 'label': 'Location', 'field': 'location', 'sortable': True},
+            {'name': 'last_seen_at', 'label': 'Last Seen', 'field': 'last_seen_at', 'sortable': True},
+            {'name': 'is_provisioning_approved', 'label': 'Provisioning OK', 'field': 'is_provisioning_approved', 'sortable': True},
+        ]
+        devices_rows = [
+            {
+                'id': d.name,
+                'name': d.name,
+                'is_active': d.is_active,
+                'location': d.location or '',
+                'last_seen_at': render_datetime(d.last_seen_at),
+                'is_provisioning_approved': d.is_provisioning_approved,
+            }
+            for d in self.devices
+        ]
 
-        # table with devices
-        self.devices_table = ui.table(title=f'{project_name.capitalize()}\'s Devices', 
-                                      columns=self.devices_cols, rows=self.devices_rows).classes('w-full')
+        self.devices_table = ui.table(
+            title=f'{project_name.capitalize()}\'s Devices',
+            columns=devices_cols,
+            rows=devices_rows,
+        ).classes('w-full')
         with self.devices_table.add_slot('top-right'):
             with ui.row():
                 with ui.input(placeholder='Search').props('type=search').bind_value(self.devices_table, 'filter').add_slot('append'):

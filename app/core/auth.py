@@ -48,6 +48,11 @@ def validate_token_str(auth_token: str):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication token contains invalid characters.")
 
 
+def purge_expired_tokens(tokens: list[AuthToken]) -> list[AuthToken]:
+    now = datetime.datetime.now(datetime.timezone.utc)
+    return [t for t in tokens if t.is_active and t.expires_at > now]
+
+
 def validate_token(auth_token: str, valid_tokens: list[AuthToken]) -> AuthToken:
     """
     Check if the authentication token is in the list and not expired.

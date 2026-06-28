@@ -24,8 +24,7 @@ router = APIRouter()
 # https://stackoverflow.com/questions/69588611/how-using-browser-cache-when-fetching-files-from-fastapi
 async def get_headers(file_path: Path) -> dict[str, str]:
     try:
-        #stat_info = await anyio.to_thread.run_sync(os.stat, file_path)
-        stat_info = file_path.stat()
+        stat_info = await anyio.to_thread.run_sync(os.stat, file_path)
     except FileNotFoundError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"File at path {file_path} does not exist.")
 

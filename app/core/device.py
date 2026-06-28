@@ -5,7 +5,7 @@ from typing import List, Optional, Tuple
 from fastapi import HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.config import app_config
-from app.core.auth import create_token, validate_token
+from app.core.auth import create_token, purge_expired_tokens, validate_token
 from app.core.models import AuthToken, Device, Project
 from app.core.project import get_project, get_project_path
 from app.util import logger, is_valid_filename
@@ -291,6 +291,7 @@ def device_provision(project: Project, device_name: str) -> str:
         device = update_device(device)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Device {device_name} is not approved for provisioning.")
     
+    device.tokens = purge_expired_tokens(device.tokens)
     token = create_token(project.device_tokens_expire_in, app_config.device_token_length)
     device.tokens.append(token)
     device.last_provisioned_at = now

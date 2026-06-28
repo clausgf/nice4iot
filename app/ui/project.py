@@ -49,7 +49,7 @@ async def all_projects_subpage(args: PageArguments, title: ui.label, breadcrumbs
 
     project_grid = ModelGrid(
         Project, ProjectModelAdapter(),
-        fields=['name', 'tags', 'created_at', 'updated_at'],
+        include=['name', 'tags', 'created_at', 'updated_at'],
         rowSelection='single',
     )
     project_edit = EditProjectGridWrapper(project_grid)

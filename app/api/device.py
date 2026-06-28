@@ -1,3 +1,4 @@
+import anyio
 from fastapi import APIRouter, HTTPException, Header, Request, Response, status, Depends
 from fastapi.responses import JSONResponse
 
@@ -26,8 +27,9 @@ async def post_telemetry_with_names(project_name: str, device_name: str, kind: s
         raise HTTPException(status_code=400, detail='Invalid kind in url')
 
     measurements = await request.json()
-    #measurements = json.loads(request_json)
-    tel_backend = get_tel(project_name, dev.project.telemetryBackend)
+    tel_backend = await anyio.to_thread.run_sync(
+        lambda: get_tel(project_name, dev.project.telemetryBackend)
+    )
     await tel_backend.write(device_name, values=measurements, kind=kind)
 
     return Response(status_code=200)
@@ -39,7 +41,9 @@ async def post_log_with_names(project_name: str, device_name: str, request: Requ
     """
     Post log data to the time series database.
     """
-    log_backend = get_log(project_name, dev.project.loggingBackend)
+    log_backend = await anyio.to_thread.run_sync(
+        lambda: get_log(project_name, dev.project.loggingBackend)
+    )
     try:
         logmsg = (await request.body()).decode()
     except Exception as e:
@@ -56,7 +60,9 @@ async def get_forward_with_names(project_name: str, device_name: str, forwarding
     """
     if not is_valid_filename(forwarding_name):
         raise HTTPException(status_code=400, detail='Invalid forwarding_name in url')
-    forwarding = get_forwarding(project_name, forwarding_name)
+    forwarding = await anyio.to_thread.run_sync(
+        lambda: get_forwarding(project_name, forwarding_name)
+    )
 
     headers = request.headers.mutablecopy()
     del headers["Authorization"]   # Remove the Authorization header to avoid circular forwarding

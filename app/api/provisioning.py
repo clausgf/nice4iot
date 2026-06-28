@@ -1,3 +1,4 @@
+import anyio
 from fastapi import APIRouter, Body, HTTPException, Header, Request, Response, status
 from fastapi.responses import JSONResponse
 import os
@@ -40,6 +41,10 @@ class ProvisioningResponse(BaseModel):
     },
 )
 async def provision(provisioning_request: ProvisioningRequest = Body(...)) -> ProvisioningResponse:
-    project = get_auth_project(provisioning_request.projectName, provisioning_request.provisioningToken)
-    token = device_provision(project, provisioning_request.deviceName)
+    project = await anyio.to_thread.run_sync(
+        lambda: get_auth_project(provisioning_request.projectName, provisioning_request.provisioningToken)
+    )
+    token = await anyio.to_thread.run_sync(
+        lambda: device_provision(project, provisioning_request.deviceName)
+    )
     return ProvisioningResponse(tokenType='bearer', accessToken=token)

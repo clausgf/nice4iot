@@ -145,16 +145,10 @@ nice4iot uses a custom `ModelDataAdapter` / `ProjectModelAdapter` that bridges t
 Storing state as JSON files in directories keeps the deployment dependency-free (no database server), makes backup trivial (`rsync`), and makes state directly inspectable. The tradeoff is the absence of transactions, foreign-key constraints, and efficient querying. `SQLModel` is already a dependency (used transitively by niceview) but is not yet used for persistence.
 
 **Synchronous file I/O inside an async application.**
-FastAPI and NiceGUI are both async frameworks, but all file reads and writes are synchronous. For a low-traffic management platform this is acceptable — file operations are fast and infrequent. Moving to `anyio.to_thread.run_sync` or an async file library would be the correct fix if load increases.
+All blocking file reads and writes are wrapped with `anyio.to_thread.run_sync` at the API handler level so they do not block the event loop. The `CollectionAdapter` protocol methods remain synchronous (imposed by niceview's structural typing), which is a reasonable tradeoff — they are called from async handlers and already run in a thread pool.
 
 **No UI authentication.**
 The REST API endpoints are protected by bearer tokens, but the NiceGUI management UI has no login. This is only safe when the UI is placed behind a reverse proxy with its own authentication (e.g., Caddy with forward auth) as implied by the `docker-compose.yml` network setup. This should be made explicit in deployment documentation or solved in the application.
-
-**Tokens accumulate without expiry cleanup.**
-Device tokens are appended to the device's token list on every provisioning call and are never removed. Expired tokens remain in the JSON file indefinitely. A background cleanup task or a capped list would prevent unbounded growth.
-
-**Hardcoded NiceGUI storage secret.**
-`ui.run_with(app, storage_secret="TODO_NICEGUI_STORAGE_SECRET")` in `main.py` uses a placeholder value. This must be replaced before any production use. It should be moved to an environment variable via `app_config`.
 
 **Telemetry config is re-read from disk on every request.**
 `get_tel()` opens and parses `.telemetry_config.json` on each inbound telemetry write. A simple in-process cache (per-project, invalidated on config change) would remove the overhead.
@@ -164,14 +158,9 @@ Device tokens are appended to the device's token list on every provisioning call
 ## Open Questions / TODO
 
 - **UI authentication** — implement a login screen or formally document the expectation that the UI is always behind an authenticating reverse proxy.
-- **Token housekeeping** — purge expired tokens from device and project records; consider capping token lists.
-- **NiceGUI storage secret** — move `storage_secret` to an env var in `AppConfig`.
-- **Dashboard tab** — the Device › Dashboard tab exists but shows only placeholder labels; real-time telemetry charts and alarms are not yet implemented.
-- **Log viewer tab** — the Device › Logs tab is a placeholder; Loki query integration is missing from the UI.
-- **Telemetry config update bug** — `update_tel()` in `telemetry.py` reads the current config but then writes the *default* config instead of the modified one.
+- **Dashboard tab** — the Project › Dashboard tab exists but shows placeholder content; real-time telemetry charts and alarms are not yet implemented.
+- **Log viewer tab** — no log viewer in the UI; Loki query integration is missing.
 - **Additional telemetry backends** — Influx2 and SQL stubs are commented out; only Prometheus is functional.
-- **Async file I/O** — evaluate whether synchronous I/O in async route handlers causes measurable latency under realistic load.
-- **SQLModel / database** — decide whether to migrate to a database-backed store or commit to the filesystem approach and document it explicitly.
 - **Forwarding security** — forwarding strips the `Authorization` header but forwards all other client headers verbatim; review whether this is appropriate for all backends.
 - **Multi-user / RBAC** — there is no concept of users or roles; all UI operators share the same access level.
 - **Backup and restore** — no tooling or documentation for backup, restore, or migration of the `data/projects/` directory.

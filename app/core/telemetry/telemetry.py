@@ -53,6 +53,6 @@ def update_tel(project_name: str , telemetry_backend: TelemetryBackendTypes, con
     project_path = app_config.projects_dir / project_name
     tel_config_file = project_path / TEL_CONF_FILE_NAME
     temp_tel_conf_file = tel_config_file.with_suffix('.tmp')
-    temp_tel_conf_file.write_text(getTelBackendConfigByEnum(telemetry_backend)().model_dump_json(indent=2))
+    temp_tel_conf_file.write_text(tel_conf.model_dump_json(indent=2))
     temp_tel_conf_file.rename(tel_config_file)
 
