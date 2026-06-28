@@ -3,16 +3,17 @@ FROM zauberzeug/nicegui:latest
 ARG PUID
 ARG PGID
 
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+ENV UV_SYSTEM_PYTHON=1
+
+WORKDIR /home/iot
+
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
+
 RUN groupadd -g ${PGID} iot \
     && useradd -u ${PUID} -g ${PGID} -m iot \
-    && chown -R ${PUID}:${PGID} /app 
+    && chown -R ${PUID}:${PGID} /home/iot
 USER iot
 
-WORKDIR /home/iot/app
-
-COPY requirements.txt .
-RUN pip install --upgrade pip \
-    && pip install -r requirements.txt
-
-WORKDIR /home/iot/
-ENTRYPOINT ["uvicorn", "app.main:app", "--reload", "--log-level", "debug", "--host", "0.0.0.0", "--port", "8080", "--root-path","/iot"]
+ENTRYPOINT ["uvicorn", "app.main:app", "--reload", "--log-level", "debug", "--host", "0.0.0.0", "--port", "8080", "--root-path", "/iot"]

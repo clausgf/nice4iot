@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nice4iot"
+version = "0.1.0"
+description = "IoT management platform built with NiceGUI and FastAPI"
+requires-python = ">=3.12"
+dependencies = [
+    "nicegui",
+    "uvicorn",
+    "pydantic-settings",
+    "sqlmodel",
+    "protobuf==6.30.2",
+    "python-snappy==0.7.3",
+    "pytz",
+    "plotly",
+    "niceview",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+
+[tool.uv.sources]
+niceview = { git = "https://github.com/clausgf/niceview.git" }
