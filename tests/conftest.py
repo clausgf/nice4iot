@@ -2,33 +2,30 @@ import datetime
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from pathlib import Path
-from unittest.mock import AsyncMock, patch
 
 from app.api.provisioning import router as provisioning_router
 from app.api.device import router as device_router
 from app.api.file import router as file_router
 from app.config import app_config
-from app.core.auth import generate_token
-from app.core.models import AuthToken, Project
-from app.core.project import create_project
-from app.core.device import device_provision
-from app.core.telemetry.telemetry import create_tel
-from app.core.telemetry.models import TelemetryBackendTypes
-from app.core.logging.logging import create_log, LoggingBackendTypes
+from app.core.token.backend import create_token, get_provisioning_token_adapter
+from app.core.token.models import AuthToken
+from app.core.project.models import Project
+from app.core.project.backend import create_project, project_adapter
+from app.core.device.backend import device_provision
+from app.core.logging.backend import get_logging_adapter
 
 
 @pytest.fixture(autouse=True)
 def clear_file_log_handlers():
     """Reset FileLogBackend's class-level handler cache between tests.
 
-    The handler cache is keyed by project name. When tests use the same project
-    name with different tmp_path directories, the cached handler would point to
+    Handlers are keyed by (project_name, device_name). When tests use the same
+    names with different tmp_path directories, the cached handler would point to
     a stale path from a previous test.
     """
     yield
-    from app.core.logging.file.logging_file_backend import FileLogBackend
-    for handler in FileLogBackend._handlers.values():
+    from app.core.logging.file.backend import FileLogBackend
+    for handler, _ in FileLogBackend._handlers.values():
         handler.close()
     FileLogBackend._handlers.clear()
 
@@ -65,44 +62,57 @@ def client(api_app, projects_dir):
 # Reusable project/device building blocks
 # ---------------------------------------------------------------------------
 
-def make_provisioning_token(expires_in: datetime.timedelta = datetime.timedelta(days=7)) -> tuple[AuthToken, str]:
-    now = datetime.datetime.now(datetime.timezone.utc)
-    value = generate_token(64)
-    token = AuthToken(value=value, created_at=now, expires_at=now + expires_in)
-    return token, value
+def make_provisioning_token(
+    expires_in: datetime.timedelta = datetime.timedelta(days=7),
+) -> tuple[AuthToken, str]:
+    token = create_token(expires_in, length=64)
+    return token, token.value
+
+
+def setup_project(project_name: str, **project_attrs) -> tuple[Project, str]:
+    """Create a project directory and return (project, provisioning_token_value).
+
+    Optional keyword arguments override the default Project field values.
+    A single provisioning token is created and stored in the project.
+    """
+    create_project(project_name)
+    adapter = project_adapter(project_name)
+    project = adapter.read()
+    project.name = project_name
+    for key, value in project_attrs.items():
+        setattr(project, key, value)
+    adapter.save(project)
+    token, value = make_provisioning_token()
+    get_provisioning_token_adapter(project_name).create(token)
+    return project, value
 
 
 @pytest.fixture
 def project_autoapprove(projects_dir):
     """Project with autocreate=True and autoapproval=True, one valid provisioning token."""
-    project = Project(
-        name="myproject",
+    return setup_project(
+        "myproject",
         is_autocreate_devices=True,
         is_provisioning_autoapproval=True,
     )
-    token, value = make_provisioning_token()
-    project.provisioning_tokens.append(token)
-    project = create_project(project)
-    return project, value
 
 
 @pytest.fixture
 def provisioned(project_autoapprove):
     """
     Provisioned device in the autoapprove project.
-    Telemetry (Prometheus, mocked) and logging (file) backends are configured.
+    File logging is activated. Telemetry is left unconfigured (write_telemetry
+    is a no-op when no backend is configured).
     Returns a dict with all relevant names and tokens.
     """
     project, prov_token = project_autoapprove
     device_name = "e32-aabb1234"
     device_token = device_provision(project, device_name)
-    create_tel(project.name, TelemetryBackendTypes.PROMETHEUS)
-    create_log(project.name, LoggingBackendTypes.FILE)
 
-    # Persist the file logging backend choice in the project record
-    from app.core.project import update_project
-    project.loggingBackend = LoggingBackendTypes.FILE
-    update_project(project)
+    # Activate file logging so log-related tests can verify written content.
+    log_config = get_logging_adapter(project.name).read()
+    log_config.file.is_active = True
+    get_logging_adapter(project.name).save(log_config)
 
     return {
         "project_name": project.name,

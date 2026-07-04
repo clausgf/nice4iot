@@ -8,15 +8,13 @@ import datetime
 import pytest
 from fastapi import HTTPException
 
-from app.core.auth import (
+from app.core.token.backend import (
     generate_token,
     create_token,
     validate_token,
     purge_expired_tokens,
-    TOKEN_CHARS,
-    TOKEN_MIN_LENGTH,
 )
-from app.core.models import AuthToken
+from app.core.token.models import AuthToken, TOKEN_CHARS, TOKEN_MIN_LENGTH
 
 
 # ---------------------------------------------------------------------------
@@ -34,7 +32,6 @@ def _make_auth_token(
     value = generate_token(length)
     token = AuthToken(
         value=value,
-        created_at=now,
         expires_at=now + delta,
         is_active=not inactive,
     )
@@ -143,6 +140,8 @@ class TestValidateToken:
 
 # ---------------------------------------------------------------------------
 # purge_expired_tokens
+# Note: purge_expired_tokens removes tokens past their expiry date only.
+# Inactive tokens are NOT removed by purge — they are rejected at validate_token time.
 # ---------------------------------------------------------------------------
 
 class TestPurgeExpiredTokens:
@@ -153,21 +152,21 @@ class TestPurgeExpiredTokens:
         assert len(result) == 1
         assert result[0].value == valid.value
 
-    def test_removes_inactive(self):
+    def test_keeps_inactive_tokens(self):
+        """Inactive tokens are not removed by purge (only rejected at auth time)."""
         inactive, _ = _make_auth_token(inactive=True)
         valid, _ = _make_auth_token()
         result = purge_expired_tokens([inactive, valid])
-        assert len(result) == 1
-        assert result[0].value == valid.value
+        assert len(result) == 2
 
-    def test_removes_expired_and_inactive(self):
+    def test_removes_expired_keeps_inactive(self):
         tokens = [
             _make_auth_token(expired=True)[0],
             _make_auth_token(inactive=True)[0],
             _make_auth_token()[0],
         ]
         result = purge_expired_tokens(tokens)
-        assert len(result) == 1
+        assert len(result) == 2  # inactive + valid remain; only expired is removed
 
     def test_keeps_all_valid(self):
         tokens = [_make_auth_token()[0] for _ in range(5)]

@@ -22,6 +22,7 @@ All 4xx errors from the provisioning flow are surfaced as-is (not normalized to
 (403 / not approved, project inactive) and token problems (401).
 """
 
+import datetime
 import anyio
 from fastapi import APIRouter, Body
 from pydantic import BaseModel
@@ -52,8 +53,14 @@ class ProvisioningResponse(BaseModel):
     """Always ``"bearer"``."""
     accessToken: str
     """Short-lived bearer token. Send as ``Authorization: Bearer <accessToken>``
-    in subsequent API requests. Expires after the project-configured duration
-    (default: 7 days). Re-provision to obtain a fresh token before expiry."""
+    in subsequent API requests. Re-provision to obtain a fresh token before expiry."""
+    expiresAt: datetime.datetime | None = None
+    """Token expiry timestamp (UTC, ISO 8601). Devices should schedule re-provisioning
+    before this time. A new token is issued on each provisioning call; old tokens remain
+    valid until they expire or are purged on the next provisioning call."""
+    expiresIn: int | None = None
+    """Seconds until the token expires (positive integer). Convenience field derived
+    from ``expiresAt``; equivalent to ``(expiresAt - now).total_seconds()``."""
 
 
 @router.post(
@@ -124,6 +131,14 @@ async def provision(provisioning_request: ProvisioningRequest = Body(...)) -> Pr
     Calling this endpoint again before the previous token expires creates an
     additional token; the old token remains valid until it naturally expires or
     is purged on the next provisioning call. There is no explicit token revocation.
+    Devices should use ``expiresIn`` / ``expiresAt`` to schedule proactive re-provisioning.
+
+    **Token cap**
+
+    Each device may hold at most **32 active tokens** simultaneously. When the cap
+    is reached, the token with the oldest ``last_use_at`` is evicted before the new
+    one is stored. Expired tokens are always purged first, so the cap only applies
+    to unexpired tokens.
 
     **Idempotency**
 

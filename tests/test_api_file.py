@@ -9,12 +9,14 @@ The device sends If-None-Match on subsequent requests and expects 304
 when the file has not changed (avoids unnecessary downloads).
 
 File lookup: device-specific path first, project-level fallback if absent.
+PUT always writes to the device-specific path.
 """
 import pytest
 from pathlib import Path
 
-from app.core.device import get_file_path
-from app.core.project import get_project_path
+from app.core.device.backend import get_file_path
+from app.paths import project_dir
+from app.config import app_config
 
 
 FILE_CONTENT = "firmware=v1.2.3\nserver=https://example.com\n"
@@ -36,7 +38,7 @@ def device_file(provisioned, projects_dir):
 @pytest.fixture
 def project_file(provisioned, projects_dir):
     """A file in the project directory (fallback for devices without their own copy)."""
-    path = get_project_path(provisioned["project_name"]) / "default.txt"
+    path = project_dir(provisioned["project_name"]) / "default.txt"
     path.write_text("project-level default content")
     return path
 
@@ -185,3 +187,74 @@ def test_put_no_auth_rejected(client, provisioned):
         content=b"data",
     )
     assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# PUT — size limit (spec: max_file_upload_size = 10 MiB)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.xfail(strict=True, reason="max_file_upload_size not yet raised to 10 MiB (currently 1 MiB)")
+def test_put_5mb_file_within_limit_accepted(client, provisioned, projects_dir):
+    """A 5 MiB file must be accepted once the limit is raised to 10 MiB."""
+    content = b"X" * (5 * 1024 * 1024)
+    resp = client.put(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/medium.bin",
+        headers={"Authorization": f"bearer {provisioned['device_token']}"},
+        content=content,
+    )
+    assert resp.status_code == 200
+
+
+def test_put_too_large_rejected(client, provisioned, projects_dir):
+    """Files exceeding max_file_upload_size are rejected with 413."""
+    big_content = b"X" * (10 * 1024 * 1024 + 1)
+    resp = client.put(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/big.bin",
+        headers={"Authorization": f"bearer {provisioned['device_token']}"},
+        content=big_content,
+    )
+    assert resp.status_code == 413
+
+
+@pytest.mark.xfail(strict=True, reason="atomic upload (cleanup on 413) not yet implemented")
+def test_put_too_large_does_not_leave_partial_file(client, provisioned, projects_dir):
+    """After a 413, no partial file should remain on disk (atomic upload)."""
+    big_content = b"X" * (app_config.max_upload_size + 1)
+    resp = client.put(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/partial.bin",
+        headers={"Authorization": f"bearer {provisioned['device_token']}"},
+        content=big_content,
+    )
+    assert resp.status_code == 413
+    partial_path = get_file_path(
+        provisioned["project_name"],
+        provisioned["device_name"],
+        "partial.bin",
+        check_file_exists=False,
+    )
+    assert not partial_path.exists()
+
+
+# ---------------------------------------------------------------------------
+# Filename validation (spec: reject path traversal and invalid chars)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.xfail(strict=True, reason="filename validation not yet implemented in file endpoint")
+def test_get_path_traversal_rejected(client, provisioned, projects_dir):
+    """Filenames containing path traversal sequences must be rejected with 400."""
+    resp = client.get(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/../secret.txt",
+        headers={"Authorization": f"bearer {provisioned['device_token']}"},
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.xfail(strict=True, reason="filename validation not yet implemented in file endpoint")
+def test_put_invalid_filename_rejected(client, provisioned, projects_dir):
+    """Filenames with invalid characters must be rejected with 400."""
+    resp = client.put(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/in valid!.txt",
+        headers={"Authorization": f"bearer {provisioned['device_token']}"},
+        content=b"data",
+    )
+    assert resp.status_code == 400

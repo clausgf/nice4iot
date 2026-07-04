@@ -133,7 +133,10 @@ async def head_resource(
     **If-None-Match**: if the request includes ``If-None-Match: <etag>`` and the
     ETag matches the current file, responds with **304 Not Modified**.
     """
-    file_path = get_file_path(project_name, device_name, filename)
+    try:
+        file_path = get_file_path(project_name, device_name, filename)
+    except (FileNotFoundError, ValueError) as e:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(e))
     headers = await get_headers(file_path)
 
     if if_none_match == headers['ETag']:
@@ -195,7 +198,10 @@ async def get_resource(
     HEAD or GET + If-None-Match on every boot and skips the download when the
     ETag matches its locally stored value.
     """
-    file_path = get_file_path(project_name, device_name, filename)
+    try:
+        file_path = get_file_path(project_name, device_name, filename)
+    except (FileNotFoundError, ValueError) as e:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(e))
     headers = await get_headers(file_path)
 
     if if_none_match == headers['ETag']:

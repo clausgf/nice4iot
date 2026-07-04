@@ -3,15 +3,20 @@ Provisioning API tests — simulates the arduino4iot device provisioning flow.
 
 POST /api/provision
   Body:     {"projectName": "...", "deviceName": "...", "provisioningToken": "..."}
-  Response: {"tokenType": "bearer", "accessToken": "..."}
+  Response: {"tokenType": "bearer", "accessToken": "...", "expiresAt": "...", "expiresIn": ...}
 """
 import datetime
 import pytest
 
-from app.core.auth import generate_token
-from app.core.models import AuthToken, Project
-from app.core.project import create_project
-from tests.conftest import make_provisioning_token
+from app.core.token.backend import (
+    create_token,
+    get_provisioning_token_adapter,
+    load_device_tokens,
+    save_device_tokens,
+)
+from app.core.token.models import AuthToken
+from app.core.device.backend import get_device, update_device
+from tests.conftest import make_provisioning_token, setup_project
 
 
 # ---------------------------------------------------------------------------
@@ -32,11 +37,11 @@ def test_provision_new_device(client, project_autoapprove):
     assert len(body["accessToken"]) >= 16
 
 
-def test_provision_returns_usable_device_token(client, project_autoapprove):
-    """The returned device token can immediately authenticate a telemetry request."""
+def test_provision_returns_usable_device_token(client, project_autoapprove, projects_dir):
+    """The returned device token can immediately authenticate a file request."""
+    from app.paths import project_dir
     project, prov_token = project_autoapprove
 
-    # Provision
     resp = client.post("/api/provision", json={
         "projectName": project.name,
         "deviceName": "e32-aabb1234",
@@ -45,11 +50,7 @@ def test_provision_returns_usable_device_token(client, project_autoapprove):
     assert resp.status_code == 200
     device_token = resp.json()["accessToken"]
 
-    # The health endpoint isn't auth-protected; use file endpoint to verify token
-    # (actual telemetry would need a backend config)
-    from app.core.project import get_project_path
-    config_file = get_project_path(project.name) / "e32-aabb1234" / "test.txt"
-    config_file.parent.mkdir(parents=True, exist_ok=True)
+    config_file = project_dir(project.name) / "e32-aabb1234" / "test.txt"
     config_file.write_text("hello")
 
     resp2 = client.get(
@@ -76,13 +77,9 @@ def test_provision_purges_expired_tokens(client, project_autoapprove):
     After several provisions the device token list must not grow unboundedly.
     Expired tokens are purged before each new one is appended.
     """
-    from app.core.device import get_device, create_device
-    from app.core.models import Device
-
     project, prov_token = project_autoapprove
     device_name = "e32-tokentest"
 
-    # Provision three times
     for _ in range(3):
         resp = client.post("/api/provision", json={
             "projectName": project.name,
@@ -91,13 +88,12 @@ def test_provision_purges_expired_tokens(client, project_autoapprove):
         })
         assert resp.status_code == 200
 
-    # Expire all existing tokens by re-reading the device and back-dating them
-    device = get_device(project.name, device_name)
-    from app.core.device import update_device
+    # Expire all existing tokens
     past = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)
-    for t in device.tokens:
+    tokens = load_device_tokens(project.name, device_name)
+    for t in tokens:
         t.expires_at = past
-    update_device(device)
+    save_device_tokens(project.name, device_name, tokens)
 
     # One more provision — expired tokens should be purged first
     resp = client.post("/api/provision", json={
@@ -107,8 +103,67 @@ def test_provision_purges_expired_tokens(client, project_autoapprove):
     })
     assert resp.status_code == 200
 
-    device = get_device(project.name, device_name)
-    assert len(device.tokens) == 1  # only the fresh token remains
+    tokens = load_device_tokens(project.name, device_name)
+    assert len(tokens) == 1  # only the fresh token remains
+
+
+# ---------------------------------------------------------------------------
+# Provisioning response fields (spec: expiresAt and expiresIn)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.xfail(strict=True, reason="expiresAt not yet returned by implementation")
+def test_provision_response_includes_expires_at(client, project_autoapprove):
+    """Response must include expiresAt as an ISO 8601 timestamp."""
+    project, prov_token = project_autoapprove
+    resp = client.post("/api/provision", json={
+        "projectName": project.name,
+        "deviceName": "e32-expiry",
+        "provisioningToken": prov_token,
+    })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "expiresAt" in body
+    # must be parseable as datetime
+    datetime.datetime.fromisoformat(body["expiresAt"])
+
+
+@pytest.mark.xfail(strict=True, reason="expiresIn not yet returned by implementation")
+def test_provision_response_includes_expires_in(client, project_autoapprove):
+    """Response must include expiresIn as a positive integer (seconds)."""
+    project, prov_token = project_autoapprove
+    resp = client.post("/api/provision", json={
+        "projectName": project.name,
+        "deviceName": "e32-expiry2",
+        "provisioningToken": prov_token,
+    })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "expiresIn" in body
+    assert isinstance(body["expiresIn"], int)
+    assert body["expiresIn"] > 0
+
+
+# ---------------------------------------------------------------------------
+# Token cap: max 32 active tokens per device (spec)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.xfail(strict=True, reason="max-token eviction not yet implemented")
+def test_provision_max_tokens_evicts_oldest(client, project_autoapprove):
+    """When a device accumulates more than 32 tokens the one with the oldest
+    last_use_at is evicted so the total stays at 32."""
+    project, prov_token = project_autoapprove
+    device_name = "e32-maxtoken"
+
+    for _ in range(33):
+        resp = client.post("/api/provision", json={
+            "projectName": project.name,
+            "deviceName": device_name,
+            "provisioningToken": prov_token,
+        })
+        assert resp.status_code == 200
+
+    tokens = load_device_tokens(project.name, device_name)
+    assert len(tokens) <= 32
 
 
 # ---------------------------------------------------------------------------
@@ -120,7 +175,7 @@ def test_provision_invalid_token_rejected(client, project_autoapprove):
     resp = client.post("/api/provision", json={
         "projectName": project.name,
         "deviceName": "e32-aabb1234",
-        "provisioningToken": "x" * 32,  # wrong but long enough to pass format check
+        "provisioningToken": "x" * 32,
     })
     assert resp.status_code == 401
 
@@ -136,30 +191,37 @@ def test_provision_short_token_rejected(client, project_autoapprove):
 
 
 def test_provision_expired_token_rejected(client, projects_dir):
-    project = Project(name="proj_expired", is_autocreate_devices=True, is_provisioning_autoapproval=True)
-    token, value = make_provisioning_token(expires_in=datetime.timedelta(seconds=-1))
-    project.provisioning_tokens.append(token)
-    create_project(project)
+    project, value = setup_project("proj_expired",
+                                   is_autocreate_devices=True,
+                                   is_provisioning_autoapproval=True)
+    # Replace the valid token with an expired one
+    adapter = get_provisioning_token_adapter("proj_expired")
+    for key, _ in list(adapter.items()):
+        adapter.delete(key)
+    expired_token = create_token(datetime.timedelta(seconds=-1), length=64)
+    adapter.create(expired_token)
 
     resp = client.post("/api/provision", json={
         "projectName": "proj_expired",
         "deviceName": "e32-aabb1234",
-        "provisioningToken": value,
+        "provisioningToken": expired_token.value,
     })
     assert resp.status_code == 401
 
 
 def test_provision_inactive_token_rejected(client, projects_dir):
-    project = Project(name="proj_inactive_tok", is_autocreate_devices=True, is_provisioning_autoapproval=True)
-    token, value = make_provisioning_token()
-    token.is_active = False
-    project.provisioning_tokens.append(token)
-    create_project(project)
+    project, _ = setup_project("proj_inactive_tok",
+                                is_autocreate_devices=True,
+                                is_provisioning_autoapproval=True)
+    adapter = get_provisioning_token_adapter("proj_inactive_tok")
+    for key, t in list(adapter.items()):
+        t.is_active = False
+        adapter.update(t)
 
     resp = client.post("/api/provision", json={
         "projectName": "proj_inactive_tok",
         "deviceName": "e32-aabb1234",
-        "provisioningToken": value,
+        "provisioningToken": _,
     })
     assert resp.status_code == 401
 
@@ -178,12 +240,10 @@ def test_provision_nonexistent_project(client, projects_dir):
 
 
 def test_provision_inactive_project_rejected(client, projects_dir):
-    project = Project(name="proj_inactive", is_active=False,
-                      is_autocreate_devices=True, is_provisioning_autoapproval=True)
-    token, value = make_provisioning_token()
-    project.provisioning_tokens.append(token)
-    create_project(project)
-
+    project, value = setup_project("proj_inactive",
+                                   is_active=False,
+                                   is_autocreate_devices=True,
+                                   is_provisioning_autoapproval=True)
     resp = client.post("/api/provision", json={
         "projectName": "proj_inactive",
         "deviceName": "e32-aabb1234",
@@ -193,12 +253,9 @@ def test_provision_inactive_project_rejected(client, projects_dir):
 
 
 def test_provision_no_autocreate_rejected(client, projects_dir):
-    project = Project(name="proj_no_autocreate", is_autocreate_devices=False,
-                      is_provisioning_autoapproval=True)
-    token, value = make_provisioning_token()
-    project.provisioning_tokens.append(token)
-    create_project(project)
-
+    project, value = setup_project("proj_no_autocreate",
+                                   is_autocreate_devices=False,
+                                   is_provisioning_autoapproval=True)
     resp = client.post("/api/provision", json={
         "projectName": "proj_no_autocreate",
         "deviceName": "brand_new_device",
@@ -208,12 +265,9 @@ def test_provision_no_autocreate_rejected(client, projects_dir):
 
 
 def test_provision_no_autoapproval_rejected(client, projects_dir):
-    project = Project(name="proj_no_autoapproval", is_autocreate_devices=True,
-                      is_provisioning_autoapproval=False)
-    token, value = make_provisioning_token()
-    project.provisioning_tokens.append(token)
-    create_project(project)
-
+    project, value = setup_project("proj_no_autoapproval",
+                                   is_autocreate_devices=True,
+                                   is_provisioning_autoapproval=False)
     resp = client.post("/api/provision", json={
         "projectName": "proj_no_autoapproval",
         "deviceName": "brand_new_device",

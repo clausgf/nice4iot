@@ -82,9 +82,13 @@ async def post_telemetry_with_names(
           "active_ms": 823
         }
 
-    Non-numeric values in the payload are passed through to the backend as-is;
-    whether they are accepted depends on the configured backend
-    (Prometheus Remote Write rejects non-numeric samples).
+    Only numeric (float/int) field values are forwarded to the backend.
+    Non-numeric fields (e.g. ``"status": "ok"``) are **silently ignored**;
+    a warning is logged server-side. This allows mixed payloads without
+    failing the entire measurement batch.
+
+    The measurement **timestamp** is always the server arrival time (UTC).
+    Devices cannot supply their own timestamp in the payload.
 
     **Path parameters**
 
@@ -92,13 +96,19 @@ async def post_telemetry_with_names(
     * ``device_name``  — device identifier within the project.
     * ``kind``         — measurement category label (e.g. ``sensors``, ``system``).
       Must be a valid filename (letters, digits, ``_``, ``-``, ``+``).
-      Used as a tag/label in the telemetry backend. arduino4iot uses ``system``
-      for built-in metrics (battery voltage, RSSI, boot count, active milliseconds).
+      Used as a tag/label in the telemetry backend.
+      arduino4iot uses ``system`` for built-in metrics:
+      ``battery_V``, ``wifi_rssi``, ``boot_count``, ``active_ms``.
+
+    **Body size**
+
+    Requests exceeding ``app_config.max_telemetry_size`` bytes are rejected
+    with **413**. Intended default: **8 192 bytes**.
 
     **Backend**
 
     The telemetry backend and its connection settings are configured per project.
-    Currently supported: Prometheus Remote Write (Protobuf + Snappy).
+    Currently supported: Prometheus Remote Write (Protobuf + Snappy), InfluxDB line protocol.
     Metric names are derived from the JSON keys; the ``kind`` value is added as
     a label. Fields whose names end with ``_total`` are written as COUNTER type;
     all others as GAUGE.
@@ -159,10 +169,19 @@ async def post_log_with_names(
 
     Configured per project. Supported backends:
 
+    **Body size**
+
+    Requests exceeding ``app_config.max_log_size`` bytes are rejected with
+    **413**. Intended default: **8 192 bytes**.
+
+    **Backend**
+
+    Configured per project. Multiple backends can be active simultaneously:
+
     * **Loki** — pushes to Grafana Loki JSON push API. Timestamp is server
       arrival time (nanosecond Unix epoch). Device name is added as a label.
-    * **File** — appends to ``<projects_dir>/<project>/.device.log``.
-      Each line is prefixed with the device name.
+    * **File** — appends to ``<projects_dir>/<project>/<device>/.device.log``.
+      Each entry is prefixed with the arrival timestamp and device name.
     """
     try:
         logmsg = (await request.body()).decode()
