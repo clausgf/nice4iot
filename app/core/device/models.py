@@ -32,7 +32,7 @@ class Device(BaseModel):
 
     is_active: Annotated[bool,
             Field(title='Active',
-                  description='Inactive devices are rejected during provisioning and all API calls (401).')
+                  description='Inactive devices are rejected during provisioning and all API calls (403).')
         ] = True
 
     location: Annotated[str,

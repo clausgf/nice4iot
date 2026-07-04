@@ -1,9 +1,10 @@
+import datetime
 import os
 from typing import Optional
 
 from nicegui import app, ui
 
-from app.config import app_config
+from app.routes import device_url, project_url
 from app.core.device.models import Device
 from app.core.device.backend import create_device, get_device, get_devices, update_device
 from app.core.project.backend import get_project
@@ -43,7 +44,7 @@ class DeviceCreationDialog:
             try:
                 device = create_device(Device(name=self.device_name, project_name=self.project_name))
                 ui.notify(f"Created device {device.name}", type='positive')
-                ui.navigate.to(f'/projects/{self.project_name}/devices/{self.device_name}?tab=Settings')
+                ui.navigate.to(device_url(self.project_name, self.device_name, tab='Settings'))
             except Exception as e:
                 ui.notify(f"Error creating device {self.device_name}: {e}", type='negative')
         else:
@@ -89,8 +90,8 @@ class ProjectDevicesTable:
                 with ui.input(placeholder='Search').props('type=search').bind_value(self.devices_table, 'filter').add_slot('append'):
                     ui.icon('search')
                 ui.button('New', icon='add').props('color=primary').classes('w-24').on_click(self.device_new_dialog.show)
-        self.devices_table.on('row-click', lambda msg: (
-            ui.navigate.to(f'/projects/{self.project_name}/devices/{msg.args[1]["id"]}?tab=Settings'),
+        self.devices_table.on('row-dblclick', lambda msg: (
+            ui.navigate.to(device_url(self.project_name, msg.args[1]['id'], tab='Settings')),
         ))
 
 
@@ -122,8 +123,8 @@ class DeviceSettingsCard:
                     get_device_token_adapter(project_name, device_name),
                     show_name=False,
                     allow_add=True,
-                    token_length=app_config.device_token_length,
-                    expires_in=project.device_tokens_expire_in,
+                    token_length=project.device_token_length,
+                    expires_in=datetime.timedelta(days=project.device_tokens_expire_in),
                 )
 
             ui.label(f'Device created at {render_datetime(self.device.created_at)}, last update at {render_datetime(self.device.updated_at)}')
@@ -153,7 +154,7 @@ class DeviceSettingsCard:
             )
             self.device = update_device(self.device)
             ui.notify(f"Renamed & saved device {self.device.name}", type='positive')
-            ui.navigate.to(f'/projects/{self.device.project_name}/devices/{self.device.name}?tab=Settings')
+            ui.navigate.to(device_url(self.device.project_name, self.device.name, tab='Settings'))
             return
         self.device = update_device(self.device)
         ui.notify(f"Saved device {self.device.name}", type='positive')
@@ -166,4 +167,4 @@ class DeviceSettingsCard:
         )
         if result == 'Delete':
             ui.notify(f"TODO Delete {self.project_name}/{self.device_name}", type='positive')
-            ui.navigate.to(f'/projects/{self.project_name}?tab=Devices')
+            ui.navigate.to(project_url(self.project_name, tab='Devices'))

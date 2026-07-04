@@ -1,3 +1,4 @@
+import datetime
 import logging
 from pydantic import DirectoryPath
 from pydantic_settings import BaseSettings
@@ -8,6 +9,7 @@ log = logging.getLogger('uvicorn')
 class AppConfig(BaseSettings):
     projects_dir: DirectoryPath = "data/projects"
     provisioning_token_length: int = 64
+    provisioning_token_expires_in: datetime.timedelta = datetime.timedelta(days=365)
     device_token_length: int = 32
     max_upload_size: int = 1048576  # 1 MB
     timezone: str = 'Europe/Berlin'

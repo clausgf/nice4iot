@@ -4,6 +4,7 @@ from typing import Optional
 from nicegui import PageArguments, app, ui
 
 from app.core.project.ui import all_projects_subpage, project_subpage
+from app.routes import device_url, project_url, projects_url, ROUTE_DEVICE, ROUTE_PROJECT, ROUTE_PROJECTS
 from app.ui.theme import frame
 import logging
 log = logging.getLogger('uvicorn')
@@ -15,9 +16,8 @@ async def device_subpage(args: PageArguments, title: ui.label, breadcrumbs: ui.e
     title.text = f'Device {project_id}/{device_id}'
     breadcrumbs.clear()
     with breadcrumbs:
-        ui.element('q-breadcrumbs-el').props('icon=home').on('click', lambda: ui.navigate.to('/'))
-        ui.element('q-breadcrumbs-el').props(f'label={project_id}').on('click', lambda: ui.navigate.to(f'/{project_id}'))
-        ui.element('q-breadcrumbs-el').props(f'label={device_id}').on('click', lambda: ui.navigate.to(f'/{project_id}/{device_id}'))
+        ui.element('q-breadcrumbs-el').props(f'label={project_id}').on('click', lambda: ui.navigate.to(project_url(project_id)))
+        ui.element('q-breadcrumbs-el').props(f'label={device_id}').on('click', lambda: ui.navigate.to(device_url(project_id, device_id)))
 
     with ui.tabs().classes('w-full') as tabs:
         dashboard_tab = ui.tab('Dashboard')
@@ -73,8 +73,8 @@ logo = '''
 @ui.page('/{_:path}')
 async def home_page():
     with ui.header(elevated=True).classes('items-center justify-between'):
-        ui.html(logo).props('width=16 height=16').classes('text-white')
-        ui.label('4IoT').classes('text-h6 font-bold')
+        ui.html(logo).props('width=16 height=16').classes('text-white cursor-pointer').on('click', lambda: ui.navigate.to(projects_url()))
+        ui.label('4IoT').classes('text-h6 font-bold cursor-pointer').on('click', lambda: ui.navigate.to(projects_url()))
         breadcrumbs = ui.element('q-breadcrumbs').props('active-color=white')
         # with breadcrumbs:
         #     ui.element('q-breadcrumbs-el').props('icon=home').on('click', lambda: ui.navigate.to('/'))
@@ -88,9 +88,9 @@ async def home_page():
 
     with ui.column().classes('w-full'):
         ui.sub_pages({
-                '/': all_projects_subpage,
-                '/{project_id}': project_subpage,
-                '/{project_id}/devices/{device_id}': device_subpage,
+                ROUTE_PROJECTS: all_projects_subpage,
+                ROUTE_PROJECT: project_subpage,
+                ROUTE_DEVICE: device_subpage,
             },
             data={
                 'title': title,

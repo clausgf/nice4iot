@@ -1,4 +1,3 @@
-from collections.abc import Iterator
 import datetime
 import shutil
 from pathlib import Path
@@ -38,7 +37,7 @@ def check_project_exists(project_name: str) -> bool:
 
 
 def project_dir_exists(project_name: str) -> Path:
-    """Return the project directory path, with optional existence check.
+    """Return the project directory path.
 
     Raises:
         ValueError: Invalid name or path escapes the projects directory.
@@ -74,13 +73,13 @@ def create_project(project_name: str) -> Project:
     return project
 
 
-def get_project(project_name: str) -> Project:
+def get_project(project_name: str, check_active: bool = True) -> Project:
     """Load and return a project by name.
 
     Raises:
         ValueError: Invalid project name.
         FileNotFoundError: Project directory does not exist.
-        PermissionError: Project is not active.
+        PermissionError: check_active is True and project is not active.
         OSError: Project file could not be read.
     """
     project_path = project_dir_exists(project_name)
@@ -92,10 +91,10 @@ def get_project(project_name: str) -> Project:
         stat_info = project_path.stat()
         project = Project(
             name=project_name,
-            created_at=datetime.datetime.fromtimestamp(stat_info.st_ctime),
-            updated_at=datetime.datetime.fromtimestamp(stat_info.st_mtime),
+            created_at=datetime.datetime.fromtimestamp(stat_info.st_ctime, tz=datetime.timezone.utc),
+            updated_at=datetime.datetime.fromtimestamp(stat_info.st_mtime, tz=datetime.timezone.utc),
         )
-    if not project.is_active:
+    if check_active and not project.is_active:
         raise PermissionError(f"Project {project_name} is not active.")
     return project
 
@@ -114,10 +113,12 @@ def rename_project(old_project_name: str, new_project_name: str) -> None:
     if new_project_path.exists():
         raise FileExistsError(f"Project {new_project_name} already exists.")
     old_project_path.rename(new_project_path)
-    adapter = JsonAdapter(Project, project_filename(new_project_name))
-    project_data = adapter.read()
-    project_data.name = new_project_name
-    adapter.save(project_data)
+    new_json = project_filename(new_project_name)
+    if new_json.is_file():
+        adapter = JsonAdapter(Project, new_json, create_if_not_exist=False, lock_field='updated_at')
+        project_data = adapter.read()
+        project_data.name = new_project_name
+        adapter.save(project_data)
 
 
 def delete_project(project_name: str) -> None:
@@ -133,17 +134,17 @@ def delete_project(project_name: str) -> None:
 
 
 def get_projects() -> list[Project]:
-    """Return all active projects, silently skipping any that fail to load."""
+    """Return all projects (active and inactive), silently skipping any that fail to load."""
     base_path = Path(app_config.projects_dir).resolve()
     projects = []
     for project_path in base_path.iterdir():
         if not project_path.is_dir() or not is_valid_filename(project_path.name):
             continue
         try:
-            projects.append(get_project(project_path.name))
+            projects.append(get_project(project_path.name, check_active=False))
         except Exception as e:
             logger.error(f"Error reading project directory {project_path}: {e}")
-    return projects
+    return sorted(projects, key=lambda p: p.name)
 
 ###############################################################################
 
@@ -153,50 +154,15 @@ def get_auth_project(project_name: str, provisioning_token: str) -> Project:
     API boundary: raises HTTPException for all error cases.
     """
     try:
-        project_path = project_dir_exists(project_name)
+        project = get_project(project_name, check_active=False)
     except (ValueError, FileNotFoundError) as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
-    project_file = project_filename(project_name)
-    project = Project.model_validate_json(project_file.read_text())
-    project.name = project_name
     if not project.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Project {project_name} is not active.")
 
     token_adapter = get_provisioning_token_adapter(project_name)
-    tokens = [item for _, item in token_adapter.items()]
-    token = validate_token(provisioning_token, tokens)
-
-    for key, t in token_adapter.items():
-        if t.value == token.value:
-            t.last_use_at = datetime.datetime.now(datetime.timezone.utc)
-            token_adapter.update(key, t)
-            break
+    token = validate_token(provisioning_token, list(token_adapter))
+    token_adapter.update(token)
 
     return project
-
-###############################################################################
-# UI adapter
-###############################################################################
-
-class ProjectModelAdapter:
-    """Adapter for projects implementing the niceview CollectionAdapter protocol.
-    Key = project directory name.
-    """
-    def __iter__(self) -> Iterator[Project]:
-        return iter(get_projects())
-
-    def key_from_item(self, item: Project) -> str:
-        return item.name
-
-    def create(self, item: Project) -> Project:
-        raise NotImplementedError("Use create_project() directly.")
-
-    def read(self, key: str) -> Project:
-        return get_project(key)
-
-    def update(self, _: Project) -> Project:
-        raise NotImplementedError("Use rename_project() directly.")
-
-    def delete(self, key: str) -> None:
-        raise NotImplementedError("Use delete_project() directly.")

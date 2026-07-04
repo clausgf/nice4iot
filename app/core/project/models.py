@@ -1,18 +1,12 @@
 import datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 import niceview
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
-from app.core.token.models import AuthToken
 from app.util import FILENAME_REGEX
 
 NOW_FACTORY = lambda: datetime.datetime.now(datetime.timezone.utc)
-
-
-class Tag(BaseModel):
-    name: str
-    color: str = "blue"
 
 
 class Project(BaseModel):
@@ -31,7 +25,7 @@ class Project(BaseModel):
                   description='Unique project identifier. Used as the directory name on disk. '
                               'Only letters, digits, underscore, hyphen and plus are allowed.'),
             niceview.Field(editable=False)
-        ] = ""
+        ] = "project"
 
     description: Annotated[str,
             Field(description='Human-readable description of the project.'),
@@ -40,12 +34,12 @@ class Project(BaseModel):
 
     is_active: Annotated[bool,
             Field(title='Active',
-                  description='Inactive projects reject all device API requests (401).')
+                  description='Inactive projects reject all device API requests (403).')
         ] = True
 
-    owner: Annotated[str, 
+    owner: Annotated[str,
             Field(description='Owner or responsible person for this project.')
-        ] = ""
+        ] = ""  # not shown in the project form
 
     created_at: Annotated[datetime.datetime,
             Field(default_factory=NOW_FACTORY,
@@ -73,14 +67,32 @@ class Project(BaseModel):
             niceview.Field()
         ] = True
 
-    device_tokens_expire_in: datetime.timedelta = Field(
-        default=datetime.timedelta(days=7),
-        description='Lifetime of bearer tokens issued to devices during provisioning. '
-                    'Devices must re-provision before their token expires.')
+    device_tokens_expire_in: Annotated[int,
+            Field(default=7,
+                  description='Lifetime of bearer tokens issued to devices (days). '
+                              'Devices must re-provision before their token expires.'),
+            niceview.Field(widget_type='ui.number')
+        ]
+
+    device_token_length: Annotated[int,
+            Field(default=32,
+                  description='Length of bearer tokens issued to devices during provisioning.'),
+            niceview.Field(widget_type='ui.number')
+        ]
 
     tags: Annotated[list[str],
             Field(description='Free-form labels for grouping and filtering projects.')
         ] = []
+
+    @field_validator('device_tokens_expire_in', mode='before')
+    @classmethod
+    def _parse_expire_in_legacy(cls, v: Any) -> int:
+        # Legacy: Pydantic v2 serialised timedelta as total seconds (float)
+        if isinstance(v, float):
+            return round(v) // 86400
+        if isinstance(v, datetime.timedelta):
+            return v.days
+        return int(v)
 
     class Meta:
         description = (

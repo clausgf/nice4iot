@@ -1,5 +1,6 @@
 import datetime
 import json
+from collections.abc import Callable
 
 from nicegui import ui
 from niceview.dataadapter import JsonListAdapter
@@ -23,8 +24,8 @@ class TokenListCard:
     def __init__(self, adapter: JsonListAdapter,
                  show_name: bool = True,
                  allow_add: bool = True,
-                 token_length: int = DEFAULT_TOKEN_LENGTH,
-                 expires_in: datetime.timedelta = DEFAULT_TOKEN_EXPIRY):
+                 token_length: int | Callable[[], int] = DEFAULT_TOKEN_LENGTH,
+                 expires_in: datetime.timedelta | Callable[[], datetime.timedelta] = DEFAULT_TOKEN_EXPIRY):
         self.adapter = adapter
         self.show_name = show_name
         self.token_length = token_length
@@ -70,7 +71,9 @@ class TokenListCard:
 
     def add_token(self) -> None:
         name = self._unique_name() if self.show_name else ''
-        new_token = create_token(expires_in=self.expires_in, length=self.token_length, name=name)
+        length = self.token_length() if callable(self.token_length) else self.token_length
+        expires = self.expires_in() if callable(self.expires_in) else self.expires_in
+        new_token = create_token(expires_in=expires, length=length, name=name)
         self.adapter.create(new_token)
         self.update_rows.refresh()
         ui.notify(f"Token '{name}' added" if name else "Token added")

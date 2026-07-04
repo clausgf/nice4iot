@@ -4,7 +4,6 @@ import shutil
 
 from fastapi import HTTPException, status
 
-from app.config import app_config
 from app.paths import device_dir
 from app.core.token.backend import create_token, load_device_tokens, purge_expired_tokens, save_device_tokens, validate_token
 from app.core.device.models import Device
@@ -211,7 +210,7 @@ def device_provision(project: Project, device_name: str) -> str:
 
     tokens = load_device_tokens(project.name, device_name)
     tokens = purge_expired_tokens(tokens)
-    token = create_token(project.device_tokens_expire_in, app_config.device_token_length)
+    token = create_token(datetime.timedelta(days=project.device_tokens_expire_in), project.device_token_length)
     tokens.append(token)
     save_device_tokens(project.name, device_name, tokens)
     device.last_provisioned_at = now

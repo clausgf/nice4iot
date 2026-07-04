@@ -1,23 +1,23 @@
-from typing import Optional
+from typing import Optional, cast
 
 from nicegui import PageArguments, ui
 
+from app.config import app_config
 from app.core.token.backend import get_provisioning_token_adapter
 from app.core.token.ui import TokenListCard
+from app.core.device.ui import ProjectDevicesTable
 from app.core.logging.ui import LoggingCard
 from app.core.telemetry.ui import TelemetryCard
 from app.core.forwarding.ui import ForwardingCard
+from app.routes import project_url, projects_url
 from app.util import is_valid_filename, render_datetime
 from app.core.project.models import Project
-from app.core.project.backend import ProjectModelAdapter, create_project, delete_project, get_project, project_filename, rename_project
+from app.core.project.backend import create_project, delete_project, get_project, get_projects, project_adapter, rename_project
 from niceview.form import ModelForm
 from niceview.util import submit_dialog
 
 import logging
 log = logging.getLogger("uvicorn")
-
-DEFAULT_PROVISIONING_TOKEN_LENGTH = 64
-DEFAULT_PROVISIONING_TOKEN_EXPIRY_DAYS = 7
 
 
 # ***************************************************************************
@@ -26,28 +26,40 @@ async def all_projects_subpage(args: PageArguments, title: ui.label, breadcrumbs
     log.debug(f'project_main_page {args=}')
     title.text = 'Projects'
     breadcrumbs.clear()
-    with breadcrumbs:
-        ui.element('q-breadcrumbs-el').props('icon=home').on('click', lambda: ui.navigate.to('/'))
 
     project_new_dialog = ProjectCreationDialog()
     with ui.grid().classes('grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 w-full'):
-        for project in ProjectModelAdapter():
+        for project in get_projects():
             with ui.card().classes('w-full') as card:
-                ui.label(project.name).classes('font-bold')
+                with ui.row().classes('w-full items-center gap-2'):
+                    ui.label(project.name).classes('font-bold grow')
+                    if not project.is_active:
+                        ui.chip('Inactive').props('dense color=grey text-color=white')
                 with ui.row().classes('w-full gap-1'):
                     for i, tag in enumerate(project.tags):
                         if i <= 1:
-                            ui.chip(tag).props('dense color-primary text-color=white')
+                            ui.chip(tag).props('dense color=primary text-color=white')
                         if i == 2:
-                            ui.chip(f'+{len(project.tags)-2}').props('dense color-primary text-color=white')
-            card.on('click', lambda e, p=project.name: ui.navigate.to(f'/{p}'))
+                            ui.chip(f'+{len(project.tags)-2}').props('dense color=primary text-color=white')
+            card.on('click', lambda e, p=project.name: ui.navigate.to(project_url(p)))
 
         ui.button('New Project', icon='add').props('color=primary').on_click(project_new_dialog.show).classes('w-full')
 
 # ***************************************************************************
 
 async def project_subpage(args: PageArguments, title: ui.label, breadcrumbs: ui.element, project_id: str, tab: Optional[str] = None):
+    try:
+        get_project(project_id, check_active=False)
+    except (ValueError, FileNotFoundError):
+        breadcrumbs.clear()
+        title.text = 'Not Found'
+        ui.label(f'Project "{project_id}" does not exist.').classes('text-h6 text-negative')
+        return
+
     title.text = 'Project ' + project_id
+    breadcrumbs.clear()
+    with breadcrumbs:
+        ui.element('q-breadcrumbs-el').props(f'label={project_id}').on('click', lambda: ui.navigate.to(project_url(project_id)))
 
     with ui.tabs().classes('w-full') as tabs:
         dashboard_tab = ui.tab('Dashboard')
@@ -55,21 +67,20 @@ async def project_subpage(args: PageArguments, title: ui.label, breadcrumbs: ui.
         provisioning_tab = ui.tab('Provisioning')
         devices_tab = ui.tab('Devices')
     tab = tab if tab else dashboard_tab.label
-    with ui.tab_panels(tabs, value=tab).classes('w-full') as panels:
+    with ui.tab_panels(tabs, value=tab).classes('w-full'):
         with ui.tab_panel(dashboard_tab):
             ui.label('Alarms').classes('text-h6 font-bold')
             ui.label('Monitoring').classes('text-h6 font-bold')
         with ui.tab_panel(general_tab):
-            await general_panel(args, project_id)
+            await general_panel(project_id)
         with ui.tab_panel(provisioning_tab):
-            await provisioning_panel(args, project_id)
+            await provisioning_panel(project_id)
         with ui.tab_panel(devices_tab):
-            ui.label('Project Devices').classes('text-h6 font-bold')
-            ui.button('Edit Device MyDevice').on_click(lambda: ui.navigate.to(f'/{project_id}/MyDevice'))
+            ProjectDevicesTable(project_id)
 
 # ***************************************************************************
 
-async def general_panel(args: PageArguments, project_id: str):
+async def general_panel(project_id: str):
     with ui.grid().classes('w-full gap-4 grid-cols-1 lg:grid-cols-2'):
         with ui.card().classes('w-full'):
             project_card(project_id)
@@ -81,21 +92,14 @@ async def general_panel(args: PageArguments, project_id: str):
             LoggingCard(project_id)
         with ui.card().classes('w-full'):
             await danger_card(project_id)
-        project = get_project(project_id)
-        ui.label(
-            f'Project created at {render_datetime(project.created_at)}, '
-            f'last update at {render_datetime(project.updated_at)}'
-        )
 
 # ***************************************************************************
 
 def project_card(project_id: str) -> None:
     with ui.expansion('General').classes('w-full q-mb-none').props('dense header-class="text-h6 font-bold"').mark('general-form'):
-        project_file = project_filename(project_id)
-        form = ModelForm.from_json(Project, project_file, create_if_not_exist=True,
-                                lock_field='updated_at', created_field='created_at',
-                                include=['name', 'description', 'tags', 'is_active', 'is_autocreate_devices', 'is_provisioning_autoapproval', 'device_tokens_expire_in'],
-                                autosave=True)
+        form = ModelForm.from_adapter(Project, project_adapter(project_id),
+                                      include=['name', 'description', 'tags', 'is_active', 'is_autocreate_devices', 'is_provisioning_autoapproval', 'device_tokens_expire_in', 'device_token_length'],
+                                      autosave=True)
         form.render_field('name', editable=False).props('outlined dense').classes('w-full')
         form.render_field('description').props('outlined dense hide-bottom-space').classes('w-full')
         form.render_field('tags').props('outlined dense hide-bottom-space').classes('w-full')
@@ -104,6 +108,12 @@ def project_card(project_id: str) -> None:
             form.render_field('is_autocreate_devices')
             form.render_field('is_provisioning_autoapproval')
         form.render_field('device_tokens_expire_in').props('outlined dense').classes('w-full')
+        form.render_field('device_token_length').props('outlined dense').classes('w-full')
+        p = cast(Project, form.item)
+        ui.label().classes('text-caption text-grey-7').bind_text_from(
+            p, 'updated_at',
+            backward=lambda v: f'Created {render_datetime(p.created_at)}, updated {render_datetime(v)}'
+        )
 
 # ***************************************************************************
 
@@ -124,7 +134,7 @@ async def _rename_project(old_name: str, new_name: str) -> None:
     try:
         rename_project(old_name, new_name)
         ui.notify(f"Project renamed from {old_name} to {new_name}", type='positive')
-        ui.navigate.to(f'/{new_name}')
+        ui.navigate.to(project_url(new_name))
     except Exception as e:
         log.exception(f"Failed to rename project from {old_name} to {new_name}: {e}")
         ui.notify(f"Failed to rename project: {e}", type='negative')
@@ -141,14 +151,14 @@ async def _delete_project(project_id: str) -> None:
     try:
         delete_project(project_id)
         ui.notify(f"Project deleted: {project_id}", type='positive')
-        ui.navigate.to('/')
+        ui.navigate.to(projects_url())
     except Exception as e:
         log.exception(f"Failed to delete project {project_id}: {e}")
         ui.notify(f"Failed to delete project: {e}", type='negative')
 
 
 async def danger_card(project_id: str) -> None:
-    with ui.expansion('Danger Zone', value=True).classes('w-full q-mb-none').props('dense header-class="text-h6 font-bold"'):
+    with ui.expansion('Danger Zone', value=False).classes('w-full q-mb-none').props('dense header-class="text-h6 font-bold"'):
         with ui.row().classes('w-full gap-4 q-mt-none'):
             val_rules = {
                 "Invalid name: use letters, digits, underscore, plus, minus only.": lambda x: is_valid_filename(x)
@@ -167,13 +177,13 @@ async def danger_card(project_id: str) -> None:
 
 # ***************************************************************************
 
-async def provisioning_panel(args: PageArguments, project_id: str):
-    project = get_project(project_id)
+async def provisioning_panel(project_id: str):
     with ui.card().classes('w-full'):
         with ui.expansion('Provisioning Tokens', value=True).classes('w-full q-mb-none').props('dense header-class="text-h6 font-bold"'):
             ui.markdown('Long-lived shared secrets used by devices to obtain bearer tokens.').classes('text-caption q-ma-none')
-            TokenListCard(get_provisioning_token_adapter(project_id))
-            ui.label(f'Token expiry: {project.device_tokens_expire_in.days} days').classes('text-sm text-gray-500')
+            TokenListCard(get_provisioning_token_adapter(project_id),
+                          token_length=app_config.provisioning_token_length,
+                          expires_in=app_config.provisioning_token_expires_in)
 
 # ***************************************************************************
 
@@ -184,7 +194,7 @@ class ProjectCreationDialog:
         self.project_name = ''
         with ui.dialog().style('width: 400px') as self.dialog:
             with ui.card().classes('w-full'):
-                ui.label('Create Project').classes('text-h6 center')
+                ui.label('Create Project').classes('text-h6 text-center')
                 val_rules = {
                     "Invalid name: use letters, digits, underscore, plus, minus only.": lambda x: is_valid_filename(x)
                 }
@@ -204,7 +214,7 @@ class ProjectCreationDialog:
         if result and self.project_name and is_valid_filename(self.project_name):
             project = create_project(self.project_name)
             ui.notify(f"Created project {project.name}", type='positive')
-            ui.navigate.to(f'/projects/{project.name}?tab=Settings')
+            ui.navigate.to(project_url(project.name, tab='General'))
         else:
             ui.notify("Project creation cancelled", type='negative')
 
