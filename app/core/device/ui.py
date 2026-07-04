@@ -25,13 +25,17 @@ log = logging.getLogger("uvicorn")
 # ***************************************************************************
 
 def device_dashboard_panel(project_name: str, device_name: str) -> None:
-    """Overview cards shown on the device Dashboard tab."""
-    device = get_device(project_name, device_name)
-    now = datetime.datetime.now(datetime.timezone.utc)
+    """Overview cards shown on the device Dashboard tab (auto-refreshes every 30 s)."""
+    @ui.refreshable
+    def _content() -> None:
+        device = get_device(project_name, device_name)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        with ui.grid().classes('grid-cols-1 sm:grid-cols-2 gap-4 w-full'):
+            _status_card(device, now)
+            _provisioning_card(device)
 
-    with ui.grid().classes('grid-cols-1 sm:grid-cols-2 gap-4 w-full'):
-        _status_card(device, now)
-        _provisioning_card(device)
+    _content()
+    ui.timer(30.0, _content.refresh)
 
 
 def _ago(delta: datetime.timedelta) -> str:

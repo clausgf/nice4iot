@@ -19,7 +19,7 @@ An IoT device management platform written in Python. It provides a REST API for 
 | Page | Tabs |
 |---|---|
 | Projects list | — card grid |
-| Project | Dashboard · General · Provisioning · Devices |
+| Project | Dashboard · General · Provisioning · Files · Devices |
 | Device | Dashboard · General · Files · Data · Logs |
 
 ---

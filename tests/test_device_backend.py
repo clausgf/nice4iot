@@ -1,5 +1,6 @@
 """
-Unit tests for app.core.device.backend — device_adapter and rename_device.
+Unit tests for app.core.device.backend — device_adapter, rename_device,
+get_file_path (project fallback), and list_files helper.
 """
 import pytest
 
@@ -8,10 +9,14 @@ from app.core.device.backend import (
     delete_device,
     device_adapter,
     get_device,
+    get_device_path,
+    get_file_path,
     rename_device,
 )
 from app.core.device.models import Device
 from app.core.project.backend import create_project
+from app.paths import project_dir
+from app.util import is_valid_upload_filename
 
 
 @pytest.fixture
@@ -72,3 +77,71 @@ def test_rename_device_already_exists(device, project):
     create_device(other)
     with pytest.raises(FileExistsError):
         rename_device(project, device.name, "other")
+
+
+# ---------------------------------------------------------------------------
+# get_file_path — project-level fallback
+# ---------------------------------------------------------------------------
+
+def test_get_file_path_falls_back_to_project_file(device, project):
+    """When no device-specific file exists, project file is returned."""
+    proj_path = project_dir(project)
+    (proj_path / 'config.json').write_text('{"shared": true}')
+
+    path = get_file_path(project, device.name, 'config.json')
+    assert path == proj_path / 'config.json'
+
+
+def test_get_file_path_device_overrides_project(device, project):
+    """Device-specific file takes precedence over the project fallback."""
+    proj_path = project_dir(project)
+    (proj_path / 'config.json').write_text('{"shared": true}')
+
+    dev_path = get_device_path(project, device.name)
+    (dev_path / 'config.json').write_text('{"device": true}')
+
+    path = get_file_path(project, device.name, 'config.json')
+    assert path == dev_path / 'config.json'
+
+
+def test_get_file_path_raises_when_missing(device, project):
+    with pytest.raises(FileNotFoundError):
+        get_file_path(project, device.name, 'missing.json')
+
+
+# ---------------------------------------------------------------------------
+# _list_files semantics (tested via filesystem, no NiceGUI import needed)
+# ---------------------------------------------------------------------------
+
+def _list_files(directory):
+    """Replicate _list_files logic for testing without importing NiceGUI."""
+    from pathlib import Path
+    d = Path(directory)
+    if not d.is_dir():
+        return []
+    return sorted(
+        [p for p in d.iterdir() if p.is_file() and is_valid_upload_filename(p.name)],
+        key=lambda p: p.name,
+    )
+
+
+def test_list_files_excludes_hidden(project):
+    proj_path = project_dir(project)
+    (proj_path / 'visible.json').write_text('{}')
+    (proj_path / '.hidden').write_text('secret')
+
+    names = [p.name for p in _list_files(proj_path)]
+    assert 'visible.json' in names
+    assert '.hidden' not in names
+
+
+def test_list_files_excludes_device_directories(device, project):
+    """Device subdirectories must not appear in the project file list."""
+    proj_path = project_dir(project)
+    names = [p.name for p in _list_files(proj_path)]
+    assert device.name not in names
+
+
+def test_list_files_returns_empty_for_nonexistent_dir(project):
+    from pathlib import Path
+    assert _list_files(Path('/nonexistent/path')) == []

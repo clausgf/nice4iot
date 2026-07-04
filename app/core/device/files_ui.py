@@ -1,11 +1,12 @@
 """
-Device Files Tab — browse, upload, download, delete and edit device and project files.
+Device Files Tab — browse, upload, download, delete, view and edit files.
 
 Device files:  <projects_dir>/<project>/<device>/<filename>  (full read/write)
-Project files: <projects_dir>/<project>/<filename>           (full read/write; served
-               to devices as a fallback when no device-specific copy exists)
+Project files: <projects_dir>/<project>/<filename>           (full read/write;
+               served to devices as a fallback when no device-specific copy exists)
 
-JSON files additionally offer an inline editor with syntax validation.
+JSON files open in a CodeMirror editor with syntax highlighting and validation.
+Other text files open in a read-only CodeMirror viewer.
 """
 import json
 from pathlib import Path
@@ -21,9 +22,38 @@ from app.util import is_valid_upload_filename
 import logging
 log = logging.getLogger("uvicorn")
 
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+_LANG_MAP: dict[str, str] = {
+    '.yaml': 'YAML',  '.yml':  'YAML',
+    '.toml': 'TOML',  '.xml':  'XML',
+    '.html': 'HTML',  '.md':   'Markdown',
+    '.py':   'Python', '.sh':  'Shell',
+    '.css':  'CSS',   '.js':   'JavaScript',
+}
+_TEXT_EXTENSIONS: set[str] = {'.txt', '.log', '.csv', '.ini', '.cfg', '.conf'} | set(_LANG_MAP)
+_MAX_VIEWER_SIZE: int = 100 * 1024  # 100 KB
+
+
+def _codemirror_language(path: Path) -> str | None:
+    ext = path.suffix.lower()
+    if ext == '.json':
+        return 'JSON'
+    return _LANG_MAP.get(ext)
+
+
+def _is_viewable(path: Path) -> bool:
+    return path.suffix.lower() in _TEXT_EXTENSIONS and path.stat().st_size <= _MAX_VIEWER_SIZE
+
+
+# ---------------------------------------------------------------------------
+# Public panel functions
+# ---------------------------------------------------------------------------
 
 def device_files_panel(project_name: str, device_name: str) -> None:
-    """Content of the Files tab."""
+    """Content of the device Files tab (two-column grid)."""
     with ui.grid().classes('grid-cols-1 lg:grid-cols-2 gap-4 w-full'):
         with ui.card().classes('w-full'):
             _device_files_card(project_name, device_name)
@@ -31,33 +61,38 @@ def device_files_panel(project_name: str, device_name: str) -> None:
             _project_files_card(project_name)
 
 
+def project_files_panel(project_name: str) -> None:
+    """Content of the project Files tab (single card, full width)."""
+    with ui.card().classes('w-full'):
+        _project_files_card(project_name)
+
+
 # ---------------------------------------------------------------------------
-# JSON editor dialog
+# Dialogs
 # ---------------------------------------------------------------------------
 
 async def _json_editor_dialog(path: Path, refresh_fn=None) -> None:
-    """Open a modal editor for a JSON file.  Creates the file on first save."""
+    """CodeMirror JSON editor with validation and atomic save."""
     try:
         raw = path.read_text(encoding='utf-8') if path.is_file() else '{}'
         content = json.dumps(json.loads(raw), indent=2, ensure_ascii=False)
     except (OSError, json.JSONDecodeError):
         content = path.read_text(encoding='utf-8', errors='replace') if path.is_file() else '{}'
 
-    with ui.dialog() as dialog, ui.card().classes('w-full').style('min-width:640px; max-width:960px'):
-        ui.label(f'Edit {path.name}').classes('text-subtitle1 font-bold')
+    with ui.dialog() as dialog, ui.card().style('width: min(95vw, 900px); overflow: hidden'):
+        ui.label(f'Edit  {path.name}').classes('text-subtitle1 font-bold')
         ui.separator()
-        textarea = (
-            ui.textarea(value=content)
-            .props('outlined')
-            .classes('w-full font-mono')
-            .style('min-height:320px; max-height:600px; overflow-y:auto; font-size:0.75rem')
+        editor = (
+            ui.codemirror(value=content, language='JSON', line_wrapping=True)
+            .classes('w-full border rounded')
+            .style('height: clamp(200px, 40vh, 500px)')
         )
         with ui.row().classes('w-full justify-end gap-2 q-mt-sm'):
             ui.button('Cancel', on_click=dialog.close).props('flat')
 
             async def _save() -> None:
                 try:
-                    parsed = json.loads(textarea.value)
+                    parsed = json.loads(editor.value)
                 except json.JSONDecodeError as exc:
                     ui.notify(f'Invalid JSON: {exc}', type='negative')
                     return
@@ -69,8 +104,8 @@ async def _json_editor_dialog(path: Path, refresh_fn=None) -> None:
                     )
                     tmp.rename(path)
                 except OSError as exc:
-                    ui.notify(f'Save failed: {exc}', type='negative')
                     tmp.unlink(missing_ok=True)
+                    ui.notify(f'Save failed: {exc}', type='negative')
                     return
                 ui.notify(f'Saved {path.name}', type='positive')
                 dialog.close()
@@ -83,37 +118,71 @@ async def _json_editor_dialog(path: Path, refresh_fn=None) -> None:
     await dialog
 
 
+async def _text_viewer_dialog(path: Path) -> None:
+    """Read-only CodeMirror viewer for plain-text files."""
+    try:
+        content = path.read_text(encoding='utf-8', errors='replace')
+    except OSError as exc:
+        ui.notify(f'Cannot read file: {exc}', type='negative')
+        return
+
+    lang = _codemirror_language(path)
+    with ui.dialog() as dialog, ui.card().style('width: min(95vw, 900px); overflow: hidden'):
+        with ui.row().classes('w-full items-center gap-2'):
+            ui.label(f'View  {path.name}').classes('text-subtitle1 font-bold grow')
+            ui.label('read-only').classes('text-caption text-grey-6')
+        ui.separator()
+        (
+            ui.codemirror(value=content, language=lang, line_wrapping=True)
+            .classes('w-full border rounded')
+            .style('height: clamp(200px, 40vh, 500px)')
+        )
+        with ui.row().classes('w-full justify-end q-mt-sm'):
+            ui.button('Close', on_click=dialog.close).props('flat')
+
+    dialog.open()
+    await dialog
+
+
 async def _new_json_dialog(directory: Path, refresh_fn=None) -> None:
-    """Open a dialog to create a new JSON file in *directory*."""
-    with ui.dialog() as dialog, ui.card().classes('w-full').style('min-width:640px; max-width:960px'):
+    """Create a new JSON file using a CodeMirror editor."""
+    with ui.dialog() as dialog, ui.card().style('width: min(95vw, 900px); overflow: hidden'):
         ui.label('New JSON File').classes('text-subtitle1 font-bold')
         ui.separator()
-        filename_input = (
-            ui.input(label='Filename', placeholder='config.json')
-            .props('outlined dense')
-            .classes('w-full q-mt-xs')
-        )
-        textarea = (
-            ui.textarea(value='{}')
-            .props('outlined')
-            .classes('w-full font-mono q-mt-xs')
-            .style('min-height:200px; max-height:400px; overflow-y:auto; font-size:0.75rem')
+        with ui.row().classes('w-full items-center gap-2 q-mt-xs'):
+            filename_input = (
+                ui.input(label='Filename', placeholder='config')
+                .props('outlined dense')
+                .classes('grow')
+            )
+            filename_preview = ui.label('').classes('text-caption text-grey-6 text-no-wrap')
+
+        def _update_preview(e) -> None:
+            raw = (e.value or '').strip()
+            effective = raw if raw.endswith('.json') else (f'{raw}.json' if raw else '')
+            filename_preview.text = f'→ {effective}' if effective else ''
+
+        filename_input.on_value_change(_update_preview)
+
+        editor = (
+            ui.codemirror(value='{}', language='JSON', line_wrapping=True)
+            .classes('w-full border rounded q-mt-xs')
+            .style('height: clamp(160px, 30vh, 400px)')
         )
         with ui.row().classes('w-full justify-end gap-2 q-mt-sm'):
             ui.button('Cancel', on_click=dialog.close).props('flat')
 
             async def _create() -> None:
-                fname = filename_input.value.strip()
-                if not fname:
+                raw = (filename_input.value or '').strip()
+                fname = raw if raw.endswith('.json') else f'{raw}.json'
+                if not fname or fname == '.json':
                     ui.notify('Please enter a filename', type='warning')
                     return
-                if not fname.endswith('.json'):
-                    fname += '.json'
                 if not is_valid_upload_filename(fname):
                     ui.notify(f'Invalid filename: {fname!r}', type='negative')
                     return
                 try:
-                    parsed = json.loads(textarea.value)
+                    parsed = json.loads(editor.value)
                 except json.JSONDecodeError as exc:
                     ui.notify(f'Invalid JSON: {exc}', type='negative')
                     return
@@ -129,8 +198,8 @@ async def _new_json_dialog(directory: Path, refresh_fn=None) -> None:
                     )
                     tmp.rename(dest)
                 except OSError as exc:
-                    ui.notify(f'Create failed: {exc}', type='negative')
                     tmp.unlink(missing_ok=True)
+                    ui.notify(f'Create failed: {exc}', type='negative')
                     return
                 ui.notify(f'Created {fname}', type='positive')
                 dialog.close()
@@ -144,7 +213,7 @@ async def _new_json_dialog(directory: Path, refresh_fn=None) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Device files (read/write)
+# Cards
 # ---------------------------------------------------------------------------
 
 def _device_files_card(project_name: str, device_name: str) -> None:
@@ -175,36 +244,14 @@ def _device_files_card(project_name: str, device_name: str) -> None:
 
             async def _new_json() -> None:
                 await _new_json_dialog(device_path, file_list.refresh)
-
             ui.button('New JSON', icon='add', on_click=_new_json).props('dense flat size=sm')
 
-        def _handle_upload(e) -> None:
-            filename = e.name
-            if not is_valid_upload_filename(filename):
-                ui.notify(f'Invalid filename: {filename!r}', type='negative')
-                e.sender.reset()
-                return
-            dest = device_path / filename
-            try:
-                dest.write_bytes(e.content.read())
-                ui.notify(f'Uploaded {filename}', type='positive')
-                file_list.refresh()
-            except Exception as ex:
-                log.exception(f'Upload failed: {ex}')
-                ui.notify(f'Upload failed: {ex}', type='negative')
-            finally:
-                e.sender.reset()
-
         ui.upload(
-            on_upload=_handle_upload,
+            on_upload=_make_upload_handler(device_path, lambda: file_list.refresh()),
             max_file_size=app_config.max_file_upload_size,
             auto_upload=True,
         ).props('flat dense').classes('w-full q-mt-xs')
 
-
-# ---------------------------------------------------------------------------
-# Project files (read/write + JSON editor)
-# ---------------------------------------------------------------------------
 
 def _project_files_card(project_name: str) -> None:
     project_path = get_project_dir(project_name)
@@ -234,44 +281,48 @@ def _project_files_card(project_name: str) -> None:
 
             async def _new_json() -> None:
                 await _new_json_dialog(project_path, file_list.refresh)
-
             ui.button('New JSON', icon='add', on_click=_new_json).props('dense flat size=sm')
 
-        def _handle_project_upload(e) -> None:
-            filename = e.name
-            if not is_valid_upload_filename(filename):
-                ui.notify(f'Invalid filename: {filename!r}', type='negative')
-                e.sender.reset()
-                return
-            dest = project_path / filename
-            try:
-                dest.write_bytes(e.content.read())
-                ui.notify(f'Uploaded {filename}', type='positive')
-                file_list.refresh()
-            except Exception as ex:
-                log.exception(f'Upload failed: {ex}')
-                ui.notify(f'Upload failed: {ex}', type='negative')
-            finally:
-                e.sender.reset()
-
         ui.upload(
-            on_upload=_handle_project_upload,
+            on_upload=_make_upload_handler(project_path, lambda: file_list.refresh()),
             max_file_size=app_config.max_file_upload_size,
             auto_upload=True,
         ).props('flat dense').classes('w-full q-mt-xs')
 
 
 # ---------------------------------------------------------------------------
-# Shared file row
+# Shared helpers
 # ---------------------------------------------------------------------------
+
+def _make_upload_handler(directory: Path, refresh_fn):
+    """Return an upload event handler that writes uploaded files to *directory*."""
+    def _handle(e) -> None:
+        filename = e.name
+        if not is_valid_upload_filename(filename):
+            ui.notify(f'Invalid filename: {filename!r}', type='negative')
+            e.sender.reset()
+            return
+        dest = directory / filename
+        try:
+            dest.write_bytes(e.content.read())
+            ui.notify(f'Uploaded {filename}', type='positive')
+            refresh_fn()
+        except Exception as exc:
+            log.exception(f'Upload failed: {exc}')
+            ui.notify(f'Upload failed: {exc}', type='negative')
+        finally:
+            e.sender.reset()
+    return _handle
+
 
 def _file_row(path: Path, refresh_fn=None) -> None:
     size_kb = path.stat().st_size / 1024
     size_str = f'{size_kb:.1f} KB' if size_kb < 1024 else f'{size_kb / 1024:.1f} MB'
     is_json = path.suffix.lower() == '.json'
+    is_text = not is_json and _is_viewable(path)
 
     with ui.row().classes('w-full items-center gap-2 q-py-xs'):
-        icon = 'data_object' if is_json else 'insert_drive_file'
+        icon = 'data_object' if is_json else ('article' if is_text else 'insert_drive_file')
         ui.icon(icon).classes('text-grey-6 text-sm')
         ui.label(path.name).classes('grow text-body2')
         ui.label(size_str).classes('text-caption text-grey-7')
@@ -280,6 +331,10 @@ def _file_row(path: Path, refresh_fn=None) -> None:
             async def _edit(p=path) -> None:
                 await _json_editor_dialog(p, refresh_fn)
             ui.button(icon='edit').props('flat dense size=sm').tooltip('Edit JSON').on_click(_edit)
+        elif is_text:
+            async def _view(p=path) -> None:
+                await _text_viewer_dialog(p)
+            ui.button(icon='visibility').props('flat dense size=sm').tooltip('View').on_click(_view)
 
         ui.button(icon='download').props('flat dense size=sm').tooltip('Download').on_click(
             lambda _, p=path: _download_file(p)
@@ -313,10 +368,6 @@ async def _delete_file(path: Path, refresh_fn=None) -> None:
     except Exception as e:
         ui.notify(f'Delete failed: {e}', type='negative')
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def _list_files(directory: Path) -> list[Path]:
     """Return non-hidden files with valid upload filenames, sorted by name."""

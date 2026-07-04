@@ -11,6 +11,7 @@ from app.core.device.ui import ProjectDevicesTable
 from app.core.logging.ui import LoggingCard
 from app.core.telemetry.ui import TelemetryCard
 from app.core.forwarding.ui import ForwardingCard
+from app.core.device.files_ui import project_files_panel
 from app.routes import device_url, project_url, projects_url
 from app.util import is_valid_filename, render_datetime
 from app.core.project.models import Project
@@ -67,6 +68,7 @@ async def project_subpage(args: PageArguments, title: ui.label, breadcrumbs: ui.
         dashboard_tab = ui.tab('Dashboard')
         general_tab = ui.tab('General')
         provisioning_tab = ui.tab('Provisioning')
+        files_tab = ui.tab('Files')
         devices_tab = ui.tab('Devices')
     tab = tab if tab else dashboard_tab.label
     with ui.tab_panels(tabs, value=tab).classes('w-full'):
@@ -76,6 +78,8 @@ async def project_subpage(args: PageArguments, title: ui.label, breadcrumbs: ui.
             await general_panel(project_id)
         with ui.tab_panel(provisioning_tab):
             await provisioning_panel(project_id)
+        with ui.tab_panel(files_tab):
+            project_files_panel(project_id)
         with ui.tab_panel(devices_tab):
             await devices_panel(project_id)
 
