@@ -146,12 +146,13 @@ async def _device_danger_card(project_name: str, device_name: str) -> None:
                 value=device_name,
                 validation=val_rules,
             ).classes('grow').props('dense outlined')
-            ui.button('Rename').props('color=negative').on_click(
-                lambda: _rename_device(project_name, device_name, name_widget.value)
-            )
-        ui.button('Delete Device').props('color=negative w-full').on_click(
-            lambda: _delete_device(project_name, device_name)
-        )
+            async def _on_rename() -> None:
+                await _rename_device(project_name, device_name, name_widget.value)
+            ui.button('Rename').props('color=negative').on_click(_on_rename)
+
+        async def _on_delete() -> None:
+            await _delete_device(project_name, device_name)
+        ui.button('Delete Device').props('color=negative w-full').on_click(_on_delete)
 
 
 async def _rename_device(project_name: str, old_name: str, new_name: str) -> None:

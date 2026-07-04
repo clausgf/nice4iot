@@ -122,7 +122,7 @@ async def project_dashboard_panel(project_id: str) -> None:
                 with ui.column().classes('items-center'):
                     warn_color = 'text-orange' if pending_approval else 'text-grey'
                     ui.label(str(len(pending_approval))).classes(f'text-h5 font-bold {warn_color}')
-                    ui.label('Pending').classes('text-caption text-grey-7')
+                    ui.label('Needs Approval').classes('text-caption text-grey-7')
 
         # Recent activity card
         if seen:
@@ -230,12 +230,12 @@ async def danger_card(project_id: str) -> None:
                 value=project_id, 
                 validation=val_rules
             ).classes('grow').props('dense outlined')
-            ui.button('Rename Project').props('color=negative').on_click(lambda: (
-                _rename_project(project_id, name_widget.value)
-            ))
-        ui.button('Delete Project').props('color=negative').classes('w-full').on_click(lambda: (
-            _delete_project(project_id)
-        ))
+            async def _on_rename() -> None:
+                await _rename_project(project_id, name_widget.value)
+            ui.button('Rename Project').props('color=negative').on_click(_on_rename)
+        async def _on_delete() -> None:
+            await _delete_project(project_id)
+        ui.button('Delete Project').props('color=negative').classes('w-full').on_click(_on_delete)
 
 # ***************************************************************************
 

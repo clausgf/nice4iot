@@ -37,7 +37,6 @@ import argparse
 import json
 import logging
 import random
-import sys
 import time
 from pathlib import Path
 
@@ -284,7 +283,6 @@ class DeviceClient:
 
         Values include simulated battery voltage, WiFi RSSI, boot count etc.
         """
-        import platform, os
         values = {
             "battery_V": round(random.uniform(3.5, 4.2), 3),
             "wifi_rssi": random.randint(-80, -40),

@@ -5,12 +5,10 @@ Log file: <projects_dir>/<project>/<device>/.device.log
 Written by FileLogBackend when file logging is active in the project.
 Rotation archives are also listed so older logs can be browsed.
 """
-import asyncio
 from pathlib import Path
 
 from nicegui import ui
 
-from app.config import app_config
 from app.core.device.backend import get_device_path
 
 import logging
@@ -51,11 +49,13 @@ def _log_viewer(log_file: Path) -> None:
             label='Lines',
         ).props('dense outlined').classes('w-28')
 
+        search_input = ui.input(placeholder='Filter…').props('dense outlined clearable').classes('grow')
+
         follow_toggle = ui.checkbox('Auto-refresh', value=state['follow'])
         follow_toggle.bind_value(state, 'follow')
 
         ui.button(icon='refresh').props('dense flat').tooltip('Refresh now').on_click(
-            lambda: log_area.set_content(_read_tail(log_file, state['n_lines']))
+            lambda: log_area.set_content(_read_tail(log_file, state['n_lines'], search_input.value))
         )
 
         ui.button(icon='download').props('dense flat').tooltip('Download log').on_click(
@@ -64,9 +64,13 @@ def _log_viewer(log_file: Path) -> None:
 
     def on_n_change(e) -> None:
         state['n_lines'] = e.value
-        log_area.set_content(_read_tail(log_file, state['n_lines']))
+        log_area.set_content(_read_tail(log_file, state['n_lines'], search_input.value))
+
+    def on_search_change(e) -> None:
+        log_area.set_content(_read_tail(log_file, state['n_lines'], e.value or ''))
 
     n_select.on_value_change(on_n_change)
+    search_input.on_value_change(on_search_change)
 
     # Log area — monospace pre block inside a scrollable div
     initial = _read_tail(log_file, state['n_lines'])
@@ -77,20 +81,24 @@ def _log_viewer(log_file: Path) -> None:
     # Auto-refresh timer — only active while the tab panel is mounted
     async def _auto_refresh() -> None:
         if state['follow']:
-            content = _read_tail(log_file, state['n_lines'])
+            content = _read_tail(log_file, state['n_lines'], search_input.value)
             if content != log_area.content:
                 log_area.set_content(content)
 
     ui.timer(_REFRESH_INTERVAL, _auto_refresh)
 
 
-def _read_tail(log_file: Path, n: int) -> str:
+def _read_tail(log_file: Path, n: int, search: str = '') -> str:
     if not log_file.is_file():
         return '(No log file yet — enable File logging in project settings)'
     try:
         lines = log_file.read_text(encoding='utf-8', errors='replace').splitlines()
         tail = lines[-n:] if len(lines) > n else lines
-        return '\n'.join(tail) or '(Log file is empty)'
+        if search:
+            tail = [l for l in tail if search.lower() in l.lower()]
+        if not tail:
+            return '(No matching lines)' if search else '(Log file is empty)'
+        return '\n'.join(tail)
     except OSError as e:
         return f'(Cannot read log: {e})'
 

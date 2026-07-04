@@ -36,7 +36,8 @@ def _append_local_metrics(project_name: str, device_name: str, kind: str,
     if not numeric:
         return
     path = Path(project_dir(project_name)) / device_name / LOCAL_METRICS_FILE
-    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.parent.is_dir():
+        return  # device directory not yet created via create_device()
     record = json.dumps({'ts': timestamp.isoformat(), 'kind': kind, 'v': numeric}) + '\n'
     with path.open('a', encoding='utf-8') as f:
         f.write(record)
