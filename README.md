@@ -8,11 +8,19 @@ An IoT device management platform written in Python. It provides a REST API for 
 
 - **Project & device management** — organise devices into projects, manage metadata and lifecycle via a web UI
 - **Token-based provisioning** — devices self-register using a project-scoped provisioning token and receive a short-lived device token in return
-- **Telemetry ingestion** — devices push measurements; nice4iot forwards them to a time-series backend (Prometheus)
-- **Log ingestion** — devices push log lines; nice4iot forwards them to a log backend (Loki)
-- **HTTP forwarding** — authenticated devices can proxy arbitrary GET/POST/PUT/HEAD/DELETE requests through the platform to configured backend URLs
-- **File serving** — devices can fetch and upload files; device-specific files take precedence over project-wide defaults
+- **Telemetry ingestion** — devices push measurements; nice4iot forwards them to a time-series backend (Prometheus remote write or InfluxDB line protocol) and always stores the last 2 000 readings locally for in-app charting
+- **Log ingestion** — devices push log lines; nice4iot forwards them to a log backend (Loki or local file); the UI shows a live tail of the file log
+- **HTTP forwarding** — authenticated devices can proxy arbitrary requests through the platform to configured backend URLs
+- **File serving & upload** — devices can fetch and upload files; device-specific files take precedence over project-wide defaults (ETag caching supported)
 - **Auto-generated UI** — forms and tables are derived from Pydantic models via [niceview](https://github.com/clausgf/niceview), keeping model and UI in sync without boilerplate
+
+### Management UI tabs
+
+| Page | Tabs |
+|---|---|
+| Projects list | — card grid |
+| Project | Dashboard · General · Provisioning · Devices |
+| Device | Dashboard · General · Files · Data · Logs |
 
 ---
 
@@ -24,9 +32,9 @@ An IoT device management platform written in Python. It provides a REST API for 
 | Web UI | [NiceGUI](https://nicegui.io) (Quasar/Vue under the hood) |
 | Data modelling | [Pydantic v2](https://docs.pydantic.dev) |
 | UI generation | [niceview](https://github.com/clausgf/niceview) (custom library) |
-| Telemetry backend | [Prometheus](https://prometheus.io) (remote write) |
-| Log backend | [Loki](https://grafana.com/oss/loki/) (via Protobuf + Snappy) |
-| Persistence | Filesystem (JSON files) |
+| Telemetry backends | [Prometheus](https://prometheus.io) remote write · [InfluxDB](https://influxdata.com) line protocol |
+| Log backends | [Grafana Loki](https://grafana.com/oss/loki/) · rotating file |
+| Persistence | Filesystem (JSON files + JSONL) |
 | Package management | [uv](https://docs.astral.sh/uv/) |
 | Runtime | [uvicorn](https://www.uvicorn.org) |
 | Deployment | Docker / Docker Compose |
@@ -36,35 +44,65 @@ An IoT device management platform written in Python. It provides a REST API for 
 ## Architecture
 
 ```
-nice4iot/
-├── app/
-│   ├── main.py            # FastAPI app + NiceGUI integration entry point
-│   ├── config.py          # Settings via pydantic-settings (env vars)
-│   ├── api/               # FastAPI routers
-│   │   ├── provisioning.py    # POST /api/provision
-│   │   ├── device.py          # POST /api/telemetry, /api/log, /api/forward
-│   │   ├── file.py            # GET/PUT/HEAD /api/file
-│   │   └── dependencies.py    # Shared FastAPI dependency: device auth
-│   ├── core/              # Business logic, no HTTP concerns
-│   │   ├── models.py          # Pydantic models: Project, Device, AuthToken, Tag
-│   │   ├── project.py         # Project CRUD + ProjectModelAdapter for UI
-│   │   ├── device.py          # Device CRUD + provisioning logic
-│   │   ├── auth.py            # Token generation and validation
-│   │   ├── forwarding/        # HTTP proxy logic + ForwardingModel
-│   │   ├── telemetry/         # Prometheus remote write backend
-│   │   └── logging/           # Loki backend
-│   └── ui/                # NiceGUI page definitions
-│       ├── frontend.py        # Page layout, routing, sub-pages
-│       ├── project.py         # Project list and detail pages
-│       ├── device.py          # Device detail page (tabs: Dashboard, Settings, Data, Logs)
-│       └── *_config_card.py   # UI cards for backend configuration
-└── tests/
-    ├── test_api_device.py
-    ├── test_api_file.py
-    └── test_api_provisioning.py
+app/
+├── main.py                 # FastAPI + NiceGUI entry point
+├── config.py               # pydantic-settings (env vars / .env)
+├── paths.py                # project_dir(), device_dir() helpers
+├── util.py                 # filename validation, render_datetime, ...
+├── api/
+│   ├── provisioning.py     # POST /api/provision
+│   ├── device.py           # POST /api/telemetry, /api/log, GET /api/forward
+│   ├── file.py             # GET · PUT · HEAD /api/file
+│   └── dependencies.py     # device_auth FastAPI dependency
+├── core/
+│   ├── device/
+│   │   ├── backend.py      # Device CRUD, device_adapter(), rename_device()
+│   │   ├── models.py       # Device Pydantic model
+│   │   ├── ui.py           # Dashboard + General panel, DevicesTable
+│   │   ├── files_ui.py     # Files tab (browse, upload, download, delete)
+│   │   ├── data_ui.py      # Data tab (Plotly time-series explorer)
+│   │   └── logs_ui.py      # Logs tab (live tail, archive download)
+│   ├── project/
+│   │   ├── backend.py      # Project CRUD, project_adapter()
+│   │   ├── models.py       # Project Pydantic model
+│   │   └── ui.py           # Project pages, dashboard cards
+│   ├── token/
+│   │   ├── backend.py      # Token create / validate / persist
+│   │   ├── models.py       # AuthToken Pydantic model
+│   │   └── ui.py           # TokenListCard
+│   ├── telemetry/
+│   │   ├── backend.py      # write_telemetry() + local JSONL store + read_local_metrics()
+│   │   ├── models.py       # TelemetryConfig
+│   │   ├── ui.py           # TelemetryCard (project settings)
+│   │   ├── prometheus/     # Prometheus remote write backend
+│   │   └── influxdb/       # InfluxDB line protocol backend
+│   ├── logging/
+│   │   ├── backend.py      # write_log()
+│   │   ├── models.py       # LoggingConfig
+│   │   ├── ui.py           # LoggingCard (project settings)
+│   │   ├── file/           # rotating file backend
+│   │   └── loki/           # Grafana Loki backend
+│   └── forwarding/
+│       ├── backend.py      # forward(), get_forwarding()
+│       ├── models.py       # ForwardingConfig
+│       └── ui.py           # ForwardingCard (project settings)
+└── ui/
+    ├── frontend.py         # NiceGUI page + sub-page routing
+    ├── theme.py            # header / frame
+    └── util.py             # build_dialog()
+
+tests/
+├── conftest.py             # fixtures: projects_dir, client, provisioned, ...
+├── test_api_device.py
+├── test_api_file.py
+├── test_api_provisioning.py
+└── test_auth.py
+
+tools/
+└── device_client.py        # arduino4iot-compatible Python device simulator
 ```
 
-FastAPI and NiceGUI share a single uvicorn process via `ui.run_with(app, ...)`. The REST API is reachable at `/api/*`; the NiceGUI UI occupies `/` and handles all sub-paths via `ui.sub_pages`.
+FastAPI and NiceGUI share a single uvicorn process via `ui.run_with(app, ...)`. The REST API is reachable at `/api/*`; the NiceGUI UI occupies all other paths via `ui.sub_pages`.
 
 ---
 
@@ -77,25 +115,32 @@ All state is stored on the filesystem under `data/projects/` (configurable via `
 ```
 data/projects/
 └── <project_name>/
-    ├── .project.json            # Project metadata + provisioning tokens
-    ├── .telemetry_config.json   # Per-project telemetry backend config
-    ├── .forwards.json           # Named HTTP forwarding rules
-    ├── <shared_file>            # Project-wide default files served to devices
+    ├── .project.json           # Project settings (autosave)
+    ├── .provisioning.json      # Provisioning token list
+    ├── .telemetry.json         # Telemetry backend config
+    ├── .logging.json           # Logging backend config
+    ├── .forwards.json          # Named HTTP forwarding rules
+    ├── <shared_file>           # Project-wide fallback files served to devices
     └── <device_name>/
-        ├── .device.json         # Device metadata + device tokens
-        └── <device_file>        # Device-specific files (override project defaults)
+        ├── .device.json        # Device settings (autosave)
+        ├── .tokens.json        # Device bearer token list
+        ├── .device.log         # File logging backend output (rotated)
+        ├── .device_metrics.jsonl  # Local telemetry ring buffer (max 2 000 lines)
+        └── <device_file>       # Device-specific files (override project defaults)
 ```
 
-Project and device names double as directory names and are therefore validated as safe filenames. Path traversal is explicitly prevented by resolving and checking all paths against their expected base directory.
+Project and device names double as directory names; only `[a-zA-Z0-9_\-+]` are allowed. Path traversal is prevented by resolving and checking all paths against their expected base directory.
 
-Writes use a write-to-temp-then-rename pattern to avoid partial writes.
+All writes use a write-to-temp-then-rename pattern to avoid partial writes.
 
 ### Two-Tier Token Model
 
-1. **Provisioning tokens** — long-lived, scoped to a project. An operator creates these manually in the UI and distributes them to device firmware at flash time.
+1. **Provisioning tokens** — long-lived (default: 1 year), scoped to a project. Created in the UI and flashed into device firmware.
 2. **Device tokens** — short-lived (default: 7 days), scoped to a device. Issued by `POST /api/provision` in exchange for a valid provisioning token.
 
 On provisioning, the platform can optionally auto-create the device record (`is_autocreate_devices`) and auto-approve it (`is_provisioning_autoapproval`), or require explicit operator approval first.
+
+Each device may hold at most **32 active tokens** simultaneously. When the cap is reached, the token with the oldest `last_use_at` is evicted before the new one is stored.
 
 ### Device Lifecycle
 
@@ -103,69 +148,83 @@ On provisioning, the platform can optionally auto-create the device record (`is_
 Provisioning request (provisioning token)
   → device created (if autocreate) or looked up
   → approval checked
-  → device token issued
+  → device token issued (old expired tokens purged, cap enforced)
   → device uses device token for telemetry / log / file / forward endpoints
+  → each authenticated request updates last_seen_at and token.last_use_at
 ```
-
-Every authenticated device request updates `last_seen_at` and `token.last_use_at`.
 
 ### File Serving with Fallback
 
-`GET /api/file/{project}/{device}/{filename}` first looks for a device-specific file, then falls back to a project-wide default. This allows distributing common configuration to all devices while still permitting per-device overrides. ETag-based caching is supported.
+`GET /api/file/{project}/{device}/{filename}` looks for a device-specific file first, then falls back to a project-wide default. This lets you distribute common firmware / config to all devices while allowing per-device overrides. ETag-based caching (`If-None-Match` / `304 Not Modified`) is fully supported.
+
+`PUT /api/file/{project}/{device}/{filename}` writes to the device-specific path atomically (via a temp file). The filename must contain only `[a-zA-Z0-9_\-.]` and must not contain `..`.
+
+### Size Limits
+
+| Resource | Limit | Config key |
+|---|---|---|
+| File upload | 10 MiB | `MAX_FILE_UPLOAD_SIZE` |
+| Telemetry body | 8 KiB | `MAX_TELEMETRY_SIZE` |
+| Log body | 8 KiB | `MAX_LOG_SIZE` |
+
+Requests exceeding the limit are rejected with **413 Content Too Large**.
+
+### Local Telemetry Store
+
+Every call to `POST /api/telemetry` also appends a line to `<device>/.device_metrics.jsonl` (in addition to forwarding to any configured remote backend). The file is capped at 2 000 lines (oldest removed first). The **Device → Data** tab reads this file and renders an interactive Plotly chart with configurable time window and metric selector.
 
 ### UI Generation via niceview
 
-Forms and tables are not coded by hand. [niceview](https://github.com/clausgf/niceview) inspects a Pydantic model and generates matching NiceGUI widgets. Field metadata (labels, visibility, validation, table column config) is expressed via `niceview.Field(...)` annotations on the model.
+Forms and tables are not coded by hand. [niceview](https://github.com/clausgf/niceview) inspects Pydantic models and generates NiceGUI widgets. Field metadata (labels, editability, widget type) is expressed via `niceview.Field(...)` annotations on the model. `ModelForm.from_adapter(..., autosave=True)` binds the form to a `JsonAdapter` and saves on every change, removing the need for explicit Save buttons.
 
-The library provides three rendering components:
+---
 
-| Component | Renders as | Backend |
+## Device API Reference
+
+All device endpoints require `Authorization: Bearer <device_token>`.
+
+| Method | Path | Description |
 |---|---|---|
-| `ModelGrid` | ag-Grid table, read-only or with inline editing (`ModelGridInlineEdit`) | `ui.aggrid` |
-| `ModelList` | Quasar list with title/subtitle lines, suited for mobile/touch | `ui.list` / `ui.item` |
-| `ModelForm` | Field-by-field form with validation feedback | various `ui.*` widgets |
+| `POST` | `/api/provision` | Obtain a device token |
+| `POST` | `/api/telemetry/{project}/{device}/{kind}` | Push numeric measurements (JSON) |
+| `POST` | `/api/log/{project}/{device}` | Push log lines (plain text) |
+| `GET` | `/api/file/{project}/{device}/{filename}` | Download a file |
+| `HEAD` | `/api/file/{project}/{device}/{filename}` | Check file ETag (OTA) |
+| `PUT` | `/api/file/{project}/{device}/{filename}` | Upload a file |
+| `GET` | `/api/forward/{project}/{device}/{name}/{path}` | Proxy request to configured upstream |
 
-`DrillDownWrapper` composes `ModelList` and `ModelForm` into a two-page mobile-friendly flow (list page → detail/edit page) and registers both as NiceGUI routes automatically. On desktop it renders the list and form side by side.
-
-Data access is decoupled via adapters:
-
-| Adapter | Source |
-|---|---|
-| `ListAdapter` | In-memory Python list (plain or `ObservableList` for auto-refresh) |
-| `JsonListAdapter` | JSON file on disk |
-| `CollectionAdapter` | Abstract base — implement `create / read / update / delete` for custom backends |
-
-nice4iot uses a custom `ModelDataAdapter` / `ProjectModelAdapter` that bridges the adapter interface to the filesystem CRUD functions in `app/core/project.py`.
+Interactive API docs: `http://localhost:8000/docs`
 
 ---
 
-## Design Decisions and Accepted Technical Debt
+## Device Client / Test Tool
 
-**Filesystem instead of a database.**
-Storing state as JSON files in directories keeps the deployment dependency-free (no database server), makes backup trivial (`rsync`), and makes state directly inspectable. The tradeoff is the absence of transactions, foreign-key constraints, and efficient querying. `SQLModel` is already a dependency (used transitively by niceview) but is not yet used for persistence.
+`tools/device_client.py` is a Python simulation of an [arduino4iot](https://github.com/clausgf/arduino4iot) device. It implements the same HTTP flow as the C++ library and is useful for integration testing, demos, and load testing without needing real hardware.
 
-**Synchronous file I/O inside an async application.**
-All blocking file reads and writes are wrapped with `anyio.to_thread.run_sync` at the API handler level so they do not block the event loop. The `CollectionAdapter` protocol methods remain synchronous (imposed by niceview's structural typing), which is a reasonable tradeoff — they are called from async handlers and already run in a thread pool.
+```bash
+# Full wake-up cycle (provision → config → OTA check → telemetry → log):
+uv run python tools/device_client.py cycle \
+    --url http://localhost:8000 \
+    --project myproject \
+    --device mydevice \
+    --token <provisioning_token> \
+    --sensors '{"temperature": 22.4, "humidity": 60}' \
+    --log "Device started"
 
-**No UI authentication.**
-The REST API endpoints are protected by bearer tokens, but the NiceGUI management UI has no login. This is only safe when the UI is placed behind a reverse proxy with its own authentication (e.g., Caddy with forward auth) as implied by the `docker-compose.yml` network setup. This should be made explicit in deployment documentation or solved in the application.
+# Simulate periodic wake-ups every 30 s:
+uv run python tools/device_client.py loop --interval 30 \
+    --url http://localhost:8000 \
+    --project myproject --device mydevice --token <token>
 
-**Telemetry config is re-read from disk on every request.**
-`get_tel()` opens and parses `.telemetry_config.json` on each inbound telemetry write. A simple in-process cache (per-project, invalidated on config change) would remove the overhead.
+# Push telemetry only:
+uv run python tools/device_client.py telemetry sensors \
+    '{"temperature": 22.4}' ...
 
----
+# Upload a config file:
+uv run python tools/device_client.py upload myconfig.json ...
+```
 
-## Open Questions / TODO
-
-- **UI authentication** — implement a login screen or formally document the expectation that the UI is always behind an authenticating reverse proxy.
-- **Dashboard tab** — the Project › Dashboard tab exists but shows placeholder content; real-time telemetry charts and alarms are not yet implemented.
-- **Log viewer tab** — no log viewer in the UI; Loki query integration is missing.
-- **Additional telemetry backends** — Influx2 and SQL stubs are commented out; only Prometheus is functional.
-- **Forwarding security** — forwarding strips the `Authorization` header but forwards all other client headers verbatim; review whether this is appropriate for all backends.
-- **Multi-user / RBAC** — there is no concept of users or roles; all UI operators share the same access level.
-- **Backup and restore** — no tooling or documentation for backup, restore, or migration of the `data/projects/` directory.
-- **Pagination** — project and device lists load all items into memory; large deployments will need pagination at the API and UI level.
-- Creation dialogs for project and device are quite similay - generic dialog? interface?
+State (device token + ETag cache) is persisted in `.<device>.state.json` between invocations, mirroring NV-RAM on hardware.
 
 ---
 
@@ -179,11 +238,7 @@ The REST API endpoints are protected by bearer tokens, but the NiceGUI managemen
 ### Setup
 
 ```bash
-# Install dependencies
 uv sync
-
-# For local niceview development (use editable install instead of git source)
-uv add --editable ../niceview
 ```
 
 ### Run
@@ -192,7 +247,7 @@ uv add --editable ../niceview
 uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-API docs are available at `http://localhost:8000/docs`.
+API docs: `http://localhost:8000/docs`
 
 ### Test
 
@@ -202,24 +257,53 @@ uv run pytest
 
 ### Configuration
 
-All settings are read from environment variables (via pydantic-settings):
+Settings are read from environment variables (or a `.env` file):
 
 | Variable | Default | Description |
 |---|---|---|
-| `PROJECTS_DIR` | `data/projects` | Root directory for project and device data |
+| `PROJECTS_DIR` | `data/projects` | Root directory for all project and device data |
 | `PROVISIONING_TOKEN_LENGTH` | `64` | Length of generated provisioning tokens |
+| `PROVISIONING_TOKEN_EXPIRES_IN` | `365d` | Lifetime of provisioning tokens |
 | `DEVICE_TOKEN_LENGTH` | `32` | Length of generated device tokens |
-| `MAX_UPLOAD_SIZE` | `1048576` | Maximum file upload size in bytes (1 MB) |
-| `TIMEZONE` | `Europe/Berlin` | Server timezone |
+| `MAX_FILE_UPLOAD_SIZE` | `10485760` | Maximum file upload size in bytes (10 MiB) |
+| `MAX_TELEMETRY_SIZE` | `8192` | Maximum telemetry body size in bytes (8 KiB) |
+| `MAX_LOG_SIZE` | `8192` | Maximum log body size in bytes (8 KiB) |
+| `TIMEZONE` | `Europe/Berlin` | Server timezone (for log timestamps) |
+| `NICEGUI_STORAGE_SECRET` | `""` | Secret for NiceGUI session storage |
 
 ---
 
 ## Deployment
-
-Build and run with Docker Compose:
 
 ```bash
 docker compose up --build
 ```
 
 Adjust `PUID`/`PGID` in `docker-compose.yml` to match your host user so volume-mounted files are owned correctly. The container expects external `loki` and `caddy_network` Docker networks to already exist.
+
+---
+
+## Design Decisions
+
+**Filesystem instead of a database.**
+JSON files keep the deployment dependency-free, make backup trivial (`rsync`), and make state directly inspectable. The tradeoff is no transactions, no foreign keys, and no efficient querying.
+
+**Synchronous file I/O inside an async application.**
+All blocking file reads and writes at the API boundary are wrapped with `anyio.to_thread.run_sync`. UI code runs synchronously inside NiceGUI's event loop — this is fine because NiceGUI's own `run_sync_in_threadpool` is used internally.
+
+**No UI authentication.**
+The REST API endpoints are protected by bearer tokens, but the NiceGUI management UI has no login. This is only safe when the UI is placed behind an authenticating reverse proxy (e.g., Caddy with forward auth).
+
+**Telemetry config is re-read from disk on every request.**
+`_get_active_backend()` opens and parses the telemetry config JSON on each inbound telemetry write. A simple in-process cache would remove the overhead but is not needed at the current scale.
+
+---
+
+## Open Questions / TODO
+
+- **UI authentication** — implement a login screen or document the expectation that the UI is always behind an authenticating reverse proxy.
+- **Forwarding security** — forwarding strips the `Authorization` header but forwards all other client headers verbatim; review whether this is appropriate for all backends.
+- **Multi-user / RBAC** — all UI operators share the same access level.
+- **Backup and restore** — no tooling or documentation for backup, restore, or migration of the `data/projects/` directory.
+- **Pagination** — project and device lists load all items into memory; large deployments will need pagination.
+- **Telemetry read from remote** — the Data tab currently reads only the local JSONL store; reading from InfluxDB or Prometheus (for historical data) is not yet implemented.
