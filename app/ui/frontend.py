@@ -4,6 +4,7 @@ from nicegui import PageArguments, app, ui
 from app.core.project.ui import all_projects_subpage, project_subpage
 from app.core.device.ui import device_dashboard_panel, device_general_panel
 from app.core.device.files_ui import device_files_panel
+from app.core.device.data_ui import device_data_panel
 from app.routes import device_url, project_url, projects_url, ROUTE_DEVICE, ROUTE_PROJECT, ROUTE_PROJECTS
 from app.ui.theme import frame
 import logging
@@ -34,7 +35,7 @@ async def device_subpage(args: PageArguments, title: ui.label, breadcrumbs: ui.e
         with ui.tab_panel(files_tab):
             device_files_panel(project_id, device_id)
         with ui.tab_panel(data_tab):
-            ui.label('Data').classes('text-grey-6')
+            device_data_panel(project_id, device_id)
         with ui.tab_panel(logs_tab):
             ui.label('Logs').classes('text-grey-6')
 
