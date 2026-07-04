@@ -19,40 +19,6 @@ log = logging.getLogger("uvicorn")
 
 # ***************************************************************************
 
-class DeviceCreationDialog:
-    """Dialog for creating a new device."""
-
-    def __init__(self, project_name: str):
-        self.project_name = project_name
-        self.device_name = ''
-        with ui.dialog().style('width: 400px') as self.dialog:
-            with ui.card().classes('w-full'):
-                ui.label('Create Device').classes('text-h6 center')
-                val_rules = {
-                    "Device name contains invalid characters. Please use letters, numbers, underscore, plus and minus only.": lambda x: is_valid_filename(x)
-                }
-                ui.input(label='Device Name', placeholder='enter a device name here', validation=val_rules).bind_value(self, 'device_name').classes('w-full')
-                with ui.row().classes('w-full place-content-end'):
-                    ui.space()
-                    ui.button('Cancel').props('color=secondary').on_click(lambda: self.dialog.submit(False))
-                    ui.button('Create').on_click(lambda: self.dialog.submit(True))
-
-    async def show(self):
-        """Show the dialog and process the result."""
-        result = await self.dialog
-        if result and self.device_name and is_valid_filename(self.device_name):
-            try:
-                device = create_device(Device(name=self.device_name, project_name=self.project_name))
-                ui.notify(f"Created device {device.name}", type='positive')
-                ui.navigate.to(device_url(self.project_name, self.device_name, tab='Settings'))
-            except Exception as e:
-                ui.notify(f"Error creating device {self.device_name}: {e}", type='negative')
-        else:
-            ui.notify("Device creation cancelled", type='negative')
-
-
-# ***************************************************************************
-
 class ProjectDevicesTable:
     """Table containing a project's devices."""
 
@@ -81,15 +47,18 @@ class ProjectDevicesTable:
         ]
 
         self.devices_table = ui.table(
-            title=f'{project_name.capitalize()}\'s Devices',
+            title=f'Devices in project {project_name.capitalize()}',
             columns=devices_cols,
             rows=devices_rows,
         ).classes('w-full')
         with self.devices_table.add_slot('top-right'):
             with ui.row():
-                with ui.input(placeholder='Search').props('type=search').bind_value(self.devices_table, 'filter').add_slot('append'):
+                with ui.input(placeholder='Search').props('type=search outlined dense').classes('grow').bind_value(self.devices_table, 'filter').add_slot('append'):
                     ui.icon('search')
-                ui.button('New', icon='add').props('color=primary').classes('w-24').on_click(self.device_new_dialog.show)
+                ui.button(icon='add') \
+                    .tooltip('Create Device') \
+                    .props('color=primary dense') \
+                    .on_click(self.device_new_dialog.show)
         self.devices_table.on('row-dblclick', lambda msg: (
             ui.navigate.to(device_url(self.project_name, msg.args[1]['id'], tab='Settings')),
         ))
@@ -168,3 +137,42 @@ class DeviceSettingsCard:
         if result == 'Delete':
             ui.notify(f"TODO Delete {self.project_name}/{self.device_name}", type='positive')
             ui.navigate.to(project_url(self.project_name, tab='Devices'))
+
+# ***************************************************************************
+
+class DeviceCreationDialog:
+    """Dialog for creating a new device."""
+
+    def __init__(self, project_name: str):
+        self.project_name = project_name
+        self.device_name = ''
+        with ui.dialog().style('width: 400px') as self.dialog:
+            with ui.card().classes('w-full'):
+                ui.label('Create Device').classes('text-h6 center')
+                val_rules = {
+                    "Device name contains invalid characters. Please use letters, numbers, underscore, plus and minus only.": lambda x: is_valid_filename(x)
+                }
+                ui.input(
+                    label='Device Name', 
+                    placeholder='enter a device name here', 
+                    validation=val_rules
+                ).bind_value(self, 'device_name').classes('w-full')
+                with ui.row().classes('w-full place-content-end'):
+                    ui.space()
+                    ui.button('Cancel').props('color=secondary').on_click(lambda: self.dialog.submit(False))
+                    ui.button('Create').on_click(lambda: self.dialog.submit(True))
+
+    async def show(self):
+        """Show the dialog and process the result."""
+        result = await self.dialog
+        if result and self.device_name and is_valid_filename(self.device_name):
+            try:
+                device = create_device(Device(name=self.device_name, project_name=self.project_name))
+                ui.notify(f"Created device {device.name}", type='positive')
+                ui.navigate.to(device_url(self.project_name, self.device_name, tab='Settings'))
+            except Exception as e:
+                ui.notify(f"Error creating device {self.device_name}: {e}", type='negative')
+        else:
+            ui.notify("Device creation cancelled", type='negative')
+
+

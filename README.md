@@ -165,6 +165,7 @@ The REST API endpoints are protected by bearer tokens, but the NiceGUI managemen
 - **Multi-user / RBAC** — there is no concept of users or roles; all UI operators share the same access level.
 - **Backup and restore** — no tooling or documentation for backup, restore, or migration of the `data/projects/` directory.
 - **Pagination** — project and device lists load all items into memory; large deployments will need pagination at the API and UI level.
+- Creation dialogs for project and device are quite similay - generic dialog? interface?
 
 ---
 

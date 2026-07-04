@@ -76,7 +76,7 @@ async def project_subpage(args: PageArguments, title: ui.label, breadcrumbs: ui.
         with ui.tab_panel(provisioning_tab):
             await provisioning_panel(project_id)
         with ui.tab_panel(devices_tab):
-            ProjectDevicesTable(project_id)
+            await devices_panel(project_id)
 
 # ***************************************************************************
 
@@ -178,12 +178,24 @@ async def danger_card(project_id: str) -> None:
 # ***************************************************************************
 
 async def provisioning_panel(project_id: str):
-    with ui.card().classes('w-full'):
-        with ui.expansion('Provisioning Tokens', value=True).classes('w-full q-mb-none').props('dense header-class="text-h6 font-bold"'):
-            ui.markdown('Long-lived shared secrets used by devices to obtain bearer tokens.').classes('text-caption q-ma-none')
-            TokenListCard(get_provisioning_token_adapter(project_id),
-                          token_length=app_config.provisioning_token_length,
-                          expires_in=app_config.provisioning_token_expires_in)
+    with ui.expansion('Provisioning Tokens', value=True).classes('w-full q-mb-none').props('dense header-class="text-h6 font-bold"'):
+        ui.markdown('Long-lived shared secrets used by devices to obtain bearer tokens.').classes('text-caption q-ma-none')
+        TokenListCard(get_provisioning_token_adapter(project_id),
+                        token_length=app_config.provisioning_token_length,
+                        expires_in=app_config.provisioning_token_expires_in)
+
+# ***************************************************************************
+
+async def devices_panel(project_id: str):
+    with ui.expansion('Devices', value=True).classes('w-full q-mb-none').props('dense header-class="text-h6 font-bold"'):
+        ui.markdown("""
+                _Devices_ are physical IoT nodes that connect to this project. 
+                Each device has its own directory and can be provisioned with a 
+                short-lived bearer token.
+                
+                Double-click a device to edit its settings. Use the "New" button to create a new device.
+                """).classes('text-caption q-ma-none')
+        ProjectDevicesTable(project_id)
 
 # ***************************************************************************
 
