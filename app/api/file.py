@@ -44,7 +44,7 @@ import os
 import stat
 
 from app.api.dependencies import DeviceAuthInfo, device_auth
-from app.core.device import get_file_path
+from app.core.device.backend import get_file_path
 from app.util import logger
 from app.config import app_config
 

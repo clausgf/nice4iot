@@ -26,8 +26,8 @@ import anyio
 from fastapi import APIRouter, Body
 from pydantic import BaseModel
 
-from app.core.device import device_provision
-from app.core.project import get_auth_project
+from app.core.device.backend import device_provision
+from app.core.project.backend import get_auth_project
 
 ###############################################################################
 

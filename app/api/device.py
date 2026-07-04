@@ -28,9 +28,9 @@ import anyio
 from fastapi import APIRouter, HTTPException, Request, Response, status, Depends
 
 from app.api.dependencies import DeviceAuthInfo, device_auth
-from app.core.telemetry.telemetry import get_tel
-from app.core.logging.logging import get_log
-from app.core.forwarding.forwarding import forward, get_forwarding
+from app.core.telemetry.backend import write_telemetry
+from app.core.logging.backend import write_log
+from app.core.forwarding.backend import forward, get_forwarding
 from app.util import is_valid_filename
 
 ###############################################################################
@@ -107,10 +107,7 @@ async def post_telemetry_with_names(
         raise HTTPException(status_code=400, detail='Invalid kind in url')
 
     measurements = await request.json()
-    tel_backend = await anyio.to_thread.run_sync(
-        lambda: get_tel(project_name, dev.project.telemetryBackend)
-    )
-    await tel_backend.write(device_name, values=measurements, kind=kind)
+    await write_telemetry(project_name, device_name, values=measurements, kind=kind)
     return Response(status_code=200)
 
 
@@ -167,14 +164,11 @@ async def post_log_with_names(
     * **File** — appends to ``<projects_dir>/<project>/.device.log``.
       Each line is prefixed with the device name.
     """
-    log_backend = await anyio.to_thread.run_sync(
-        lambda: get_log(project_name, dev.project.loggingBackend)
-    )
     try:
         logmsg = (await request.body()).decode()
     except Exception:
         raise HTTPException(status_code=400, detail='Request body is not valid UTF-8 text.')
-    await log_backend.write(device_name, logmsg)
+    await write_log(project_name, device_name, logmsg)
     return Response(status_code=200)
 
 

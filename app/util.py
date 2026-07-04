@@ -6,6 +6,7 @@ logger = logging.getLogger('uvicorn.error')
 
 
 FILENAME_REGEX = r'^[a-zA-Z0-9_\-+]+$'
+URL_REGEX = r'^(https?://)?([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(/.*)?$'
 
 def is_valid_filename(filename: str) -> bool:
     """

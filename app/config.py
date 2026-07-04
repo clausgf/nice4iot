@@ -15,5 +15,6 @@ class AppConfig(BaseSettings):
 
 app_config = AppConfig()
 
+
 if not app_config.nicegui_storage_secret:
     log.warning("NICEGUI_STORAGE_SECRET is not set — user sessions will not persist across restarts")

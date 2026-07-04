@@ -3,8 +3,9 @@ from typing import Any
 from fastapi import HTTPException, status, Request
 from pydantic import BaseModel
 
-from app.core.device import get_auth_project_device
-from app.core.models import Device, Project
+from app.core.device.backend import get_auth_project_device
+from app.core.device.models import Device
+from app.core.project.models import Project
 
 
 class DeviceAuthInfo(BaseModel):

@@ -3,17 +3,8 @@ import plotly.graph_objects as go
 from typing import Optional
 from nicegui import PageArguments, app, ui
 
-from app.config import app_config
-from app.core.auth import generate_token, create_token
-from app.core.device import create_device, get_device, get_devices, update_device
-from app.core.models import AuthToken, Device, Project
-from app.core.project import create_project, delete_project, get_project, get_projects, update_project,get_project_path
-from app.ui.forwarding_config_card import ForwardingConfigCard
-from app.ui.project import all_projects_subpage, project_subpage
+from app.core.project.ui import all_projects_subpage, project_subpage
 from app.ui.theme import frame
-from app.util import is_valid_filename, render_datetime
-from app.core.telemetry.telemetry import TelemetryBackendTypes,get_tel,create_tel
-from app.core.logging.logging import LoggingBackendTypes,get_log,create_log
 import logging
 log = logging.getLogger('uvicorn')
 
@@ -80,19 +71,18 @@ logo = '''
 
 @ui.page('/')
 @ui.page('/{_:path}')
-async def alt_home_page():
+async def home_page():
     with ui.header(elevated=True).classes('items-center justify-between'):
         ui.html(logo).props('width=16 height=16').classes('text-white')
         ui.label('4IoT').classes('text-h6 font-bold')
         breadcrumbs = ui.element('q-breadcrumbs').props('active-color=white')
-        with breadcrumbs:
-            ui.element('q-breadcrumbs-el').props('icon=home').on('click', lambda: ui.navigate.to('/'))
+        # with breadcrumbs:
+        #     ui.element('q-breadcrumbs-el').props('icon=home').on('click', lambda: ui.navigate.to('/'))
         ui.space()
         title = ui.label().classes('text-h6 font-bold')
         ui.space()
         search = ui.input(placeholder='Search').props('type=search clearable rounded outlined dense bg-color=white').classes('w-64')
         user_menu = ui.button(icon='person').props('outline round size=md dense color=white')
-        
 
     # left_drawer = ui.left_drawer(fixed=False).props('bordered')
 
@@ -100,7 +90,7 @@ async def alt_home_page():
         ui.sub_pages({
                 '/': all_projects_subpage,
                 '/{project_id}': project_subpage,
-                '/{project_id}/{device_id}': device_subpage,
+                '/{project_id}/devices/{device_id}': device_subpage,
             },
             data={
                 'title': title,
