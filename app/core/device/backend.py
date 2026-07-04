@@ -3,6 +3,7 @@ import datetime
 import shutil
 
 from fastapi import HTTPException, status
+from niceview.dataadapter import JsonAdapter
 
 from app.paths import device_dir
 from app.core.token.backend import create_token, load_device_tokens, purge_expired_tokens, save_device_tokens, validate_token
@@ -225,3 +226,36 @@ def device_provision(project: Project, device_name: str):
     update_device(device)
 
     return token
+
+###############################################################################
+
+def device_adapter(project_name: str, device_name: str) -> JsonAdapter:
+    """Return a JsonAdapter for the device JSON file (for UI ModelForm binding)."""
+    device_file = get_device_path(project_name, device_name) / DEVICE_FILE_NAME
+    return JsonAdapter(Device, device_file, create_if_not_exist=True,
+                       created_field='created_at', lock_field='updated_at')
+
+
+def rename_device(project_name: str, old_device_name: str, new_device_name: str) -> None:
+    """Rename a device directory and update the name field in its JSON file.
+
+    Raises:
+        ValueError: Invalid new name.
+        FileNotFoundError: Old device does not exist.
+        FileExistsError: New device name is already taken.
+        OSError: Rename failed.
+    """
+    if not is_valid_filename(new_device_name):
+        raise ValueError(f"Invalid device name: {new_device_name}")
+    old_path = get_device_path(project_name, old_device_name)
+    new_path = device_dir(project_name, new_device_name)
+    if new_path.exists():
+        raise FileExistsError(f"Device {new_device_name} already exists.")
+    old_path.rename(new_path)
+    device_json = new_path / DEVICE_FILE_NAME
+    if device_json.is_file():
+        device = Device.model_validate_json(device_json.read_text())
+        device.name = new_device_name
+        temp = device_json.with_suffix('.tmp')
+        temp.write_text(device.model_dump_json(indent=2))
+        temp.rename(device_json)

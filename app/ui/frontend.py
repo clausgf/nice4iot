@@ -1,9 +1,8 @@
-import plotly.graph_objects as go
-
 from typing import Optional
 from nicegui import PageArguments, app, ui
 
 from app.core.project.ui import all_projects_subpage, project_subpage
+from app.core.device.ui import device_dashboard_panel, device_general_panel
 from app.routes import device_url, project_url, projects_url, ROUTE_DEVICE, ROUTE_PROJECT, ROUTE_PROJECTS
 from app.ui.theme import frame
 import logging
@@ -21,22 +20,22 @@ async def device_subpage(args: PageArguments, title: ui.label, breadcrumbs: ui.e
 
     with ui.tabs().classes('w-full') as tabs:
         dashboard_tab = ui.tab('Dashboard')
-        settings_tab = ui.tab('Settings')
-        data_explorer_tab = ui.tab('Data')
-        log_explorer_tab = ui.tab('Logs')
+        general_tab = ui.tab('General')
+        files_tab = ui.tab('Files')
+        data_tab = ui.tab('Data')
+        logs_tab = ui.tab('Logs')
     tab = 'Dashboard' if not tab else tab
-    with ui.tab_panels(tabs, value=tab) as panels:
+    with ui.tab_panels(tabs, value=tab).classes('w-full'):
         with ui.tab_panel(dashboard_tab):
-            ui.label('Alarms').classes('text-h6 font-bold')
-            ui.label('Monitoring').classes('text-h6 font-bold')
-            ui.label('Logs').classes('text-h6 font-bold')
-        with ui.tab_panel(settings_tab):
-            ui.label('Device Settings').classes('text-h6 font-bold')
-            ui.label('Authentication Tokens').classes('text-h6 font-bold')
-        with ui.tab_panel(data_explorer_tab):
-            ui.label('Data Visualization').classes('text-h6 font-bold')
-        with ui.tab_panel(log_explorer_tab):
-            ui.label('Logs').classes('text-h6 font-bold')
+            device_dashboard_panel(project_id, device_id)
+        with ui.tab_panel(general_tab):
+            await device_general_panel(project_id, device_id)
+        with ui.tab_panel(files_tab):
+            ui.label('Files').classes('text-grey-6')
+        with ui.tab_panel(data_tab):
+            ui.label('Data').classes('text-grey-6')
+        with ui.tab_panel(logs_tab):
+            ui.label('Logs').classes('text-grey-6')
 
 logo = '''
 <?xml version="1.0" encoding="UTF-8"?>

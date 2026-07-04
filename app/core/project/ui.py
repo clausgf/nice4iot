@@ -1,3 +1,4 @@
+import datetime
 from typing import Optional, cast
 
 from nicegui import PageArguments, ui
@@ -5,11 +6,12 @@ from nicegui import PageArguments, ui
 from app.config import app_config
 from app.core.token.backend import get_provisioning_token_adapter
 from app.core.token.ui import TokenListCard
+from app.core.device.backend import get_devices
 from app.core.device.ui import ProjectDevicesTable
 from app.core.logging.ui import LoggingCard
 from app.core.telemetry.ui import TelemetryCard
 from app.core.forwarding.ui import ForwardingCard
-from app.routes import project_url, projects_url
+from app.routes import device_url, project_url, projects_url
 from app.util import is_valid_filename, render_datetime
 from app.core.project.models import Project
 from app.core.project.backend import create_project, delete_project, get_project, get_projects, project_adapter, rename_project
@@ -69,14 +71,74 @@ async def project_subpage(args: PageArguments, title: ui.label, breadcrumbs: ui.
     tab = tab if tab else dashboard_tab.label
     with ui.tab_panels(tabs, value=tab).classes('w-full'):
         with ui.tab_panel(dashboard_tab):
-            ui.label('Alarms').classes('text-h6 font-bold')
-            ui.label('Monitoring').classes('text-h6 font-bold')
+            await project_dashboard_panel(project_id)
         with ui.tab_panel(general_tab):
             await general_panel(project_id)
         with ui.tab_panel(provisioning_tab):
             await provisioning_panel(project_id)
         with ui.tab_panel(devices_tab):
             await devices_panel(project_id)
+
+# ***************************************************************************
+
+async def project_dashboard_panel(project_id: str) -> None:
+    """Overview cards shown on the project Dashboard tab."""
+    project = get_project(project_id, check_active=False)
+    devices = get_devices(project_id)
+    active = [d for d in devices if d.is_active]
+    pending_approval = [d for d in active if not d.is_provisioning_approved]
+    seen = sorted([d for d in devices if d.last_seen_at], key=lambda d: d.last_seen_at, reverse=True)
+    now = datetime.datetime.now(datetime.timezone.utc)
+
+    with ui.grid().classes('grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 w-full'):
+        # Overview card
+        with ui.card().classes('w-full'):
+            ui.label('Project Overview').classes('text-subtitle1 font-bold')
+            ui.separator()
+            with ui.row().classes('items-center gap-2 q-mt-xs'):
+                color = 'green' if project.is_active else 'grey'
+                ui.chip('Active' if project.is_active else 'Inactive').props(f'dense color={color} text-color=white')
+            if project.description:
+                ui.label(project.description).classes('text-body2 q-mt-xs')
+            if project.tags:
+                with ui.row().classes('gap-1 q-mt-xs flex-wrap'):
+                    for tag in project.tags[:4]:
+                        ui.chip(tag).props('dense color=primary text-color=white')
+                    if len(project.tags) > 4:
+                        ui.chip(f'+{len(project.tags) - 4}').props('dense color=grey text-color=white')
+            ui.label(f'Created: {render_datetime(project.created_at)}').classes('text-caption text-grey-7 q-mt-sm')
+
+        # Device health card
+        with ui.card().classes('w-full'):
+            ui.label('Device Health').classes('text-subtitle1 font-bold')
+            ui.separator()
+            with ui.grid().classes('grid-cols-3 text-center gap-2 q-mt-xs'):
+                with ui.column().classes('items-center'):
+                    ui.label(str(len(devices))).classes('text-h5 font-bold')
+                    ui.label('Total').classes('text-caption text-grey-7')
+                with ui.column().classes('items-center'):
+                    ui.label(str(len(active))).classes('text-h5 font-bold text-green')
+                    ui.label('Active').classes('text-caption text-grey-7')
+                with ui.column().classes('items-center'):
+                    warn_color = 'text-orange' if pending_approval else 'text-grey'
+                    ui.label(str(len(pending_approval))).classes(f'text-h5 font-bold {warn_color}')
+                    ui.label('Pending').classes('text-caption text-grey-7')
+
+        # Recent activity card
+        if seen:
+            with ui.card().classes('w-full'):
+                ui.label('Recent Activity').classes('text-subtitle1 font-bold')
+                ui.separator()
+                for d in seen[:8]:
+                    delta = now - d.last_seen_at
+                    recent = delta.total_seconds() < 3600
+                    dot_color = 'text-green' if recent else 'text-grey'
+                    with ui.row().classes('w-full items-center gap-2 q-mt-xs'):
+                        ui.icon('fiber_manual_record').classes(f'text-sm {dot_color}')
+                        ui.label(d.name).classes('grow text-body2 cursor-pointer') \
+                            .on('click', lambda _, dn=d.name: ui.navigate.to(device_url(project_id, dn)))
+                        ui.label(render_datetime(d.last_seen_at)).classes('text-caption text-grey-7')
+
 
 # ***************************************************************************
 
