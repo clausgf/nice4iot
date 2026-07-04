@@ -151,4 +151,11 @@ async def provision(provisioning_request: ProvisioningRequest = Body(...)) -> Pr
     token = await anyio.to_thread.run_sync(
         lambda: device_provision(project, provisioning_request.deviceName)
     )
-    return ProvisioningResponse(tokenType='bearer', accessToken=token)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    expires_in = max(0, round((token.expires_at - now).total_seconds()))
+    return ProvisioningResponse(
+        tokenType='bearer',
+        accessToken=token.value,
+        expiresAt=token.expires_at,
+        expiresIn=expires_in,
+    )

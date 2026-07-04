@@ -181,8 +181,10 @@ def get_auth_project_device(project_name: str, device_name: str, device_token: s
     return project, device
 
 
-def device_provision(project: Project, device_name: str) -> str:
-    """Provision a device and return a new bearer token.
+MAX_DEVICE_TOKENS = 32
+
+def device_provision(project: Project, device_name: str):
+    """Provision a device and return the new bearer AuthToken.
 
     API boundary: raises HTTPException for all error cases.
     """
@@ -210,10 +212,16 @@ def device_provision(project: Project, device_name: str) -> str:
 
     tokens = load_device_tokens(project.name, device_name)
     tokens = purge_expired_tokens(tokens)
+
+    # Enforce token cap: evict the least-recently-used token when at the limit.
+    if len(tokens) >= MAX_DEVICE_TOKENS:
+        tokens.sort(key=lambda t: t.last_use_at or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc))
+        tokens = tokens[-(MAX_DEVICE_TOKENS - 1):]
+
     token = create_token(datetime.timedelta(days=project.device_tokens_expire_in), project.device_token_length)
     tokens.append(token)
     save_device_tokens(project.name, device_name, tokens)
     device.last_provisioned_at = now
     update_device(device)
 
-    return token.value
+    return token

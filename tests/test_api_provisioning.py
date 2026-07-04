@@ -111,7 +111,6 @@ def test_provision_purges_expired_tokens(client, project_autoapprove):
 # Provisioning response fields (spec: expiresAt and expiresIn)
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason="expiresAt not yet returned by implementation")
 def test_provision_response_includes_expires_at(client, project_autoapprove):
     """Response must include expiresAt as an ISO 8601 timestamp."""
     project, prov_token = project_autoapprove
@@ -127,7 +126,6 @@ def test_provision_response_includes_expires_at(client, project_autoapprove):
     datetime.datetime.fromisoformat(body["expiresAt"])
 
 
-@pytest.mark.xfail(strict=True, reason="expiresIn not yet returned by implementation")
 def test_provision_response_includes_expires_in(client, project_autoapprove):
     """Response must include expiresIn as a positive integer (seconds)."""
     project, prov_token = project_autoapprove
@@ -147,7 +145,6 @@ def test_provision_response_includes_expires_in(client, project_autoapprove):
 # Token cap: max 32 active tokens per device (spec)
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason="max-token eviction not yet implemented")
 def test_provision_max_tokens_evicts_oldest(client, project_autoapprove):
     """When a device accumulates more than 32 tokens the one with the oldest
     last_use_at is evicted so the total stays at 32."""

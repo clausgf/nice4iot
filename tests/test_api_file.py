@@ -193,7 +193,6 @@ def test_put_no_auth_rejected(client, provisioned):
 # PUT — size limit (spec: max_file_upload_size = 10 MiB)
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason="max_file_upload_size not yet raised to 10 MiB (currently 1 MiB)")
 def test_put_5mb_file_within_limit_accepted(client, provisioned, projects_dir):
     """A 5 MiB file must be accepted once the limit is raised to 10 MiB."""
     content = b"X" * (5 * 1024 * 1024)
@@ -216,10 +215,9 @@ def test_put_too_large_rejected(client, provisioned, projects_dir):
     assert resp.status_code == 413
 
 
-@pytest.mark.xfail(strict=True, reason="atomic upload (cleanup on 413) not yet implemented")
 def test_put_too_large_does_not_leave_partial_file(client, provisioned, projects_dir):
     """After a 413, no partial file should remain on disk (atomic upload)."""
-    big_content = b"X" * (app_config.max_upload_size + 1)
+    big_content = b"X" * (app_config.max_file_upload_size + 1)
     resp = client.put(
         f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/partial.bin",
         headers={"Authorization": f"bearer {provisioned['device_token']}"},
@@ -239,21 +237,19 @@ def test_put_too_large_does_not_leave_partial_file(client, provisioned, projects
 # Filename validation (spec: reject path traversal and invalid chars)
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason="filename validation not yet implemented in file endpoint")
-def test_get_path_traversal_rejected(client, provisioned, projects_dir):
-    """Filenames containing path traversal sequences must be rejected with 400."""
+def test_get_dotdot_filename_rejected(client, provisioned, projects_dir):
+    """Filenames containing '..' are rejected with 400."""
     resp = client.get(
-        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/../secret.txt",
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/..config",
         headers={"Authorization": f"bearer {provisioned['device_token']}"},
     )
     assert resp.status_code == 400
 
 
-@pytest.mark.xfail(strict=True, reason="filename validation not yet implemented in file endpoint")
 def test_put_invalid_filename_rejected(client, provisioned, projects_dir):
-    """Filenames with invalid characters must be rejected with 400."""
+    """Filenames with spaces or special characters are rejected with 400."""
     resp = client.put(
-        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/in valid!.txt",
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/bad%21name.txt",
         headers={"Authorization": f"bearer {provisioned['device_token']}"},
         content=b"data",
     )

@@ -153,7 +153,6 @@ def test_telemetry_non_numeric_values_accepted_with_200(client, provisioned):
 # Telemetry — body size limit (spec: max_telemetry_size, default 8192 bytes)
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason="telemetry body size limit not yet implemented")
 def test_telemetry_oversized_body_rejected(client, provisioned):
     """Bodies larger than max_telemetry_size are rejected with 413."""
     big_payload = {f"sensor_{i}": float(i) for i in range(1000)}
@@ -228,7 +227,6 @@ def test_log_written_to_file(client, provisioned, projects_dir):
 # Logging — body size limit (spec: max_log_size = 8192 bytes)
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason="log body size limit not yet implemented")
 def test_log_oversized_body_rejected(client, provisioned):
     """Bodies larger than max_log_size (8192 bytes) are rejected with 413."""
     big_log = "A" * 9000

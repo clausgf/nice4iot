@@ -28,6 +28,7 @@ import anyio
 from fastapi import APIRouter, HTTPException, Request, Response, status, Depends
 
 from app.api.dependencies import DeviceAuthInfo, device_auth
+from app.config import app_config
 from app.core.telemetry.backend import write_telemetry
 from app.core.logging.backend import write_log
 from app.core.forwarding.backend import forward, get_forwarding
@@ -116,6 +117,9 @@ async def post_telemetry_with_names(
     if not is_valid_filename(kind):
         raise HTTPException(status_code=400, detail='Invalid kind in url')
 
+    body = await request.body()
+    if len(body) > app_config.max_telemetry_size:
+        raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail='Telemetry payload too large')
     measurements = await request.json()
     await write_telemetry(project_name, device_name, values=measurements, kind=kind)
     return Response(status_code=200)
@@ -183,8 +187,11 @@ async def post_log_with_names(
     * **File** — appends to ``<projects_dir>/<project>/<device>/.device.log``.
       Each entry is prefixed with the arrival timestamp and device name.
     """
+    body = await request.body()
+    if len(body) > app_config.max_log_size:
+        raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail='Log message too large')
     try:
-        logmsg = (await request.body()).decode()
+        logmsg = body.decode()
     except Exception:
         raise HTTPException(status_code=400, detail='Request body is not valid UTF-8 text.')
     await write_log(project_name, device_name, logmsg)

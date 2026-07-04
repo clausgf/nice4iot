@@ -45,7 +45,7 @@ import stat
 
 from app.api.dependencies import DeviceAuthInfo, device_auth
 from app.core.device.backend import get_file_path
-from app.util import logger
+from app.util import logger, is_valid_upload_filename
 from app.config import app_config
 
 ###############################################################################
@@ -133,10 +133,14 @@ async def head_resource(
     **If-None-Match**: if the request includes ``If-None-Match: <etag>`` and the
     ETag matches the current file, responds with **304 Not Modified**.
     """
+    if not is_valid_upload_filename(filename):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Invalid filename: {filename!r}")
     try:
         file_path = get_file_path(project_name, device_name, filename)
-    except (FileNotFoundError, ValueError) as e:
+    except FileNotFoundError as e:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(e))
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
     headers = await get_headers(file_path)
 
     if if_none_match == headers['ETag']:
@@ -198,10 +202,14 @@ async def get_resource(
     HEAD or GET + If-None-Match on every boot and skips the download when the
     ETag matches its locally stored value.
     """
+    if not is_valid_upload_filename(filename):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Invalid filename: {filename!r}")
     try:
         file_path = get_file_path(project_name, device_name, filename)
-    except (FileNotFoundError, ValueError) as e:
+    except FileNotFoundError as e:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(e))
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
     headers = await get_headers(file_path)
 
     if if_none_match == headers['ETag']:
@@ -218,13 +226,13 @@ async def get_resource(
     response_description="Empty 200 on success",
     responses={
         200: {"description": "File written successfully."},
+        400: {"description": "Filename contains invalid characters or path traversal sequences."},
         401: {"description": "Missing, invalid, or expired bearer token."},
         404: {"description": "Project or device not found."},
         413: {
             "description": (
-                f"File exceeds the configured maximum upload size "
-                f"(``app_config.max_upload_size`` bytes). "
-                "The file is truncated and the request is rejected."
+                "File exceeds ``app_config.max_file_upload_size`` (default: 10 MiB). "
+                "No partial file is left on disk."
             )
         },
     },
@@ -247,27 +255,43 @@ async def put_resource(
     Writing always goes to the **device-specific** path — there is no way
     for a device to write to the project-wide fallback path via this endpoint.
 
+    **Filename validation**
+
+    Only alphanumeric characters, ``.``, ``_``, and ``-`` are allowed.
+    The filename must start with an alphanumeric character; ``..`` is forbidden.
+    Invalid filenames are rejected with **400**.
+
     **Size limit**
 
     The upload is streamed and the size is checked chunk by chunk.
-    If the total body length exceeds ``app_config.max_upload_size``, the
-    partially-written file is left on disk (truncated at the limit) and
-    **413 Request Entity Too Large** is returned.
+    If the total body length exceeds ``app_config.max_file_upload_size`` (default: 10 MiB),
+    the temporary file is deleted and **413** is returned.
+    No partial data is left on disk (atomic upload).
 
     **Content-Type**
 
     Not validated; the file is stored as raw bytes regardless of content type.
     """
-    file_path = get_file_path(project_name, device_name, filename, check_file_exists=False)
-    with Path(file_path).open("wb") as f:
-        length = 0
-        async for chunk in request.stream():
-            length += len(chunk)
-            if length > app_config.max_upload_size:
-                f.write(chunk[:length - app_config.max_upload_size])
-                logger.info(f"Upload to {file_path} too large, max size {app_config.max_upload_size} bytes")
-                raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File too large")
-            else:
+    if not is_valid_upload_filename(filename):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Invalid filename: {filename!r}")
+    try:
+        file_path = get_file_path(project_name, device_name, filename, check_file_exists=False)
+    except (FileNotFoundError, ValueError) as e:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(e))
+
+    tmp_path = file_path.with_suffix(file_path.suffix + '.upload.tmp')
+    try:
+        with tmp_path.open("wb") as f:
+            length = 0
+            async for chunk in request.stream():
+                length += len(chunk)
+                if length > app_config.max_file_upload_size:
+                    logger.info(f"Upload to {file_path} too large ({length} bytes, limit {app_config.max_file_upload_size})")
+                    raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, detail="File too large")
                 f.write(chunk)
+        tmp_path.rename(file_path)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
     logger.debug(f"wrote {length} bytes to {file_path}")
     return Response(status_code=200)
