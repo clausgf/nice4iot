@@ -8,6 +8,7 @@ Each line is: {"ts": "<ISO>", "kind": "<kind>", "v": {<metric>: <value>}}
 The panel lets the user pick a time window and a metric, then renders
 a Plotly line chart of the selected series.
 """
+import asyncio
 import datetime
 
 import plotly.graph_objects as go
@@ -26,17 +27,26 @@ _WINDOWS = {
     'All':        None,
 }
 
+_AUTO_REFRESH_INTERVAL = 30.0  # seconds
 
-def device_data_panel(project_name: str, device_name: str) -> None:
+
+async def device_data_panel(project_name: str, device_name: str) -> None:
     """Content of the Data tab."""
     with ui.card().classes('w-full'):
         with ui.expansion('Telemetry Explorer', value=True).classes('w-full').props(
                 'dense header-class="text-subtitle1 font-bold"'):
-            _DataExplorer(project_name, device_name)
+            explorer = _DataExplorer(project_name, device_name)
+            await explorer.initialize()
 
 
 class _DataExplorer:
-    """Stateful UI component for the telemetry time-series explorer."""
+    """Stateful UI component for the telemetry time-series explorer.
+
+    UI is built synchronously in __init__; data is loaded asynchronously
+    via initialize() so the event loop is not blocked during page render.
+    Records are cached after each load; kind/metric changes reuse the cache
+    without triggering additional IO.
+    """
 
     def __init__(self, project_name: str, device_name: str) -> None:
         self.project_name = project_name
@@ -44,6 +54,8 @@ class _DataExplorer:
         self.window = 'Last 24 h'
         self.kind: str | None = None
         self.metric: str | None = None
+        self._records: list = []
+        self._auto_refresh = False
 
         with ui.row().classes('w-full items-center gap-4 q-mt-xs flex-wrap'):
             self.window_select = ui.select(
@@ -52,57 +64,77 @@ class _DataExplorer:
             self.kind_select = ui.select([], label='Kind').props('dense outlined').classes('w-40')
             self.metric_select = ui.select([], label='Metric').props('dense outlined').classes('w-48')
             ui.button(icon='refresh').props('dense flat').tooltip('Refresh').on_click(self._refresh)
+            ui.checkbox('Auto-refresh').bind_value(self, '_auto_refresh').tooltip(
+                f'Reload every {int(_AUTO_REFRESH_INTERVAL)} s'
+            )
 
-        self.summary_row = ui.row().classes('w-full items-center gap-4 q-mt-xs text-caption text-grey-7')
+        self.summary_row = ui.row().classes('w-full items-center gap-4 q-mt-xs')
         self.chart = ui.plotly(go.Figure()).classes('w-full')
 
         self.window_select.on_value_change(lambda e: self._on_window(e.value))
         self.kind_select.on_value_change(lambda e: self._on_kind(e.value))
         self.metric_select.on_value_change(lambda e: self._on_metric(e.value))
 
-        self._refresh()
+        ui.timer(_AUTO_REFRESH_INTERVAL, self._auto_refresh_tick)
+
+    async def initialize(self) -> None:
+        await self._refresh()
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
 
     def _since(self) -> datetime.datetime | None:
         delta = _WINDOWS.get(self.window)
         return datetime.datetime.now(datetime.timezone.utc) - delta if delta else None
 
-    def _refresh(self, _=None) -> None:
-        records = read_local_metrics(self.project_name, self.device_name, since=self._since())
-        kinds = sorted({r['kind'] for r in records}) if records else []
+    async def _auto_refresh_tick(self) -> None:
+        if self._auto_refresh:
+            await self._refresh()
+
+    # ------------------------------------------------------------------
+    # Data loading (async IO)
+    # ------------------------------------------------------------------
+
+    async def _refresh(self, _=None) -> None:
+        self._records = await asyncio.to_thread(
+            read_local_metrics, self.project_name, self.device_name, since=self._since()
+        )
+        kinds = sorted({r['kind'] for r in self._records}) if self._records else []
         self.kind_select.set_options(kinds)
         if self.kind not in kinds:
             self.kind = kinds[0] if kinds else None
         self.kind_select.set_value(self.kind)
-        self._update_metrics(records)
+        self._update_metrics_ui()
 
-    def _on_window(self, value: str) -> None:
+    async def _on_window(self, value: str) -> None:
         self.window = value
-        self._refresh()
+        await self._refresh()
+
+    # ------------------------------------------------------------------
+    # UI updates (sync — use cached records, no IO)
+    # ------------------------------------------------------------------
 
     def _on_kind(self, value: str | None) -> None:
         self.kind = value
-        self._update_metrics()
+        self._update_metrics_ui()
 
     def _on_metric(self, value: str | None) -> None:
         self.metric = value
-        self._draw_chart()
+        self._draw_chart_ui()
 
-    def _update_metrics(self, records: list | None = None) -> None:
-        if records is None:
-            records = read_local_metrics(
-                self.project_name, self.device_name, kind=self.kind, since=self._since()
-            )
+    def _update_metrics_ui(self) -> None:
         metrics = (
-            sorted({k for r in records if r['kind'] == self.kind for k in r['v']})
+            sorted({k for r in self._records if r['kind'] == self.kind for k in r['v']})
             if self.kind else []
         )
         self.metric_select.set_options(metrics)
         if self.metric not in metrics:
             self.metric = metrics[0] if metrics else None
         self.metric_select.set_value(self.metric)
-        self._draw_chart(records)
+        self._draw_chart_ui()
 
-    def _draw_chart(self, records: list | None = None) -> None:
+    def _draw_chart_ui(self) -> None:
         self.summary_row.clear()
         if not self.kind or not self.metric:
             self.chart.update_figure(go.Figure())
@@ -113,12 +145,8 @@ class _DataExplorer:
                 ).classes('text-caption text-grey-6')
             return
 
-        if records is None:
-            records = read_local_metrics(
-                self.project_name, self.device_name, kind=self.kind, since=self._since()
-            )
         xs, ys = [], []
-        for r in records:
+        for r in self._records:
             if r['kind'] == self.kind and self.metric in r['v']:
                 try:
                     xs.append(datetime.datetime.fromisoformat(r['ts']))

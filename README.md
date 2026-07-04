@@ -96,7 +96,9 @@ tests/
 ├── test_api_device.py
 ├── test_api_file.py
 ├── test_api_provisioning.py
-└── test_auth.py
+├── test_auth.py
+├── test_device_backend.py  # device_adapter, rename_device
+└── test_telemetry_backend.py  # local JSONL store (_append_local_metrics, read_local_metrics)
 
 tools/
 └── device_client.py        # arduino4iot-compatible Python device simulator

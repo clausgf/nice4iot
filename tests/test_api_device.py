@@ -129,6 +129,21 @@ def test_telemetry_system_kind(mock_write, client, provisioned):
     assert resp.status_code == 200
 
 
+def test_telemetry_accepted_writes_local_metrics(client, provisioned):
+    """Telemetry is always appended to the local JSONL store, regardless of backend config."""
+    from app.core.telemetry.backend import read_local_metrics
+    resp = client.post(
+        f"/api/telemetry/{provisioned['project_name']}/{provisioned['device_name']}/sensors",
+        headers={"Authorization": f"bearer {provisioned['device_token']}"},
+        json=TELEMETRY_PAYLOAD,
+    )
+    assert resp.status_code == 200
+    records = read_local_metrics(provisioned['project_name'], provisioned['device_name'])
+    assert len(records) == 1
+    assert records[0]['kind'] == 'sensors'
+    assert set(records[0]['v'].keys()) == set(TELEMETRY_PAYLOAD.keys())
+
+
 def test_telemetry_invalid_kind_rejected(client, provisioned):
     """Kind must be a valid filename — path traversal characters are rejected."""
     resp = client.post(

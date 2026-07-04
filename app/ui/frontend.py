@@ -36,7 +36,7 @@ async def device_subpage(args: PageArguments, title: ui.label, breadcrumbs: ui.e
         with ui.tab_panel(files_tab):
             device_files_panel(project_id, device_id)
         with ui.tab_panel(data_tab):
-            device_data_panel(project_id, device_id)
+            await device_data_panel(project_id, device_id)
         with ui.tab_panel(logs_tab):
             device_logs_panel(project_id, device_id)
 
