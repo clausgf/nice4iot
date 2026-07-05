@@ -17,8 +17,8 @@ class ForbiddenError(Nice4IotError):
     """Operation not permitted — project or device inactive, not approved."""
 
 
-class ConflictError(Nice4IotError):
-    """Resource already exists."""
+class AlreadyExistsError(Nice4IotError):
+    """Resource already exists (name collision on create or rename)."""
 
 
 class AuthError(Nice4IotError):

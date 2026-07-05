@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from app.core.device.backend import get_auth_project_device
 from app.core.device.models import Device
 from app.core.project.models import Project
-from app.exceptions import AuthError, ConflictError, ForbiddenError, Nice4IotError, NotFoundError
+from app.exceptions import AlreadyExistsError, AuthError, ForbiddenError, Nice4IotError, NotFoundError
 
 
 class DeviceAuthInfo(BaseModel):
@@ -30,7 +30,7 @@ def domain_to_http(exc: Nice4IotError) -> Never:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc))
     if isinstance(exc, ForbiddenError):
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail=str(exc))
-    if isinstance(exc, ConflictError):
+    if isinstance(exc, AlreadyExistsError):
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc))
     if isinstance(exc, AuthError):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail=str(exc))
