@@ -17,7 +17,7 @@ from app.util import is_valid_filename, render_datetime
 from app.core.project.models import Project
 from app.core.project.backend import create_project, delete_project, get_project, get_projects, project_adapter, rename_project
 from niceview.form import ModelForm
-from niceview.util import submit_dialog
+from niceview.util import confirm_dialog, input_dialog
 
 import logging
 log = logging.getLogger("uvicorn")
@@ -29,7 +29,20 @@ async def all_projects_subpage(args: PageArguments, nav: ui.element):
     log.debug(f'project_main_page {args=}')
     nav.clear()
 
-    project_new_dialog = ProjectCreationDialog()
+    async def _new_project():
+        name = await input_dialog(
+            'Create Project',
+            label='Project Name',
+            placeholder='enter a project name here',
+            validator=is_valid_filename,
+            error_message='Invalid name: use letters, digits, underscore, plus, minus only.',
+        )
+        if name is None:
+            return
+        project = create_project(name)
+        ui.notify(f"Created project {project.name}", type='positive')
+        ui.navigate.to(project_url(project.name, tab='General'))
+
     with ui.grid().classes('grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 w-full'):
         for project in get_projects():
             with ui.card().classes('w-full') as card:
@@ -45,7 +58,7 @@ async def all_projects_subpage(args: PageArguments, nav: ui.element):
                             ui.chip(f'+{len(project.tags)-2}').props('dense color=primary text-color=white')
             card.on('click', lambda e, p=project.name: ui.navigate.to(project_url(p)))
 
-        ui.button('New Project', icon='add').props('color=primary').on_click(project_new_dialog.show).classes('w-full')
+        ui.button('New Project', icon='add').props('color=primary').on_click(_new_project).classes('w-full')
 
 # ***************************************************************************
 
@@ -188,11 +201,10 @@ async def _rename_project(old_name: str, new_name: str) -> None:
     if old_name == new_name:
         ui.notify(f"Project name unchanged: {new_name}", type='warning')
         return
-    dialog = submit_dialog('Rename Project', 
-        'Renaming a project also changes its URLs. Are you sure you want to continue?', 
-        ['|1Cancel', '-OK'])
-    result = await dialog  # result is the button text "Cancel" or "OK"
-    if result != 'OK':
+    if not await confirm_dialog(
+        'Rename Project',
+        'Renaming a project also changes its URLs. Are you sure?',
+    ):
         ui.notify("Project rename cancelled", type='negative')
         return
     try:
@@ -205,11 +217,12 @@ async def _rename_project(old_name: str, new_name: str) -> None:
 
 
 async def _delete_project(project_id: str) -> None:
-    dialog = submit_dialog('Delete Project', 
-        'Deleting a project is irreversible. Are you sure you want to continue?', 
-        ['|1Cancel', '-OK'])
-    result = await dialog  # result is the button text "Cancel" or "OK"
-    if result != 'OK':
+    if not await confirm_dialog(
+        'Delete Project',
+        'Deleting a project is irreversible. Are you sure?',
+        ok_label='Delete',
+        ok_color='negative',
+    ):
         ui.notify("Project deletion cancelled", type='negative')
         return
     try:
@@ -261,36 +274,4 @@ async def devices_panel(project_id: str):
                 """).classes('text-caption q-ma-none')
         ProjectDevicesTable(project_id)
 
-# ***************************************************************************
-
-class ProjectCreationDialog:
-    """Dialog for creating a new project."""
-
-    def __init__(self):
-        self.project_name = ''
-        with ui.dialog().style('width: 400px') as self.dialog:
-            with ui.card().classes('w-full'):
-                ui.label('Create Project').classes('text-h6 text-center')
-                val_rules = {
-                    "Invalid name: use letters, digits, underscore, plus, minus only.": lambda x: is_valid_filename(x)
-                }
-                ui.input(
-                    label='Project Name',
-                    placeholder='enter a project name here',
-                    validation=val_rules,
-                ).bind_value(self, 'project_name').classes('w-full')
-                with ui.row().classes('w-full place-content-end'):
-                    ui.space()
-                    ui.button('Cancel').props('color=secondary').on_click(lambda: self.dialog.submit(False))
-                    ui.button('Create').on_click(lambda: self.dialog.submit(True))
-
-    async def show(self):
-        """Show the dialog."""
-        result = await self.dialog
-        if result and self.project_name and is_valid_filename(self.project_name):
-            project = create_project(self.project_name)
-            ui.notify(f"Created project {project.name}", type='positive')
-            ui.navigate.to(project_url(project.name, tab='General'))
-        else:
-            ui.notify("Project creation cancelled", type='negative')
 

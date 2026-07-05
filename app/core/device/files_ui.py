@@ -17,7 +17,7 @@ from app.config import app_config
 from app.core.device.backend import get_device_path
 from app.paths import project_dir as get_project_dir
 from app.util import is_valid_upload_filename
-from niceview.util import submit_dialog
+from niceview.util import confirm_dialog
 
 import logging
 log = logging.getLogger("uvicorn")
@@ -353,12 +353,12 @@ def _download_file(path: Path) -> None:
 
 
 async def _delete_file(path: Path, refresh_fn=None) -> None:
-    result = await submit_dialog(
+    if not await confirm_dialog(
         'Delete File',
-        f'Delete {path.name!r}? This is irreversible.',
-        ['|1Cancel', '-Delete'],
-    )
-    if result != 'Delete':
+        f'Delete **{path.name}**? This is irreversible.',
+        ok_label='Delete',
+        ok_color='negative',
+    ):
         return
     try:
         path.unlink()
