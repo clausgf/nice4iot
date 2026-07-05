@@ -122,8 +122,11 @@ data/projects/
     ├── .forwards.json          # Named HTTP forwarding rules
     ├── <shared_file>           # Project-wide fallback files served to devices
     └── <device_name>/
-        ├── .device.json        # Device settings (autosave)
-        ├── .tokens.json        # Device bearer token list
+        ├── .device.json        # Device settings (autosave, optimistic-locked)
+        ├── .last_seen          # last_seen_at timestamp — written on every API auth,
+        │                       # kept separate so device.json is only written on
+        │                       # explicit user/provisioning actions (avoids lock conflict)
+        ├── .tokens.json        # Device bearer token list (file-locked on write)
         ├── .device.log         # File logging backend output (rotated)
         ├── .device_metrics.jsonl  # Local telemetry ring buffer (max 2 000 lines)
         └── <device_file>       # Device-specific files (override project defaults)

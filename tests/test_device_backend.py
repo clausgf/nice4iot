@@ -1,17 +1,22 @@
 """
 Unit tests for app.core.device.backend — device_adapter, rename_device,
-get_file_path (project fallback), and list_files helper.
+get_file_path (project fallback), list_files helper, and last_seen_at separation.
 """
+import datetime
+import json
 import pytest
 
 from app.core.device.backend import (
+    DEVICE_FILE_NAME,
     create_device,
     delete_device,
     device_adapter,
     get_device,
     get_device_path,
     get_file_path,
+    read_last_seen,
     rename_device,
+    write_last_seen,
 )
 from app.core.device.models import Device
 from app.core.project.backend import create_project
@@ -145,3 +150,53 @@ def test_list_files_excludes_device_directories(device, project):
 def test_list_files_returns_empty_for_nonexistent_dir(project):
     from pathlib import Path
     assert _list_files(Path('/nonexistent/path')) == []
+
+
+# ---------------------------------------------------------------------------
+# last_seen_at — stored in .last_seen, not device.json
+# ---------------------------------------------------------------------------
+
+def test_last_seen_none_for_new_device(device, project):
+    """Freshly created device has no .last_seen file → last_seen_at is None."""
+    assert device.last_seen_at is None
+    assert read_last_seen(project, device.name) is None
+
+
+def test_write_and_read_last_seen(device, project):
+    now = datetime.datetime(2025, 6, 1, 12, 0, 0, tzinfo=datetime.timezone.utc)
+    write_last_seen(project, device.name, now)
+    assert read_last_seen(project, device.name) == now
+
+
+def test_get_device_reads_last_seen(device, project):
+    """get_device() populates last_seen_at from .last_seen, not device.json."""
+    now = datetime.datetime(2025, 6, 1, 12, 0, 0, tzinfo=datetime.timezone.utc)
+    write_last_seen(project, device.name, now)
+    d = get_device(project, device.name)
+    assert d.last_seen_at == now
+
+
+def test_device_json_not_touched_on_last_seen_write(device, project):
+    """Writing .last_seen must not modify device.json (no updated_at bump)."""
+    dev_path = get_device_path(project, device.name)
+    json_path = dev_path / DEVICE_FILE_NAME
+    mtime_before = json_path.stat().st_mtime
+
+    write_last_seen(project, device.name, datetime.datetime.now(datetime.timezone.utc))
+
+    assert json_path.stat().st_mtime == mtime_before
+
+
+def test_last_seen_falls_back_to_device_json_during_migration(device, project):
+    """If .last_seen absent but device.json has last_seen_at, preserve it (migration)."""
+    # Manually inject last_seen_at into device.json (simulates pre-migration state).
+    dev_path = get_device_path(project, device.name)
+    json_path = dev_path / DEVICE_FILE_NAME
+    data = json.loads(json_path.read_text())
+    migrated_ts = "2024-01-01T10:00:00+00:00"
+    data['last_seen_at'] = migrated_ts
+    json_path.write_text(json.dumps(data))
+
+    d = get_device(project, device.name)
+    assert d.last_seen_at is not None
+    assert d.last_seen_at.year == 2024

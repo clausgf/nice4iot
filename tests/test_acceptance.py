@@ -68,6 +68,30 @@ class TestDeviceLifecycle:
         )
         assert resp.status_code == 200
 
+    def test_last_seen_updated_without_touching_device_json(self, client, setup, projects_dir):
+        """last_seen_at is written to .last_seen; device.json mtime must not change."""
+        from app.core.device.backend import get_device, DEVICE_FILE_NAME, get_device_path
+
+        resp = client.post("/api/provision", json={
+            "projectName": setup["project"].name,
+            "deviceName": setup["device"],
+            "provisioningToken": setup["prov_token"],
+        })
+        device_token = resp.json()["accessToken"]
+
+        dev_path = get_device_path(setup["project"].name, setup["device"])
+        json_mtime_before = (dev_path / DEVICE_FILE_NAME).stat().st_mtime
+
+        client.post(
+            f"/api/telemetry/{setup['project'].name}/{setup['device']}/sensors",
+            json={"v": 1},
+            headers=auth_headers(device_token),
+        )
+
+        assert (dev_path / DEVICE_FILE_NAME).stat().st_mtime == json_mtime_before
+        d = get_device(setup["project"].name, setup["device"])
+        assert d.last_seen_at is not None
+
     def test_telemetry_stored_locally(self, client, setup, projects_dir):
         resp = client.post("/api/provision", json={
             "projectName": setup["project"].name,

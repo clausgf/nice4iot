@@ -19,6 +19,7 @@ from app.util import logger, is_valid_filename
 ###############################################################################
 
 DEVICE_FILE_NAME = '.device.json'
+_LAST_SEEN_FILE = '.last_seen'
 
 # ---------------------------------------------------------------------------
 # In-process device list cache
@@ -42,6 +43,31 @@ def _invalidate_device_list_cache(project_name: str) -> None:
 def flush_device_list_cache() -> None:
     """Flush all cached device lists (call on SIGUSR1 or after out-of-band changes)."""
     _device_list_cache.clear()
+
+###############################################################################
+# last_seen_at — stored separately from device.json to eliminate write conflicts
+###############################################################################
+# device.json is managed by the UI's ModelForm (autosave=True, lock_field='updated_at').
+# Storing last_seen_at there caused optimistic-lock conflicts whenever a device pushed
+# telemetry while a user had the General tab open. .last_seen holds only the timestamp;
+# get_device() reads it and populates the in-memory field.
+
+
+def write_last_seen(project_name: str, device_name: str, dt: datetime.datetime) -> None:
+    """Atomically write last_seen_at to .last_seen (separate from device.json)."""
+    path = device_dir(project_name, device_name) / _LAST_SEEN_FILE
+    tmp = path.with_suffix('.tmp')
+    tmp.write_text(dt.isoformat())
+    tmp.rename(path)
+
+
+def read_last_seen(project_name: str, device_name: str) -> datetime.datetime | None:
+    """Read last_seen_at from .last_seen. Returns None if the file does not exist."""
+    path = device_dir(project_name, device_name) / _LAST_SEEN_FILE
+    try:
+        return datetime.datetime.fromisoformat(path.read_text().strip())
+    except (OSError, ValueError):
+        return None
 
 ###############################################################################
 
@@ -134,6 +160,12 @@ def get_device(project_name: str, device_name: str, check_active: bool = False) 
             created_at=datetime.datetime.fromtimestamp(stat_info.st_ctime),
             updated_at=datetime.datetime.fromtimestamp(stat_info.st_mtime),
         )
+    # last_seen_at lives in .last_seen (not device.json) to avoid write conflicts
+    # with the UI's autosave adapter. Fall back to device.json value during migration
+    # (old devices that haven't authenticated yet after the switch).
+    fresh = read_last_seen(project_name, device_name)
+    if fresh is not None:
+        device.last_seen_at = fresh
     if check_active and not device.is_active:
         raise PermissionError(f"Device {project_name}/{device_name} is not active.")
     return device
@@ -223,8 +255,9 @@ def get_auth_project_device(project_name: str, device_name: str, device_token: s
         validate_token(device_token, tokens)  # raises AuthError
         save_device_tokens(project_name, device_name, tokens)
 
-    device.last_seen_at = datetime.datetime.now(datetime.timezone.utc)
-    device = update_device(device)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    write_last_seen(project_name, device_name, now)
+    device.last_seen_at = now
 
     return project, device
 
