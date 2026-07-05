@@ -19,10 +19,10 @@ class TelemetryBackend(Protocol):
 class TelemetryConfig(BaseModel):
     """Per-project telemetry configuration. Exactly one backend is active at a time."""
     updated_at: Annotated[
-            datetime.datetime,
+            datetime.datetime | None,
             Field(description='Timestamp of the last configuration change (UTC, set automatically).'),
             niceview.Field(editable=False),
-        ] = Field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc))
+        ] = None
     backend: Annotated[
         Literal['none', 'prometheus', 'influxdb'],
         niceview.Field(select_options={

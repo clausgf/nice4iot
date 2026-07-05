@@ -1,5 +1,5 @@
 from nicegui import ui
-from niceview import ConflictError
+from niceview import ConflictError, StorageError
 from niceview.form import ModelForm
 
 from app.core.logging.backend import get_logging_adapter
@@ -22,7 +22,7 @@ class LoggingCard:
     def _save(self) -> None:
         try:
             self.adapter.save(self.config)
-        except ConflictError as e:
+        except (ConflictError, StorageError) as e:
             ui.notify(str(e), color='negative')
 
     def _render_backend(self, title: str, config) -> None:

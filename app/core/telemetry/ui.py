@@ -1,5 +1,5 @@
 from nicegui import ui
-from niceview import ConflictError
+from niceview import ConflictError, StorageError
 from niceview.form import ModelForm
 
 from app.core.telemetry.backend import get_telemetry_adapter
@@ -22,7 +22,7 @@ class TelemetryCard:
     def _save(self) -> None:
         try:
             self.adapter.save(self.config)
-        except ConflictError as e:
+        except (ConflictError, StorageError) as e:
             ui.notify(str(e), color='negative')
 
     def _on_backend_change(self) -> None:

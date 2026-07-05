@@ -46,10 +46,10 @@ class FileLogConfig(BaseModel):
 class LoggingConfig(BaseModel):
     """Per-project logging configuration. Multiple backends can be active simultaneously."""
     updated_at: Annotated[
-            datetime.datetime,
+            datetime.datetime | None,
             Field(description='Timestamp of the last configuration change (UTC, set automatically).'),
             niceview.Field(editable=False),
-        ] = Field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc))
+        ] = None
     loki: LokiConfig = Field(default_factory=LokiConfig)
     file: FileLogConfig = Field(default_factory=FileLogConfig)
 
