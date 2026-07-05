@@ -1,4 +1,5 @@
 from nicegui import ui
+from niceview import ConflictError
 from niceview.form import ModelForm
 
 from app.core.logging.backend import get_logging_adapter
@@ -19,7 +20,10 @@ class LoggingCard:
             self._render_backend('Loki', self.config.loki)
 
     def _save(self) -> None:
-        self.adapter.save(self.config)
+        try:
+            self.adapter.save(self.config)
+        except ConflictError as e:
+            ui.notify(str(e), color='negative')
 
     def _render_backend(self, title: str, config) -> None:
         form = ModelForm.from_item(config, on_change=lambda e: self._save())

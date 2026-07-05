@@ -1,3 +1,4 @@
+import datetime
 from typing import Annotated, Literal, Protocol
 from pydantic import BaseModel, Field
 import niceview
@@ -44,6 +45,11 @@ class FileLogConfig(BaseModel):
 
 class LoggingConfig(BaseModel):
     """Per-project logging configuration. Multiple backends can be active simultaneously."""
+    updated_at: Annotated[
+            datetime.datetime,
+            Field(description='Timestamp of the last configuration change (UTC, set automatically).'),
+            niceview.Field(editable=False),
+        ] = Field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc))
     loki: LokiConfig = Field(default_factory=LokiConfig)
     file: FileLogConfig = Field(default_factory=FileLogConfig)
 

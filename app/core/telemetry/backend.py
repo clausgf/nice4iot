@@ -35,7 +35,8 @@ def flush_telemetry_backend_cache() -> None:
 
 def get_telemetry_adapter(project_name: str) -> JsonAdapter:
     """Get a JsonAdapter for the telemetry configuration of a project."""
-    return JsonAdapter(TelemetryConfig, project_dir(project_name) / TEL_FILE, create_if_not_exist=True)
+    return JsonAdapter(TelemetryConfig, project_dir(project_name) / TEL_FILE,
+                       create_if_not_exist=True, lock_field='updated_at')
 
 
 def _get_active_backend(project_name: str) -> TelemetryBackend | None:
