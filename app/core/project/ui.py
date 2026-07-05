@@ -25,10 +25,9 @@ log = logging.getLogger("uvicorn")
 
 # ***************************************************************************
 
-async def all_projects_subpage(args: PageArguments, title: ui.label, breadcrumbs: ui.element):
+async def all_projects_subpage(args: PageArguments, nav: ui.element):
     log.debug(f'project_main_page {args=}')
-    title.text = 'Projects'
-    breadcrumbs.clear()
+    nav.clear()
 
     project_new_dialog = ProjectCreationDialog()
     with ui.grid().classes('grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 w-full'):
@@ -50,19 +49,18 @@ async def all_projects_subpage(args: PageArguments, title: ui.label, breadcrumbs
 
 # ***************************************************************************
 
-async def project_subpage(args: PageArguments, title: ui.label, breadcrumbs: ui.element, project_id: str, tab: Optional[str] = None):
+async def project_subpage(args: PageArguments, nav: ui.element, project_id: str, tab: Optional[str] = None):
+    nav.clear()
     try:
         get_project(project_id, check_active=False)
     except (ValueError, FileNotFoundError):
-        breadcrumbs.clear()
-        title.text = 'Not Found'
         ui.label(f'Project "{project_id}" does not exist.').classes('text-h6 text-negative')
         return
 
-    title.text = 'Project ' + project_id
-    breadcrumbs.clear()
-    with breadcrumbs:
-        ui.element('q-breadcrumbs-el').props(f'label={project_id}').on('click', lambda: ui.navigate.to(project_url(project_id)))
+    with nav:
+        ui.label('/').classes('text-h6 text-white opacity-50')
+        ui.label(project_id).classes('text-h6 font-bold cursor-pointer text-white') \
+            .on('click', lambda: ui.navigate.to(project_url(project_id)))
 
     with ui.tabs().classes('w-full') as tabs:
         dashboard_tab = ui.tab('Dashboard')

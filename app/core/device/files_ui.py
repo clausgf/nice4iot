@@ -16,8 +16,8 @@ from nicegui import ui
 from app.config import app_config
 from app.core.device.backend import get_device_path
 from app.paths import project_dir as get_project_dir
-from app.ui.util import build_dialog
 from app.util import is_valid_upload_filename
+from niceview.util import submit_dialog
 
 import logging
 log = logging.getLogger("uvicorn")
@@ -353,7 +353,7 @@ def _download_file(path: Path) -> None:
 
 
 async def _delete_file(path: Path, refresh_fn=None) -> None:
-    result = await build_dialog(
+    result = await submit_dialog(
         'Delete File',
         f'Delete {path.name!r}? This is irreversible.',
         ['|1Cancel', '-Delete'],

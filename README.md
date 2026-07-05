@@ -49,47 +49,44 @@ app/
 ├── config.py               # pydantic-settings (env vars / .env)
 ├── paths.py                # project_dir(), device_dir() helpers
 ├── util.py                 # filename validation, render_datetime, ...
+├── frontend.py             # NiceGUI page, header, sub-page routing, user menu
 ├── api/
 │   ├── provisioning.py     # POST /api/provision
 │   ├── device.py           # POST /api/telemetry, /api/log, GET /api/forward
 │   ├── file.py             # GET · PUT · HEAD /api/file
-│   └── dependencies.py     # device_auth FastAPI dependency
-├── core/
-│   ├── device/
-│   │   ├── backend.py      # Device CRUD, device_adapter(), rename_device()
-│   │   ├── models.py       # Device Pydantic model
-│   │   ├── ui.py           # Dashboard + General panel, DevicesTable
-│   │   ├── files_ui.py     # Files tab (browse, upload, download, delete)
-│   │   ├── data_ui.py      # Data tab (Plotly time-series explorer)
-│   │   └── logs_ui.py      # Logs tab (live tail, archive download)
-│   ├── project/
-│   │   ├── backend.py      # Project CRUD, project_adapter()
-│   │   ├── models.py       # Project Pydantic model
-│   │   └── ui.py           # Project pages, dashboard cards
-│   ├── token/
-│   │   ├── backend.py      # Token create / validate / persist
-│   │   ├── models.py       # AuthToken Pydantic model
-│   │   └── ui.py           # TokenListCard
-│   ├── telemetry/
-│   │   ├── backend.py      # write_telemetry() + local JSONL store + read_local_metrics()
-│   │   ├── models.py       # TelemetryConfig
-│   │   ├── ui.py           # TelemetryCard (project settings)
-│   │   ├── prometheus/     # Prometheus remote write backend
-│   │   └── influxdb/       # InfluxDB line protocol backend
-│   ├── logging/
-│   │   ├── backend.py      # write_log()
-│   │   ├── models.py       # LoggingConfig
-│   │   ├── ui.py           # LoggingCard (project settings)
-│   │   ├── file/           # rotating file backend
-│   │   └── loki/           # Grafana Loki backend
-│   └── forwarding/
-│       ├── backend.py      # forward(), get_forwarding()
-│       ├── models.py       # ForwardingConfig
-│       └── ui.py           # ForwardingCard (project settings)
-└── ui/
-    ├── frontend.py         # NiceGUI page + sub-page routing
-    ├── theme.py            # header / frame
-    └── util.py             # build_dialog()
+│   └── dependencies.py     # device_auth FastAPI dependency + domain_to_http()
+└── core/
+    ├── device/
+    │   ├── backend.py      # Device CRUD, device_adapter(), rename_device()
+    │   ├── models.py       # Device Pydantic model
+    │   ├── ui.py           # device_subpage, Dashboard + General panel, DevicesTable
+    │   ├── files_ui.py     # Files tab (browse, upload, download, edit, view)
+    │   ├── data_ui.py      # Data tab (Plotly time-series explorer)
+    │   └── logs_ui.py      # Logs tab (live tail, archive download)
+    ├── project/
+    │   ├── backend.py      # Project CRUD, project_adapter()
+    │   ├── models.py       # Project Pydantic model
+    │   └── ui.py           # all_projects_subpage, project_subpage, dashboard cards
+    ├── token/
+    │   ├── backend.py      # Token create / validate / persist / lock
+    │   ├── models.py       # AuthToken Pydantic model
+    │   └── ui.py           # TokenListCard
+    ├── telemetry/
+    │   ├── backend.py      # write_telemetry() + local JSONL store + read_local_metrics()
+    │   ├── models.py       # TelemetryConfig
+    │   ├── ui.py           # TelemetryCard (project settings)
+    │   ├── prometheus/     # Prometheus remote write backend
+    │   └── influxdb/       # InfluxDB line protocol backend
+    ├── logging/
+    │   ├── backend.py      # write_log()
+    │   ├── models.py       # LoggingConfig
+    │   ├── ui.py           # LoggingCard (project settings)
+    │   ├── file/           # rotating file backend
+    │   └── loki/           # Grafana Loki backend
+    └── forwarding/
+        ├── backend.py      # forward(), get_forwarding()
+        ├── models.py       # ForwardingConfig
+        └── ui.py           # ForwardingCard (project settings)
 
 tests/
 ├── conftest.py                  # fixtures: projects_dir, client, provisioned, ...

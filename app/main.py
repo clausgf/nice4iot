@@ -10,7 +10,7 @@ from app.api.provisioning import router as provisioning_router
 from app.api.device import router as device_router
 from app.api.file import router as file_router
 
-import app.ui.frontend as frontend
+import app.frontend as frontend
 
 _main_log = logging.getLogger("uvicorn")
 

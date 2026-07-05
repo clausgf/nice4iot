@@ -1,7 +1,7 @@
 import datetime
-from typing import cast
+from typing import Optional, cast
 
-from nicegui import ui
+from nicegui import PageArguments, ui
 
 from app.routes import device_url, project_url
 from app.core.device.models import Device
@@ -9,15 +9,59 @@ from app.core.device.backend import (
     create_device, delete_device, device_adapter, get_device, get_devices,
     rename_device,
 )
+from app.core.device.files_ui import device_files_panel
+from app.core.device.data_ui import device_data_panel
+from app.core.device.logs_ui import device_logs_panel
 from app.core.project.backend import get_project
 from app.core.token.backend import get_device_token_adapter
 from app.core.token.ui import TokenListCard
-from app.ui.util import build_dialog
 from app.util import is_valid_filename, render_datetime
 from niceview.form import ModelForm
+from niceview.util import submit_dialog
 
 import logging
 log = logging.getLogger("uvicorn")
+
+
+# ***************************************************************************
+# Device sub-page (routing entry point — lives here, not in frontend.py)
+# ***************************************************************************
+
+async def device_subpage(
+    args: PageArguments,
+    nav: ui.element,
+    project_id: str,
+    device_id: str,
+    tab: Optional[str] = None,
+) -> None:
+    """Render the device page: header nav path + tabbed panels."""
+    nav.clear()
+    with nav:
+        ui.label('/').classes('text-h6 text-white opacity-50')
+        ui.label(project_id).classes('text-h6 cursor-pointer text-white opacity-80') \
+            .on('click', lambda: ui.navigate.to(project_url(project_id)))
+        ui.label('/').classes('text-h6 text-white opacity-50')
+        ui.label(device_id).classes('text-h6 font-bold cursor-pointer text-white') \
+            .on('click', lambda: ui.navigate.to(device_url(project_id, device_id)))
+
+    with ui.tabs().classes('w-full') as tabs:
+        dashboard_tab = ui.tab('Dashboard')
+        general_tab   = ui.tab('General')
+        files_tab     = ui.tab('Files')
+        data_tab      = ui.tab('Data')
+        logs_tab      = ui.tab('Logs')
+    tab = tab or 'Dashboard'
+    with ui.tab_panels(tabs, value=tab).classes('w-full'):
+        with ui.tab_panel(dashboard_tab):
+            device_dashboard_panel(project_id, device_id)
+        with ui.tab_panel(general_tab):
+            await device_general_panel(project_id, device_id)
+        with ui.tab_panel(files_tab):
+            device_files_panel(project_id, device_id)
+        with ui.tab_panel(data_tab):
+            await device_data_panel(project_id, device_id)
+        with ui.tab_panel(logs_tab):
+            device_logs_panel(project_id, device_id)
 
 
 # ***************************************************************************
@@ -166,7 +210,7 @@ async def _rename_device(project_name: str, old_name: str, new_name: str) -> Non
     if old_name == new_name:
         ui.notify("Device name unchanged", type='warning')
         return
-    result = await build_dialog(
+    result = await submit_dialog(
         'Rename Device',
         f'Renaming {old_name!r} changes its URL path. Continue?',
         ['|1Cancel', '-OK'],
@@ -183,7 +227,7 @@ async def _rename_device(project_name: str, old_name: str, new_name: str) -> Non
 
 
 async def _delete_device(project_name: str, device_name: str) -> None:
-    result = await build_dialog(
+    result = await submit_dialog(
         'Delete Device',
         f'Delete device {device_name!r}? This is irreversible.',
         ['|1Cancel', '-Delete'],
