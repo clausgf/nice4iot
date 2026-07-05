@@ -45,6 +45,7 @@ import stat
 
 from app.api.dependencies import DeviceAuthInfo, device_auth
 from app.core.device.backend import get_file_path
+from app.exceptions import NotFoundError
 from app.util import logger, is_valid_upload_filename
 from app.config import app_config
 
@@ -137,7 +138,7 @@ async def head_resource(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Invalid filename: {filename!r}")
     try:
         file_path = get_file_path(project_name, device_name, filename)
-    except FileNotFoundError as e:
+    except (FileNotFoundError, NotFoundError) as e:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(e))
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
@@ -206,7 +207,7 @@ async def get_resource(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Invalid filename: {filename!r}")
     try:
         file_path = get_file_path(project_name, device_name, filename)
-    except FileNotFoundError as e:
+    except (FileNotFoundError, NotFoundError) as e:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(e))
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))

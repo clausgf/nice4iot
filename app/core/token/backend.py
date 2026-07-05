@@ -1,11 +1,13 @@
 import datetime
+import fcntl
 import secrets
+from contextlib import contextmanager
 from pathlib import Path
 
-from fastapi import HTTPException, status
 from niceview.dataadapter import JsonListAdapter
 from pydantic import TypeAdapter
 
+from app.exceptions import AuthError
 from app.paths import project_dir
 from app.core.token.models import AuthToken, TOKEN_CHARS, TOKEN_MIN_LENGTH
 
@@ -48,12 +50,12 @@ def validate_token_str(auth_token: str) -> None:
     """
     Validate the format of a token string.
 
-    :raises HTTPException 401: If the token is malformed.
+    :raises AuthError: If the token is malformed.
     """
     if not isinstance(auth_token, str) or len(auth_token) < TOKEN_MIN_LENGTH:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication token.")
+        raise AuthError("Invalid authentication token.")
     if not all(char in TOKEN_CHARS for char in auth_token):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication token contains invalid characters.")
+        raise AuthError("Authentication token contains invalid characters.")
 
 
 def purge_expired_tokens(tokens: list[AuthToken]) -> list[AuthToken]:
@@ -68,7 +70,7 @@ def validate_token(auth_token: str, valid_tokens: list[AuthToken]) -> AuthToken:
 
     Mutates the matched token's ``last_use_at`` field in place.
 
-    :raises HTTPException 401: If the token is invalid or expired.
+    :raises AuthError: If the token is invalid or expired.
     """
     validate_token_str(auth_token)
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -76,7 +78,7 @@ def validate_token(auth_token: str, valid_tokens: list[AuthToken]) -> AuthToken:
         if token.value == auth_token and token.is_active and token.expires_at > now:
             token.last_use_at = now
             return token
-    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication token invalid.")
+    raise AuthError("Authentication token invalid.")
 
 ###############################################################################
 # Path helpers and adapters
@@ -117,3 +119,19 @@ def save_device_tokens(project_name: str, device_name: str, tokens: list[AuthTok
     temp = file.with_suffix('.tmp')
     temp.write_bytes(_token_list_adapter.dump_json(tokens, indent=2))
     temp.rename(file)
+
+
+@contextmanager
+def device_token_lock(project_name: str, device_name: str):
+    """Exclusive file lock around token read-modify-write operations.
+
+    Prevents race conditions when multiple requests provision or authenticate
+    the same device concurrently. Uses fcntl.flock (Linux/macOS only).
+    """
+    lock_path = get_device_token_filename(project_name, device_name).with_suffix('.lock')
+    with open(lock_path, 'w') as lf:
+        fcntl.flock(lf, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lf, fcntl.LOCK_UN)

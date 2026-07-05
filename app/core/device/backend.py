@@ -1,14 +1,18 @@
-from pathlib import Path
 import datetime
 import shutil
+import time
+from pathlib import Path
 
-from fastapi import HTTPException, status
 from niceview.dataadapter import JsonAdapter
 
+from app.exceptions import AuthError, ForbiddenError, NotFoundError
 from app.paths import device_dir
-from app.core.token.backend import create_token, load_device_tokens, purge_expired_tokens, save_device_tokens, validate_token
+from app.core.token.backend import (
+    create_token, device_token_lock, load_device_tokens,
+    purge_expired_tokens, save_device_tokens, validate_token,
+)
 from app.core.device.models import Device
-from app.core.project.backend import get_project, project_dir_exists
+from app.core.project.backend import get_project, get_project_path
 from app.core.project.models import Project
 from app.util import logger, is_valid_filename
 
@@ -16,7 +20,31 @@ from app.util import logger, is_valid_filename
 
 DEVICE_FILE_NAME = '.device.json'
 
+# ---------------------------------------------------------------------------
+# In-process device list cache
+# ---------------------------------------------------------------------------
+# get_devices() reads all .device.json files in a project directory — O(n) file
+# reads on every Project Dashboard load. Cache the list for _DEVICE_CACHE_TTL
+# seconds and invalidate explicitly on structural changes (create, delete, rename).
+# update_device() does NOT invalidate the cache because it runs on every auth
+# request (telemetry push); a 60 s staleness in last_seen_at on the project list
+# is acceptable. Out-of-band filesystem changes take effect after TTL expiry or
+# on SIGUSR1 (see app/main.py).
+
+_device_list_cache: dict[str, tuple[list[Device], float]] = {}
+_DEVICE_CACHE_TTL: float = 60.0
+
+
+def _invalidate_device_list_cache(project_name: str) -> None:
+    _device_list_cache.pop(project_name, None)
+
+
+def flush_device_list_cache() -> None:
+    """Flush all cached device lists (call on SIGUSR1 or after out-of-band changes)."""
+    _device_list_cache.clear()
+
 ###############################################################################
+
 
 def get_device_path(project_name: str, device_name: str, check_device_exists: bool = True) -> Path:
     """Return the device directory path, with optional existence check.
@@ -25,7 +53,7 @@ def get_device_path(project_name: str, device_name: str, check_device_exists: bo
         ValueError: Invalid name or path escapes the project directory.
         FileNotFoundError: Project or device does not exist.
     """
-    project_dir_exists(project_name)  # validates project name and existence
+    get_project_path(project_name)  # validates project name and existence
     path = device_dir(project_name, device_name)
     if check_device_exists and not path.is_dir():
         raise FileNotFoundError(f"Device {project_name}/{device_name} does not exist.")
@@ -39,7 +67,7 @@ def get_file_path(project_name: str, device_name: str, filename: str, check_file
         ValueError: Invalid name or path.
         FileNotFoundError: File does not exist.
     """
-    project_path = project_dir_exists(project_name)
+    project_path = get_project_path(project_name)
     device_path = get_device_path(project_name, device_name)
 
     project_file_path = (project_path / filename).resolve()
@@ -80,6 +108,7 @@ def create_device(device: Device) -> Device:
     except Exception:
         shutil.rmtree(device_path, ignore_errors=True)
         raise
+    _invalidate_device_list_cache(device.project_name)
     return device
 
 
@@ -136,11 +165,24 @@ def delete_device(project_name: str, device_name: str) -> None:
     """
     device_path = get_device_path(project_name, device_name)
     shutil.rmtree(device_path)
+    _invalidate_device_list_cache(project_name)
 
 
 def get_devices(project_name: str) -> list[Device]:
-    """Return all devices in a project, silently skipping any that fail to load."""
-    project_path = project_dir_exists(project_name)
+    """Return all devices in a project, silently skipping any that fail to load.
+
+    Results are cached for _DEVICE_CACHE_TTL seconds. Structural changes
+    (create, delete, rename) invalidate the cache immediately. Out-of-band
+    filesystem changes (bypassing the UI) are reflected after TTL expiry
+    or on SIGUSR1 (see flush_device_list_cache).
+    """
+    cached = _device_list_cache.get(project_name)
+    if cached:
+        devices, ts = cached
+        if time.monotonic() - ts < _DEVICE_CACHE_TTL:
+            return devices
+
+    project_path = get_project_path(project_name)
     devices = []
     for device_path in project_path.iterdir():
         if not device_path.is_dir() or not is_valid_filename(device_path.name):
@@ -149,6 +191,7 @@ def get_devices(project_name: str) -> list[Device]:
             devices.append(get_device(project_name, device_path.name))
         except Exception as e:
             logger.error(f"Error reading device file {device_path}: {e}")
+    _device_list_cache[project_name] = (devices, time.monotonic())
     return devices
 
 ###############################################################################
@@ -156,25 +199,29 @@ def get_devices(project_name: str) -> list[Device]:
 def get_auth_project_device(project_name: str, device_name: str, device_token: str) -> tuple[Project, Device]:
     """Authenticate device and return (project, device).
 
-    API boundary: raises HTTPException for all error cases.
+    Raises:
+        NotFoundError: Project or device not found, or device inactive.
+        ForbiddenError: Project not active.
+        AuthError: Token invalid, expired, or malformed.
     """
     try:
         project = get_project(project_name)
     except (ValueError, FileNotFoundError) as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+        raise NotFoundError(str(e)) from e
     except PermissionError as e:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+        raise ForbiddenError(str(e)) from e
 
     try:
         device = get_device(project_name, device_name, check_active=True)
     except (ValueError, FileNotFoundError) as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+        raise NotFoundError(str(e)) from e
     except PermissionError as e:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+        raise NotFoundError(str(e)) from e  # normalized to 401 by device_auth anyway
 
-    tokens = load_device_tokens(project_name, device_name)
-    validate_token(device_token, tokens)
-    save_device_tokens(project_name, device_name, tokens)
+    with device_token_lock(project_name, device_name):
+        tokens = load_device_tokens(project_name, device_name)
+        validate_token(device_token, tokens)  # raises AuthError
+        save_device_tokens(project_name, device_name, tokens)
 
     device.last_seen_at = datetime.datetime.now(datetime.timezone.utc)
     device = update_device(device)
@@ -187,10 +234,12 @@ MAX_DEVICE_TOKENS = 32
 def device_provision(project: Project, device_name: str):
     """Provision a device and return the new bearer AuthToken.
 
-    API boundary: raises HTTPException for all error cases.
+    Raises:
+        NotFoundError: Device not found and autocreate is disabled.
+        ForbiddenError: Project or device inactive, or device not approved.
     """
     if not project.is_active:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Project {project.name} is not active.")
+        raise ForbiddenError(f"Project {project.name} is not active.")
 
     now = datetime.datetime.now(datetime.timezone.utc)
 
@@ -198,30 +247,37 @@ def device_provision(project: Project, device_name: str):
         device = get_device(project.name, device_name)
     except FileNotFoundError:
         if not project.is_autocreate_devices:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Device {device_name} does not exist and autocreate is disabled.")
-        device = create_device(Device(name=device_name, project_name=project.name, is_provisioning_approved=project.is_provisioning_autoapproval))
+            raise NotFoundError(f"Device {device_name} does not exist and autocreate is disabled.")
+        device = create_device(Device(
+            name=device_name,
+            project_name=project.name,
+            is_provisioning_approved=project.is_provisioning_autoapproval,
+        ))
 
     device.last_provisioning_request_at = now
 
     if not device.is_active:
         update_device(device)
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Device {device_name} is not active.")
+        raise ForbiddenError(f"Device {device_name} is not active.")
 
     if not device.is_provisioning_approved:
         update_device(device)
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Device {device_name} is not approved for provisioning.")
-
-    tokens = load_device_tokens(project.name, device_name)
-    tokens = purge_expired_tokens(tokens)
-
-    # Enforce token cap: evict the least-recently-used token when at the limit.
-    if len(tokens) >= MAX_DEVICE_TOKENS:
-        tokens.sort(key=lambda t: t.last_use_at or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc))
-        tokens = tokens[-(MAX_DEVICE_TOKENS - 1):]
+        raise ForbiddenError(f"Device {device_name} is not approved for provisioning.")
 
     token = create_token(datetime.timedelta(days=project.device_tokens_expire_in), project.device_token_length)
-    tokens.append(token)
-    save_device_tokens(project.name, device_name, tokens)
+
+    with device_token_lock(project.name, device_name):
+        tokens = load_device_tokens(project.name, device_name)
+        tokens = purge_expired_tokens(tokens)
+
+        # Enforce token cap: evict the least-recently-used token when at the limit.
+        if len(tokens) >= MAX_DEVICE_TOKENS:
+            tokens.sort(key=lambda t: t.last_use_at or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc))
+            tokens = tokens[-(MAX_DEVICE_TOKENS - 1):]
+
+        tokens.append(token)
+        save_device_tokens(project.name, device_name, tokens)
+
     device.last_provisioned_at = now
     update_device(device)
 
@@ -259,3 +315,4 @@ def rename_device(project_name: str, old_device_name: str, new_device_name: str)
         temp = device_json.with_suffix('.tmp')
         temp.write_text(device.model_dump_json(indent=2))
         temp.rename(device_json)
+    _invalidate_device_list_cache(project_name)

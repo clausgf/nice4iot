@@ -175,7 +175,7 @@ def project_card(project_id: str) -> None:
             form.render_field('is_provisioning_autoapproval')
         form.render_field('device_tokens_expire_in').props('outlined dense').classes('w-full')
         form.render_field('device_token_length').props('outlined dense').classes('w-full')
-        p = cast(Project, form.item)
+        p = cast(Project, form.item)  # niceview types form.item as Any; cast enables attribute access for bind_text_from
         ui.label().classes('text-caption text-grey-7').bind_text_from(
             p, 'updated_at',
             backward=lambda v: f'Created {render_datetime(p.created_at)}, updated {render_datetime(v)}'

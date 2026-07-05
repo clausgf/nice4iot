@@ -2,10 +2,10 @@ import datetime
 import shutil
 from pathlib import Path
 
-from fastapi import HTTPException, status
 from niceview.dataadapter import JsonAdapter
 
 from app.config import app_config
+from app.exceptions import AuthError, ForbiddenError, NotFoundError
 from app.paths import project_dir
 from app.core.token.backend import get_provisioning_token_adapter, validate_token
 from app.core.project.models import Project
@@ -36,8 +36,8 @@ def check_project_exists(project_name: str) -> bool:
     return project_filename(project_name).is_file()
 
 
-def project_dir_exists(project_name: str) -> Path:
-    """Return the project directory path.
+def get_project_path(project_name: str) -> Path:
+    """Return the project directory path after validating it exists.
 
     Raises:
         ValueError: Invalid name or path escapes the projects directory.
@@ -82,7 +82,7 @@ def get_project(project_name: str, check_active: bool = True) -> Project:
         PermissionError: check_active is True and project is not active.
         OSError: Project file could not be read.
     """
-    project_path = project_dir_exists(project_name)
+    project_path = get_project_path(project_name)
     project_file = project_filename(project_name)
     if project_file.is_file():
         project = Project.model_validate_json(project_file.read_text())
@@ -108,7 +108,7 @@ def rename_project(old_project_name: str, new_project_name: str) -> None:
         FileExistsError: New project name is already taken.
         OSError: Rename failed.
     """
-    old_project_path = project_dir_exists(old_project_name)
+    old_project_path = get_project_path(old_project_name)
     new_project_path = project_dir(new_project_name)
     if new_project_path.exists():
         raise FileExistsError(f"Project {new_project_name} already exists.")
@@ -129,7 +129,7 @@ def delete_project(project_name: str) -> None:
         FileNotFoundError: Project does not exist.
         OSError: Directory could not be deleted.
     """
-    project_path = project_dir_exists(project_name)
+    project_path = get_project_path(project_name)
     shutil.rmtree(project_path)
 
 
@@ -151,17 +151,21 @@ def get_projects() -> list[Project]:
 def get_auth_project(project_name: str, provisioning_token: str) -> Project:
     """Authenticate via provisioning token and return the project.
 
-    API boundary: raises HTTPException for all error cases.
+    Raises:
+        NotFoundError: Project not found.
+        ForbiddenError: Project is not active.
+        AuthError: Provisioning token invalid or expired.
     """
     try:
         project = get_project(project_name, check_active=False)
     except (ValueError, FileNotFoundError) as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+        raise NotFoundError(str(e)) from e
 
     if not project.is_active:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Project {project_name} is not active.")
+        raise ForbiddenError(f"Project {project_name} is not active.")
 
     token_adapter = get_provisioning_token_adapter(project_name)
+    # validate_token raises AuthError on failure
     token = validate_token(provisioning_token, list(token_adapter))
     token_adapter.update(token)
 

@@ -120,7 +120,7 @@ def _device_general_card(project_name: str, device_name: str) -> None:
         with ui.row().classes('w-full gap-4 q-mt-xs'):
             form.render_field('is_active')
             form.render_field('is_provisioning_approved')
-        d = cast(Device, form.item)
+        d = cast(Device, form.item)  # niceview types form.item as Any; cast enables attribute access for bind_text_from
         ui.label().classes('text-caption text-grey-7 q-mt-xs').bind_text_from(
             d, 'updated_at',
             backward=lambda v: f'Created {render_datetime(d.created_at)}, updated {render_datetime(v)}'

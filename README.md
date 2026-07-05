@@ -92,13 +92,14 @@ app/
     └── util.py             # build_dialog()
 
 tests/
-├── conftest.py             # fixtures: projects_dir, client, provisioned, ...
-├── test_api_device.py
-├── test_api_file.py
-├── test_api_provisioning.py
-├── test_auth.py
-├── test_device_backend.py  # device_adapter, rename_device
-└── test_telemetry_backend.py  # local JSONL store (_append_local_metrics, read_local_metrics)
+├── conftest.py                  # fixtures: projects_dir, client, provisioned, ...
+├── test_acceptance.py           # end-to-end lifecycle (mark: acceptance)
+├── test_api_device.py           # REST API for telemetry, log, forward
+├── test_api_file.py             # REST file upload/download/head
+├── test_api_provisioning.py     # provisioning flow, token lifecycle
+├── test_auth.py                 # token generation, validation, purge (unit)
+├── test_device_backend.py       # device_adapter, rename_device, file path fallback
+└── test_telemetry_backend.py    # local JSONL store (_append_local_metrics, read_local_metrics)
 
 tools/
 └── device_client.py        # arduino4iot-compatible Python device simulator
@@ -291,13 +292,20 @@ Adjust `PUID`/`PGID` in `docker-compose.yml` to match your host user so volume-m
 JSON files keep the deployment dependency-free, make backup trivial (`rsync`), and make state directly inspectable. The tradeoff is no transactions, no foreign keys, and no efficient querying.
 
 **Synchronous file I/O inside an async application.**
-All blocking file reads and writes at the API boundary are wrapped with `anyio.to_thread.run_sync`. UI code runs synchronously inside NiceGUI's event loop — this is fine because NiceGUI's own `run_sync_in_threadpool` is used internally.
+Backend functions are synchronous. Callers at the API or UI boundary wrap
+IO-heavy backend calls with `anyio.to_thread.run_sync` to avoid blocking the
+event loop. The telemetry hot path (`_append_local_metrics`) is wrapped inside
+`write_telemetry`. This is the project-wide rule; see CLAUDE.md for details.
 
 **No UI authentication.**
 The REST API endpoints are protected by bearer tokens, but the NiceGUI management UI has no login. This is only safe when the UI is placed behind an authenticating reverse proxy (e.g., Caddy with forward auth).
 
-**Telemetry config is re-read from disk on every request.**
-`_get_active_backend()` opens and parses the telemetry config JSON on each inbound telemetry write. A simple in-process cache would remove the overhead but is not needed at the current scale.
+**In-process caches with TTL and SIGUSR1 flush.**
+`get_devices()` (called on every Project Dashboard load) and `_get_active_backend()` (called on every telemetry push) cache their results for 60 seconds. Structural changes via the UI invalidate the device list cache immediately. Out-of-band filesystem changes (editing files directly, external scripts) are reflected after the 60 s TTL. To force an immediate flush without restarting, send `SIGUSR1`:
+
+```bash
+kill -USR1 <pid>
+```
 
 ---
 

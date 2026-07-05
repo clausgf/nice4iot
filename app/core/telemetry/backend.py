@@ -1,8 +1,10 @@
 import datetime
 import json
 import numbers
+import time
 from pathlib import Path
 
+import anyio
 from niceview.dataadapter import JsonAdapter
 
 from app.paths import project_dir
@@ -14,6 +16,22 @@ TEL_FILE = '.telemetry.json'
 LOCAL_METRICS_FILE = '.device_metrics.jsonl'
 LOCAL_METRICS_MAX_LINES = 2000
 
+# ---------------------------------------------------------------------------
+# Telemetry backend cache
+# ---------------------------------------------------------------------------
+# _get_active_backend() reads and parses the telemetry config JSON on every
+# call. Cache the resolved backend for _BACKEND_CACHE_TTL seconds.
+# Out-of-band config file changes (bypassing the UI) take effect after TTL
+# expiry or on SIGUSR1 (see flush_telemetry_backend_cache / app/main.py).
+
+_backend_cache: dict[str, tuple[TelemetryBackend | None, float]] = {}
+_BACKEND_CACHE_TTL: float = 60.0
+
+
+def flush_telemetry_backend_cache() -> None:
+    """Flush all cached telemetry backends (call on SIGUSR1 or config change)."""
+    _backend_cache.clear()
+
 
 def get_telemetry_adapter(project_name: str) -> JsonAdapter:
     """Get a JsonAdapter for the telemetry configuration of a project."""
@@ -21,12 +39,21 @@ def get_telemetry_adapter(project_name: str) -> JsonAdapter:
 
 
 def _get_active_backend(project_name: str) -> TelemetryBackend | None:
+    cached = _backend_cache.get(project_name)
+    if cached:
+        backend, ts = cached
+        if time.monotonic() - ts < _BACKEND_CACHE_TTL:
+            return backend
+
     config = get_telemetry_adapter(project_name).read()
     if config.backend == 'prometheus':
-        return PrometheusBackend(project_name, config.prometheus)
-    if config.backend == 'influxdb':
-        return InfluxLineBackend(project_name, config.influxdb)
-    return None
+        backend = PrometheusBackend(project_name, config.prometheus)
+    elif config.backend == 'influxdb':
+        backend = InfluxLineBackend(project_name, config.influxdb)
+    else:
+        backend = None
+    _backend_cache[project_name] = (backend, time.monotonic())
+    return backend
 
 
 def _append_local_metrics(project_name: str, device_name: str, kind: str,
@@ -84,7 +111,11 @@ async def write_telemetry(project_name: str, device_name: str, values: dict,
     backend = _get_active_backend(project_name)
     if backend:
         await backend.write(device_name, values, kind, now)
-    _append_local_metrics(project_name, device_name, kind, values, now)
+    # _append_local_metrics does file IO — offload to thread pool to avoid blocking
+    # the event loop on every telemetry push.
+    await anyio.to_thread.run_sync(
+        lambda: _append_local_metrics(project_name, device_name, kind, values, now)
+    )
 
 
 async def read_telemetry(project_name: str, device_name: str,

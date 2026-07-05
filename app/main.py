@@ -1,3 +1,6 @@
+import signal
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from nicegui import ui
@@ -8,6 +11,23 @@ from app.api.device import router as device_router
 from app.api.file import router as file_router
 
 import app.ui.frontend as frontend
+
+_main_log = logging.getLogger("uvicorn")
+
+
+def _on_sigusr1(signum, frame) -> None:
+    """Flush all in-process caches. Useful after out-of-band filesystem changes.
+
+    Usage: kill -USR1 <pid>
+    """
+    from app.core.device.backend import flush_device_list_cache
+    from app.core.telemetry.backend import flush_telemetry_backend_cache
+    flush_device_list_cache()
+    flush_telemetry_backend_cache()
+    _main_log.info("SIGUSR1: all in-process caches flushed")
+
+
+signal.signal(signal.SIGUSR1, _on_sigusr1)
 
 app = FastAPI()
 

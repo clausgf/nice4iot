@@ -39,8 +39,10 @@ def make_api_app() -> FastAPI:
     return app
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def api_app():
+    # Function-scoped so that per-test monkeypatching of app_config.projects_dir
+    # is safe even if backends ever cache paths at construction time.
     return make_api_app()
 
 

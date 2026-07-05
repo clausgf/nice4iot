@@ -6,8 +6,8 @@ token generation, validation, and housekeeping functions.
 """
 import datetime
 import pytest
-from fastapi import HTTPException
 
+from app.exceptions import AuthError
 from app.core.token.backend import (
     generate_token,
     create_token,
@@ -111,31 +111,26 @@ class TestValidateToken:
 
     def test_expired_token_rejected(self):
         token, value = _make_auth_token(expired=True)
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(AuthError):
             validate_token(value, [token])
-        assert exc.value.status_code == 401
 
     def test_inactive_token_rejected(self):
         token, value = _make_auth_token(inactive=True)
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(AuthError):
             validate_token(value, [token])
-        assert exc.value.status_code == 401
 
     def test_wrong_value_rejected(self):
         token, _ = _make_auth_token()
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(AuthError):
             validate_token("x" * 32, [token])
-        assert exc.value.status_code == 401
 
     def test_too_short_rejected(self):
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(AuthError):
             validate_token("short", [])
-        assert exc.value.status_code == 401
 
     def test_empty_list_rejected(self):
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(AuthError):
             validate_token("x" * 32, [])
-        assert exc.value.status_code == 401
 
 
 # ---------------------------------------------------------------------------

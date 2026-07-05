@@ -38,6 +38,9 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--tb=short"
+markers = [
+    "acceptance: end-to-end lifecycle tests (deselect with -m 'not acceptance')",
+]
 
 [tool.coverage.run]
 source = ["app"]

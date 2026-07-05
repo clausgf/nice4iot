@@ -24,11 +24,13 @@ All 4xx errors from the provisioning flow are surfaced as-is (not normalized to
 
 import datetime
 import anyio
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, HTTPException, status
 from pydantic import BaseModel
 
+from app.api.dependencies import domain_to_http
 from app.core.device.backend import device_provision
 from app.core.project.backend import get_auth_project
+from app.exceptions import AuthError, ForbiddenError, NotFoundError
 
 ###############################################################################
 
@@ -145,12 +147,26 @@ async def provision(provisioning_request: ProvisioningRequest = Body(...)) -> Pr
     Safe to call on every device reboot. Expired tokens are cleaned up
     automatically so the number of active tokens per device stays bounded.
     """
-    project = await anyio.to_thread.run_sync(
-        lambda: get_auth_project(provisioning_request.projectName, provisioning_request.provisioningToken)
-    )
-    token = await anyio.to_thread.run_sync(
-        lambda: device_provision(project, provisioning_request.deviceName)
-    )
+    try:
+        project = await anyio.to_thread.run_sync(
+            lambda: get_auth_project(provisioning_request.projectName, provisioning_request.provisioningToken)
+        )
+    except NotFoundError as e:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(e))
+    except ForbiddenError as e:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail=str(e))
+    except AuthError as e:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail=str(e))
+
+    try:
+        token = await anyio.to_thread.run_sync(
+            lambda: device_provision(project, provisioning_request.deviceName)
+        )
+    except NotFoundError as e:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(e))
+    except ForbiddenError as e:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail=str(e))
+
     now = datetime.datetime.now(datetime.timezone.utc)
     expires_in = max(0, round((token.expires_at - now).total_seconds()))
     return ProvisioningResponse(
