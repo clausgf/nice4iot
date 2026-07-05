@@ -977,7 +977,7 @@ wheels = [
 [[package]]
 name = "niceview"
 version = "0.1.0"
-source = { git = "https://github.com/clausgf/niceview.git#3b355dd924eaf9325b95e80664cbccae00d7531e" }
+source = { git = "https://github.com/clausgf/niceview.git#ac9833eae7b15863acdfea56394af4b0d5294691" }
 dependencies = [
     { name = "annotated-types" },
     { name = "nicegui" },
