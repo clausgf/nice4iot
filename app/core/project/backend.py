@@ -31,10 +31,6 @@ def project_adapter(project_name: str) -> JsonAdapter:
                        lock_field='updated_at')
 
 
-def check_project_exists(project_name: str) -> bool:
-    """Return True if the project JSON file exists."""
-    return project_filename(project_name).is_file()
-
 
 def get_project_path(project_name: str) -> Path:
     """Return the project directory path after validating it exists.

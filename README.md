@@ -45,24 +45,33 @@ An IoT device management platform written in Python. It provides a REST API for 
 
 ```
 app/
-├── main.py                 # FastAPI + NiceGUI entry point
+├── main.py                 # FastAPI + NiceGUI entry point; lifespan starts MQTT + file watcher
 ├── config.py               # pydantic-settings (env vars / .env)
+├── exceptions.py           # domain exceptions: NotFoundError, ForbiddenError, AuthError, …
 ├── paths.py                # project_dir(), device_dir() helpers
-├── util.py                 # filename validation, render_datetime, ...
+├── util.py                 # filename validation, render_datetime (configured timezone), …
 ├── frontend.py             # NiceGUI page, header, sub-page routing, user menu
 ├── api/
 │   ├── provisioning.py     # POST /api/provision
 │   ├── device.py           # POST /api/telemetry, /api/log, GET /api/forward
 │   ├── file.py             # GET · PUT · HEAD /api/file
 │   └── dependencies.py     # device_auth FastAPI dependency + domain_to_http()
+├── mqtt/
+│   ├── backend.py          # persistent MQTT client, topic routing, publish_file()
+│   ├── models.py           # MqttGlobalConfig (server, port, credentials, client_id)
+│   └── ui.py               # MqttGlobalConfigCard (live connection status)
 └── core/
     ├── device/
-    │   ├── backend.py      # Device CRUD, device_adapter(), rename_device()
+    │   ├── backend.py      # Device CRUD, device_adapter(), last_seen helpers
     │   ├── models.py       # Device Pydantic model
     │   ├── ui.py           # device_subpage, Dashboard + General panel, DevicesTable
-    │   ├── files_ui.py     # Files tab (browse, upload, download, edit, view)
-    │   ├── data_ui.py      # Data tab (Plotly time-series explorer)
+    │   ├── files_ui.py     # Files tab (browse, upload, download, edit, MQTT force-publish)
+    │   ├── data_ui.py      # Data tab (multi-trace Plotly time-series explorer)
     │   └── logs_ui.py      # Logs tab (live tail, archive download)
+    ├── file/
+    │   ├── backend.py      # file state tracking (.mqtt_file_state.json), watcher loop
+    │   ├── models.py       # FileConfig (max_upload_size, check_interval, QoS, retain)
+    │   └── ui.py           # FileConfigCard (project settings)
     ├── project/
     │   ├── backend.py      # Project CRUD, project_adapter()
     │   ├── models.py       # Project Pydantic model
@@ -357,3 +366,5 @@ MQTT authentication is currently managed by the broker. A future version will in
 - **Backup and restore** — no tooling or documentation for backup, restore, or migration of the `data/projects/` directory.
 - **Pagination** — project and device lists load all items into memory; large deployments will need pagination.
 - **Telemetry read from remote** — the Data tab currently reads only the local JSONL store; reading from InfluxDB or Prometheus (for historical data) is not yet implemented.
+- **MQTT device commands** — `{base}/cmd/{name}` downlink topic for server-to-device commands is planned.
+- **MQTT authentication** — currently managed by the broker. A future version will integrate with Mosquitto's Dynamic Security Plugin for per-device credential provisioning from the UI.

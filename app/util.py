@@ -31,12 +31,6 @@ def is_valid_upload_filename(filename: str) -> bool:
     )
 
 
-def clean_path_parameter(path_element: str) -> str:
-    """
-    Clean the path_element to prevent path traversal.
-    """
-    return path_element.replace('/', '').replace('..', '')
-
 
 def render_datetime(dt: datetime.datetime | None) -> str:
     """Render a UTC datetime as a local-time string using the configured timezone.
