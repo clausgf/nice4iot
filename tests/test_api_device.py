@@ -101,6 +101,35 @@ def test_telemetry_inactive_device_rejected(client, provisioned):
     assert resp.status_code == 401
 
 
+def test_telemetry_http_disabled_rejected(client, provisioned):
+    """Disabling HTTP API on a project blocks all device API calls (403)."""
+    from app.core.project.backend import get_project, project_adapter
+    project = get_project(provisioned["project_name"], check_active=False)
+    project.is_http_enabled = False
+    project_adapter(provisioned["project_name"]).save(project)
+
+    resp = client.post(
+        f"/api/telemetry/{provisioned['project_name']}/{provisioned['device_name']}/sensors",
+        headers={"Authorization": f"bearer {provisioned['device_token']}"},
+        json=TELEMETRY_PAYLOAD,
+    )
+    # device_auth normalises all Nice4IotErrors to 401
+    assert resp.status_code == 401
+
+
+def test_telemetry_invalid_json_returns_400(client, provisioned):
+    """Non-JSON body returns 400 instead of 422."""
+    resp = client.post(
+        f"/api/telemetry/{provisioned['project_name']}/{provisioned['device_name']}/sensors",
+        headers={
+            "Authorization": f"bearer {provisioned['device_token']}",
+            "Content-Type": "application/json",
+        },
+        content=b"not json",
+    )
+    assert resp.status_code == 400
+
+
 # ---------------------------------------------------------------------------
 # Telemetry — happy path
 # ---------------------------------------------------------------------------
