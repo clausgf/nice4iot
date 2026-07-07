@@ -158,6 +158,10 @@ async def provision(provisioning_request: ProvisioningRequest = Body(...)) -> Pr
     except AuthError as e:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail=str(e))
 
+    if not project.is_http_enabled:
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            detail="HTTP API is disabled for this project.")
+
     try:
         token = await anyio.to_thread.run_sync(
             lambda: device_provision(project, provisioning_request.deviceName)

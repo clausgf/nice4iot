@@ -241,7 +241,7 @@ def get_auth_project_device(project_name: str, device_name: str, device_token: s
 
     Raises:
         NotFoundError: Project or device not found, or device inactive.
-        ForbiddenError: Project not active.
+        ForbiddenError: Project not active or HTTP API disabled.
         AuthError: Token invalid, expired, or malformed.
     """
     try:
@@ -250,6 +250,9 @@ def get_auth_project_device(project_name: str, device_name: str, device_token: s
         raise NotFoundError(str(e)) from e
     except PermissionError as e:
         raise ForbiddenError(str(e)) from e
+
+    if not project.is_http_enabled:
+        raise ForbiddenError(f"HTTP API is disabled for project {project_name}.")
 
     try:
         device = get_device(project_name, device_name, check_active=True)
