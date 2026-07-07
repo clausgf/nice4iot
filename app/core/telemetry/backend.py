@@ -107,6 +107,8 @@ def read_local_metrics(project_name: str, device_name: str,
             continue
         if since is not None:
             ts = datetime.datetime.fromisoformat(rec['ts'])
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=datetime.timezone.utc)
             if ts < since:
                 continue
         records.append(rec)

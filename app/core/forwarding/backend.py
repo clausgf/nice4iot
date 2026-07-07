@@ -3,12 +3,13 @@ from pathlib import Path
 import httpx
 import asyncio
 
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 from niceview.dataadapter import JsonListAdapter
 
 from app.exceptions import NotFoundError
 from app.paths import project_dir
 from app.core.forwarding.models import ForwardingConfig
+from app.util import logger
 
 _adapter = TypeAdapter(list[ForwardingConfig])
 
@@ -35,7 +36,11 @@ def get_forwarding(project_name: str, forwarding_name: str) -> ForwardingConfig:
         NotFoundError: forwarding_name is not defined in the project's forwarding list.
     """
     filename = get_forwardings_filename(project_name)
-    forwardings = _adapter.validate_json(filename.read_text()) if filename.is_file() else []
+    try:
+        forwardings = _adapter.validate_json(filename.read_text()) if filename.is_file() else []
+    except (ValidationError, OSError) as e:
+        logger.error(f"Failed to load forwarding config for {project_name!r}: {e}")
+        forwardings = []
     forwarding = next((f for f in forwardings if f.name == forwarding_name), None)
     if not forwarding:
         raise NotFoundError(f"Forwarding {forwarding_name!r} not found in project {project_name!r}")
@@ -49,7 +54,10 @@ async def forward(forwarding: ForwardingConfig, remaining_url: str, data: str, h
     Raises:
         TimeoutError: upstream did not respond within *timeout* seconds.
     """
-    fwd_url = forwarding.forward_url.rstrip('/') + '/' + remaining_url
+    # Strip trailing slash from base; only append a separator when there is a suffix.
+    # remaining_url must not contain '..' path segments (path traversal guard).
+    base = forwarding.forward_url.rstrip('/')
+    fwd_url = f"{base}/{remaining_url}" if remaining_url else base
     if query_params:
         fwd_url = fwd_url + f'?{query_params}'
 

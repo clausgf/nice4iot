@@ -170,6 +170,9 @@ async def provision(provisioning_request: ProvisioningRequest = Body(...)) -> Pr
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(e))
     except ForbiddenError as e:
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail=str(e))
+    except ValueError as e:
+        # Invalid device name (e.g. contains '/') — not caught upstream
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     now = datetime.datetime.now(datetime.timezone.utc)
     expires_in = max(0, round((token.expires_at - now).total_seconds()))

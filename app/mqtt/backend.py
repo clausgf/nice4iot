@@ -98,16 +98,20 @@ def _route_topic(topic: str) -> dict | None:
         if not project.is_mqtt_enabled:
             continue
         topic_base = project.mqtt_topic_base.lstrip('/')
-        # Build a regex by escaping the template then replacing placeholders
+        if '{device}' not in topic_base:
+            logger.warning(f"Project {project.name!r}: mqtt_topic_base has no {{device}} "
+                           f"placeholder — cannot route incoming messages, skipping")
+            continue
+        # Build a regex with named capture groups so group count is always known.
         pattern = re.escape(topic_base)
         pattern = pattern.replace(r'\{project\}', re.escape(project.name))
-        pattern = pattern.replace(r'\{device\}', r'([^/]+)')
-        full_pattern = rf'^{pattern}/(.+)$'
+        pattern = pattern.replace(r'\{device\}', r'(?P<device>[^/]+)')
+        full_pattern = rf'^{pattern}/(?P<suffix>.+)$'
         m = re.match(full_pattern, topic)
         if not m:
             continue
-        device_name = m.group(1)
-        suffix = m.group(2)
+        device_name = m.group('device')
+        suffix = m.group('suffix')
         if suffix == 'log':
             return {'project': project.name, 'device': device_name, 'type': 'log'}
         if suffix.startswith('telemetry/'):
@@ -329,6 +333,11 @@ async def mqtt_main_loop() -> None:
                     topic_str = str(message.topic)
                     payload = bytes(message.payload)
                     asyncio.create_task(_handle_message(topic_str, payload))
+
+            # Clean disconnect: broker closed the connection without raising.
+            _client = None
+            connection_status = "disconnected"
+            logger.info("MQTT broker disconnected cleanly, reconnecting in 5 s")
 
         except aiomqtt.MqttError as e:
             _client = None

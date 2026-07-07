@@ -284,18 +284,28 @@ async def put_resource(
     file_config = await anyio.to_thread.run_sync(lambda: get_file_config(project_name))
     max_size = file_config.max_upload_size
     tmp_path = file_path.with_name(file_path.name + '.upload.tmp')
-    try:
-        with tmp_path.open("wb") as f:
-            length = 0
-            async for chunk in request.stream():
-                length += len(chunk)
-                if length > max_size:
-                    logger.info(f"Upload to {file_path} too large ({length} bytes, limit {max_size})")
-                    raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, detail="File too large")
-                f.write(chunk)
+
+    # Collect the upload body into memory (bounded by max_size) before writing
+    # to disk.  This keeps the async streaming loop on the event loop thread
+    # while pushing the blocking write/rename to a worker thread.
+    chunks: list[bytes] = []
+    length = 0
+    async for chunk in request.stream():
+        length += len(chunk)
+        if length > max_size:
+            logger.info(f"Upload to {file_path} too large ({length} bytes, limit {max_size})")
+            raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, detail="File too large")
+        chunks.append(chunk)
+    content = b''.join(chunks)
+
+    def _write_atomic() -> None:
+        tmp_path.write_bytes(content)
         tmp_path.rename(file_path)
+
+    try:
+        await anyio.to_thread.run_sync(_write_atomic)
     except Exception:
-        tmp_path.unlink(missing_ok=True)
+        await anyio.to_thread.run_sync(lambda: tmp_path.unlink(missing_ok=True))
         raise
     logger.debug(f"wrote {length} bytes to {file_path}")
     return Response(status_code=200)

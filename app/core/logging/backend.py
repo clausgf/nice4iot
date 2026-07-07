@@ -15,7 +15,12 @@ def get_logging_adapter(project_name: str) -> JsonAdapter:
 
 
 def _get_active_backends(project_name: str) -> list[LoggingBackend]:
-    config = get_logging_adapter(project_name).read()
+    try:
+        config = get_logging_adapter(project_name).read()
+    except Exception as e:
+        from app.util import logger
+        logger.error(f"Failed to load logging config for {project_name!r}: {e}")
+        return []
     backends: list[LoggingBackend] = []
     if config.loki.is_active:
         backends.append(LokiBackend(project_name, config.loki))

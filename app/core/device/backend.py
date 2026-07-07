@@ -315,8 +315,15 @@ def device_provision(project: Project, device_name: str):
         tokens = purge_expired_tokens(tokens)
 
         # Enforce token cap: evict the least-recently-used token when at the limit.
+        # Normalise naive datetimes to UTC so the sort key is always comparable.
+        _utc = datetime.timezone.utc
+        def _lru_key(t: 'AuthToken') -> datetime.datetime:
+            dt = t.last_use_at
+            if dt is None:
+                return datetime.datetime.min.replace(tzinfo=_utc)
+            return dt if dt.tzinfo is not None else dt.replace(tzinfo=_utc)
         if len(tokens) >= MAX_DEVICE_TOKENS:
-            tokens.sort(key=lambda t: t.last_use_at or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc))
+            tokens.sort(key=_lru_key)
             tokens = tokens[-(MAX_DEVICE_TOKENS - 1):]
 
         tokens.append(token)

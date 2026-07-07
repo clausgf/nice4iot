@@ -290,6 +290,9 @@ async def get_forward_with_names(
     """
     if not is_valid_filename(forwarding_name):
         raise HTTPException(status_code=400, detail='Invalid forwarding_name in url')
+    # Reject '..' segments in remaining_url to prevent upstream path traversal.
+    if '..' in remaining_url.split('/'):
+        raise HTTPException(status_code=400, detail='Path traversal not allowed in remaining_url')
     try:
         forwarding = await anyio.to_thread.run_sync(
             lambda: get_forwarding(project_name, forwarding_name)
