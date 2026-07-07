@@ -400,8 +400,8 @@ def _file_row(path: Path, refresh_fn=None,
             ui.label(path.name).classes('text-body2')
             if mqtt_enabled and published_at_str:
                 try:
-                    import datetime
-                    dt = datetime.datetime.fromisoformat(published_at_str)
+                    from datetime import datetime
+                    dt = datetime.fromisoformat(published_at_str)
                     ui.label(f'Published: {render_datetime(dt)}').classes('text-caption text-grey-6')
                 except (ValueError, TypeError):
                     pass

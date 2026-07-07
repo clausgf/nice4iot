@@ -7,8 +7,6 @@ import asyncio
 import httpx
 import pytz
 import snappy
-from fastapi import HTTPException
-
 from app.config import app_config
 from app.core.telemetry.prometheus.models import PrometheusConfig
 from app.core.telemetry.prometheus import prom_spec_pb2, types_pb2
@@ -109,7 +107,7 @@ class PrometheusBackend:
 
         if query_type == 'query_range':
             if start > end or end > now:
-                raise HTTPException(status_code=400, detail='Invalid timeframe')
+                raise ValueError('Invalid timeframe: start must be before end and end must not be in the future')
             start_str = start.isoformat()
             end_str = end.isoformat()
         else:
