@@ -12,6 +12,8 @@ from app.core.logging.ui import LoggingCard
 from app.core.telemetry.ui import TelemetryCard
 from app.core.forwarding.ui import ForwardingCard
 from app.core.device.files_ui import project_files_panel
+from app.mqtt.ui import MqttGlobalConfigCard
+from app.core.file.ui import FileConfigCard
 from app.routes import device_url, project_url, projects_url
 from app.util import is_valid_filename, render_datetime
 from app.core.project.models import Project
@@ -60,6 +62,9 @@ async def all_projects_subpage(args: PageArguments, nav: ui.element):
 
         ui.button('New Project', icon='add').props('color=primary').on_click(_new_project).classes('w-full')
 
+    with ui.card().classes('w-full q-mt-md dense'):
+        MqttGlobalConfigCard()
+
 # ***************************************************************************
 
 async def project_subpage(args: PageArguments, nav: ui.element, project_id: str, tab: Optional[str] = None):
@@ -101,6 +106,7 @@ async def project_dashboard_panel(project_id: str) -> None:
 
     @ui.refreshable
     def _content() -> None:
+        from app.mqtt.backend import connection_status as mqtt_connection_status
         project = get_project(project_id, check_active=False)
         devices = get_devices(project_id)
         active = [d for d in devices if d.is_active]
@@ -117,6 +123,20 @@ async def project_dashboard_panel(project_id: str) -> None:
                 with ui.row().classes('items-center gap-2 q-mt-xs'):
                     color = 'green' if project.is_active else 'grey'
                     ui.chip('Active' if project.is_active else 'Inactive').props(f'dense color={color} text-color=white')
+                    # HTTP chip
+                    http_color = 'green' if project.is_http_enabled else 'grey'
+                    ui.chip('HTTP').props(f'dense color={http_color} text-color=white')
+                    # MQTT chip
+                    if project.is_mqtt_enabled:
+                        if mqtt_connection_status == 'connected':
+                            mqtt_color = 'green'
+                        elif mqtt_connection_status.startswith('error'):
+                            mqtt_color = 'orange'
+                        else:
+                            mqtt_color = 'orange'
+                    else:
+                        mqtt_color = 'grey'
+                    ui.chip('MQTT').props(f'dense color={mqtt_color} text-color=white')
                 if project.description:
                     ui.label(project.description).classes('text-body2 q-mt-xs')
                 if project.tags:
@@ -175,6 +195,8 @@ async def general_panel(project_id: str):
             TelemetryCard(project_id)
         with ui.card().classes('w-full dense'):
             LoggingCard(project_id)
+        with ui.card().classes('w-full dense'):
+            FileConfigCard(project_id)
         with ui.card().classes('w-full'):
             await danger_card(project_id)
 
@@ -183,7 +205,11 @@ async def general_panel(project_id: str):
 def project_card(project_id: str) -> None:
     with ui.expansion('General').classes('w-full q-mb-none').props('dense header-class="text-h6 font-bold"').mark('general-form'):
         form = ModelForm.from_adapter(Project, project_adapter(project_id),
-                                      include=['name', 'description', 'tags', 'is_active', 'is_autocreate_devices', 'is_provisioning_autoapproval', 'device_tokens_expire_in', 'device_token_length', 'device_online_threshold_s'],
+                                      include=['name', 'description', 'tags', 'is_active',
+                                               'is_autocreate_devices', 'is_provisioning_autoapproval',
+                                               'is_http_enabled', 'is_mqtt_enabled', 'mqtt_topic_base',
+                                               'device_tokens_expire_in', 'device_token_length',
+                                               'device_online_threshold_s'],
                                       autosave=True)
         form.render_field('name', editable=False).props('outlined dense').classes('w-full')
         form.render_field('description').props('outlined dense hide-bottom-space').classes('w-full')
@@ -192,6 +218,10 @@ def project_card(project_id: str) -> None:
             form.render_field('is_active')
             form.render_field('is_autocreate_devices')
             form.render_field('is_provisioning_autoapproval')
+        with ui.row().classes('w-full gap-4 q-mt-none'):
+            form.render_field('is_http_enabled')
+            form.render_field('is_mqtt_enabled')
+        form.render_field('mqtt_topic_base').props('outlined dense').classes('w-full')
         form.render_field('device_tokens_expire_in').props('outlined dense').classes('w-full')
         form.render_field('device_token_length').props('outlined dense').classes('w-full')
         form.render_field('device_online_threshold_s').props('outlined dense').classes('w-full')

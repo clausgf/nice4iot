@@ -62,10 +62,29 @@ class Project(BaseModel):
 
     is_provisioning_autoapproval: Annotated[bool,
             Field(title='Auto-approve provisioning',
-                  description='Automatically approve newly created devices for provisioning. '
+                  description='Automatically approve newly created devices for provisioning '
+                               '(HTTP only — MQTT autocreate uses is_autocreate_devices). '
                                'Disable to require manual approval before a device can obtain a bearer token.'),
             niceview.Field()
         ] = True
+
+    is_http_enabled: Annotated[bool,
+            Field(title='HTTP API enabled',
+                  description='Enable REST API access for devices in this project. '
+                              'Disable to prevent all HTTP device requests (telemetry, log, file, forward).')
+        ] = True
+
+    is_mqtt_enabled: Annotated[bool,
+            Field(title='MQTT enabled',
+                  description='Enable MQTT for devices in this project.')
+        ] = False
+
+    mqtt_topic_base: Annotated[str,
+            Field(title='MQTT topic base',
+                  description='Topic prefix for this project. Use {project} and {device} as placeholders. '
+                              'Example: /nice4iot/{project}/{device}  →  nice4iot/myproject/sensor1/telemetry/sensors. '
+                              'Leading slashes and double slashes are normalized automatically.')
+        ] = '/nice4iot/{project}/{device}'
 
     device_tokens_expire_in: Annotated[int,
             Field(default=7,

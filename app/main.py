@@ -1,5 +1,7 @@
+import asyncio
 import signal
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,7 +31,42 @@ def _on_sigusr1(signum, frame) -> None:
 
 signal.signal(signal.SIGUSR1, _on_sigusr1)
 
-app = FastAPI()
+
+async def _mqtt_loop_wrapper() -> None:
+    from app.mqtt.backend import mqtt_main_loop
+    await mqtt_main_loop()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Register callbacks to wire up MQTT ↔ file-backend without circular imports
+    from app.core.file.backend import register_publish_callback, file_watcher_loop
+    from app.mqtt.backend import publish_file, register_file_publish_callback
+
+    register_publish_callback(publish_file)
+    # Upload notifications from MQTT → file backend: no-op (upload = device→server,
+    # no re-publish needed; state is updated by the watcher loop).
+    register_file_publish_callback(lambda *args, **kwargs: None)
+
+    # Start background tasks
+    mqtt_task = asyncio.create_task(_mqtt_loop_wrapper())
+    watcher_task = asyncio.create_task(file_watcher_loop())
+
+    yield
+
+    mqtt_task.cancel()
+    watcher_task.cancel()
+    try:
+        await mqtt_task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await watcher_task
+    except asyncio.CancelledError:
+        pass
+
+
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -59,4 +96,3 @@ ui.run_with(app, storage_secret=app_config.nicegui_storage_secret)
 if __name__ == '__main__':
     import uvicorn
     uvicorn.run(app, host='0.0.0.0', port=8000)
-
