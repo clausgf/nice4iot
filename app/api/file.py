@@ -45,6 +45,7 @@ import stat
 
 from app.api.dependencies import DeviceAuthInfo, device_auth
 from app.core.device.backend import get_file_path
+from app.core.file.backend import get_file_config
 from app.exceptions import NotFoundError
 from app.util import logger, is_valid_upload_filename
 from app.config import app_config
@@ -280,14 +281,16 @@ async def put_resource(
     except (FileNotFoundError, ValueError) as e:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(e))
 
-    tmp_path = file_path.with_suffix(file_path.suffix + '.upload.tmp')
+    file_config = await anyio.to_thread.run_sync(lambda: get_file_config(project_name))
+    max_size = file_config.max_upload_size
+    tmp_path = file_path.with_name(file_path.name + '.upload.tmp')
     try:
         with tmp_path.open("wb") as f:
             length = 0
             async for chunk in request.stream():
                 length += len(chunk)
-                if length > app_config.max_file_upload_size:
-                    logger.info(f"Upload to {file_path} too large ({length} bytes, limit {app_config.max_file_upload_size})")
+                if length > max_size:
+                    logger.info(f"Upload to {file_path} too large ({length} bytes, limit {max_size})")
                     raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, detail="File too large")
                 f.write(chunk)
         tmp_path.rename(file_path)

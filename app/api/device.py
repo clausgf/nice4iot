@@ -24,6 +24,7 @@ Authentication is handled by the ``device_auth`` dependency, which:
   normalized to 401 — the device does not learn *why* authentication failed.
 """
 
+import json
 import anyio
 from fastapi import APIRouter, HTTPException, Request, Response, status, Depends
 
@@ -32,6 +33,7 @@ from app.config import app_config
 from app.core.telemetry.backend import write_telemetry
 from app.core.logging.backend import write_log
 from app.core.forwarding.backend import forward, get_forwarding
+from app.exceptions import NotFoundError
 from app.util import is_valid_filename
 
 ###############################################################################
@@ -120,7 +122,11 @@ async def post_telemetry_with_names(
     body = await request.body()
     if len(body) > app_config.max_telemetry_size:
         raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail='Telemetry payload too large')
-    measurements = await request.json()
+    try:
+        measurements = json.loads(body)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail='Request body is not valid JSON')
     await write_telemetry(project_name, device_name, values=measurements, kind=kind)
     return Response(status_code=200)
 
@@ -284,16 +290,22 @@ async def get_forward_with_names(
     """
     if not is_valid_filename(forwarding_name):
         raise HTTPException(status_code=400, detail='Invalid forwarding_name in url')
-    forwarding = await anyio.to_thread.run_sync(
-        lambda: get_forwarding(project_name, forwarding_name)
-    )
+    try:
+        forwarding = await anyio.to_thread.run_sync(
+            lambda: get_forwarding(project_name, forwarding_name)
+        )
+    except NotFoundError as e:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(e))
 
     headers = request.headers.mutablecopy()
     del headers["Authorization"]
     del headers["Content-Length"]
     data = await request.body()
     url_params = request.query_params
-    forward_response = await forward(forwarding, remaining_url, data, headers, url_params, 10)
+    try:
+        forward_response = await forward(forwarding, remaining_url, data, headers, url_params, 10)
+    except TimeoutError:
+        raise HTTPException(status.HTTP_504_GATEWAY_TIMEOUT, detail='Upstream request timed out')
 
     return Response(
         status_code=forward_response.status_code,

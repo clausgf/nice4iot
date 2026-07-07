@@ -310,16 +310,19 @@ async def mqtt_main_loop() -> None:
                 connection_status = "connected"
                 logger.info(f"MQTT connected to {config.server}:{config.port}")
 
-                # Subscribe to all MQTT-enabled projects
+                # Subscribe to all MQTT-enabled projects.
+                # Use specific topic patterns rather than # to avoid receiving
+                # our own retained download messages back from the broker.
                 from app.core.project.backend import get_projects
                 projects = await anyio.to_thread.run_sync(get_projects)
                 for project in projects:
                     if not project.is_mqtt_enabled:
                         continue
                     prefix = _subscription_prefix(project.mqtt_topic_base, project.name)
-                    sub_topic = f"{prefix}/#"
-                    await client.subscribe(sub_topic)
-                    logger.info(f"MQTT subscribed to {sub_topic}")
+                    for suffix in ('telemetry/+', 'log', 'upload/+'):
+                        sub_topic = f"{prefix}/{suffix}"
+                        await client.subscribe(sub_topic)
+                        logger.info(f"MQTT subscribed to {sub_topic}")
 
                 # Process incoming messages
                 async for message in client.messages:

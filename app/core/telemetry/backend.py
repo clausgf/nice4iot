@@ -27,6 +27,8 @@ LOCAL_METRICS_MAX_LINES = 2000
 _backend_cache: dict[str, tuple[TelemetryBackend | None, float]] = {}
 _BACKEND_CACHE_TTL: float = 60.0
 
+_write_count: dict[str, int] = {}  # keyed by str(path), amortises JSONL trim cost
+
 
 def flush_telemetry_backend_cache() -> None:
     """Flush all cached telemetry backends (call on SIGUSR1 or config change)."""
@@ -69,13 +71,20 @@ def _append_local_metrics(project_name: str, device_name: str, kind: str,
     record = json.dumps({'ts': timestamp.isoformat(), 'kind': kind, 'v': numeric}) + '\n'
     with path.open('a', encoding='utf-8') as f:
         f.write(record)
-    # Keep at most LOCAL_METRICS_MAX_LINES lines (trim oldest when over limit).
-    try:
-        lines = path.read_text(encoding='utf-8').splitlines(keepends=True)
-        if len(lines) > LOCAL_METRICS_MAX_LINES:
-            path.write_text(''.join(lines[-LOCAL_METRICS_MAX_LINES:]), encoding='utf-8')
-    except OSError:
-        pass
+    # Trim to LOCAL_METRICS_MAX_LINES only every _TRIM_EVERY_N writes.
+    # Reading the full file on every append is O(n) per telemetry push; this
+    # amortises the cost to O(n / _TRIM_EVERY_N) on average.
+    # Key uses the full path so tests using different temp dirs don't share state.
+    _TRIM_EVERY_N = 10
+    _write_count[str(path)] = _write_count.get(str(path), 0) + 1
+    if _write_count[str(path)] >= _TRIM_EVERY_N:
+        _write_count[str(path)] = 0
+        try:
+            lines = path.read_text(encoding='utf-8').splitlines(keepends=True)
+            if len(lines) > LOCAL_METRICS_MAX_LINES:
+                path.write_text(''.join(lines[-LOCAL_METRICS_MAX_LINES:]), encoding='utf-8')
+        except OSError:
+            pass
 
 
 def read_local_metrics(project_name: str, device_name: str,
