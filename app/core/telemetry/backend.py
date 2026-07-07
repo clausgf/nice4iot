@@ -2,12 +2,11 @@ import datetime
 import json
 import numbers
 import time
-from pathlib import Path
 
 import anyio
 from niceview.dataadapter import JsonAdapter
 
-from app.paths import project_dir
+from app.paths import project_dir, device_dir
 from app.core.telemetry.models import TelemetryBackend, TelemetryConfig
 from app.core.telemetry.prometheus.backend import PrometheusBackend
 from app.core.telemetry.influxdb.backend import InfluxLineBackend
@@ -15,6 +14,7 @@ from app.core.telemetry.influxdb.backend import InfluxLineBackend
 TEL_FILE = '.telemetry.json'
 LOCAL_METRICS_FILE = '.device_metrics.jsonl'
 LOCAL_METRICS_MAX_LINES = 2000
+_TRIM_EVERY_N = 10  # trim JSONL only every N writes to amortise O(n) read cost
 
 # ---------------------------------------------------------------------------
 # Telemetry backend cache
@@ -65,7 +65,7 @@ def _append_local_metrics(project_name: str, device_name: str, kind: str,
     numeric = {k: v for k, v in values.items() if isinstance(v, numbers.Number)}
     if not numeric:
         return
-    path = Path(project_dir(project_name)) / device_name / LOCAL_METRICS_FILE
+    path = device_dir(project_name, device_name) / LOCAL_METRICS_FILE
     if not path.parent.is_dir():
         return  # device directory not yet created via create_device()
     record = json.dumps({'ts': timestamp.isoformat(), 'kind': kind, 'v': numeric}) + '\n'
@@ -75,7 +75,6 @@ def _append_local_metrics(project_name: str, device_name: str, kind: str,
     # Reading the full file on every append is O(n) per telemetry push; this
     # amortises the cost to O(n / _TRIM_EVERY_N) on average.
     # Key uses the full path so tests using different temp dirs don't share state.
-    _TRIM_EVERY_N = 10
     _write_count[str(path)] = _write_count.get(str(path), 0) + 1
     if _write_count[str(path)] >= _TRIM_EVERY_N:
         _write_count[str(path)] = 0
@@ -91,7 +90,7 @@ def read_local_metrics(project_name: str, device_name: str,
                        kind: str | None = None,
                        since: datetime.datetime | None = None) -> list[dict]:
     """Read local metric records, optionally filtered by kind and time."""
-    path = Path(project_dir(project_name)) / device_name / LOCAL_METRICS_FILE
+    path = device_dir(project_name, device_name) / LOCAL_METRICS_FILE
     if not path.is_file():
         return []
     records = []

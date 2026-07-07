@@ -128,12 +128,7 @@ async def project_dashboard_panel(project_id: str) -> None:
                     ui.chip('HTTP').props(f'dense color={http_color} text-color=white')
                     # MQTT chip
                     if project.is_mqtt_enabled:
-                        if mqtt_connection_status == 'connected':
-                            mqtt_color = 'green'
-                        elif mqtt_connection_status.startswith('error'):
-                            mqtt_color = 'orange'
-                        else:
-                            mqtt_color = 'orange'
+                        mqtt_color = 'green' if mqtt_connection_status == 'connected' else 'orange'
                     else:
                         mqtt_color = 'grey'
                     ui.chip('MQTT').props(f'dense color={mqtt_color} text-color=white')

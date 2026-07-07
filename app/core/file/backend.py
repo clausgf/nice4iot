@@ -260,16 +260,12 @@ async def file_watcher_loop() -> None:
     """
     from app.core.project.backend import get_projects
 
-    first_run = True
     while True:
-        if not first_run:
-            await asyncio.sleep(10)
-        first_run = False
         try:
             projects = await anyio.to_thread.run_sync(get_projects)
         except Exception as e:
             logger.error(f"file_watcher_loop: cannot list projects: {e}")
-            continue
+            projects = []
 
         now = time.monotonic()
         for project in projects:
@@ -292,3 +288,5 @@ async def file_watcher_loop() -> None:
                 await check_and_publish_project(project.name)
             except Exception as e:
                 logger.exception(f"file_watcher_loop: error for {project.name}: {e}")
+
+        await asyncio.sleep(10)

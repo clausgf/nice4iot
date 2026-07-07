@@ -116,7 +116,7 @@ def load_device_tokens(project_name: str, device_name: str) -> list[AuthToken]:
 def save_device_tokens(project_name: str, device_name: str, tokens: list[AuthToken]) -> None:
     """Atomically write device tokens to disk."""
     file = get_device_token_filename(project_name, device_name)
-    temp = file.with_suffix('.tmp')
+    temp = file.with_name(file.name + '.tmp')
     temp.write_bytes(_token_list_adapter.dump_json(tokens, indent=2))
     temp.rename(file)
 
