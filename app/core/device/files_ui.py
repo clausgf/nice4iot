@@ -14,7 +14,6 @@ from pathlib import Path
 
 from nicegui import ui
 
-from app.config import app_config
 from app.core.device.backend import get_device_path
 from app.paths import project_dir as get_project_dir
 from app.util import is_valid_upload_filename, render_datetime
@@ -240,6 +239,8 @@ async def _new_json_dialog(directory: Path, refresh_fn=None,
 
 def _device_files_card(project_name: str, device_name: str,
                        mqtt_enabled: bool = False) -> None:
+    from app.core.file.backend import get_file_config
+    max_upload = get_file_config(project_name).max_upload_size
     device_path = get_device_path(project_name, device_name)
 
     with ui.expansion('Device Files', value=True).classes('w-full').props(
@@ -281,13 +282,15 @@ def _device_files_card(project_name: str, device_name: str,
                                            project_name=project_name,
                                            device_name=device_name,
                                            mqtt_enabled=mqtt_enabled),
-            max_file_size=app_config.max_file_upload_size,
+            max_file_size=max_upload,
             auto_upload=True,
         ).props('flat dense').classes('w-full q-mt-xs')
 
 
 def _project_files_card(project_name: str, device_name: str | None = None,
                         mqtt_enabled: bool = False) -> None:
+    from app.core.file.backend import get_file_config
+    max_upload = get_file_config(project_name).max_upload_size
     project_path = get_project_dir(project_name)
 
     with ui.expansion('Project Files', value=True).classes('w-full').props(
@@ -332,7 +335,7 @@ def _project_files_card(project_name: str, device_name: str | None = None,
                                            project_name=project_name,
                                            device_name=device_name,
                                            mqtt_enabled=(mqtt_enabled and device_name is not None)),
-            max_file_size=app_config.max_file_upload_size,
+            max_file_size=max_upload,
             auto_upload=True,
         ).props('flat dense').classes('w-full q-mt-xs')
 
@@ -345,7 +348,7 @@ def _make_upload_handler(directory: Path, refresh_fn,
                          project_name: str | None = None,
                          device_name: str | None = None,
                          mqtt_enabled: bool = False):
-    """Return an upload event handler that writes uploaded files to *directory*."""
+    """Return an upload event handler that writes uploaded files to *directory* atomically."""
     def _handle(e) -> None:
         filename = e.name
         if not is_valid_upload_filename(filename):
@@ -353,8 +356,10 @@ def _make_upload_handler(directory: Path, refresh_fn,
             e.sender.reset()
             return
         dest = directory / filename
+        tmp = dest.with_name(dest.name + '.tmp')
         try:
-            dest.write_bytes(e.content.read())
+            tmp.write_bytes(e.content.read())
+            tmp.rename(dest)
             ui.notify(f'Uploaded {filename}', type='positive')
             refresh_fn()
             # Trigger MQTT publish if enabled
@@ -364,6 +369,7 @@ def _make_upload_handler(directory: Path, refresh_fn,
         except Exception as exc:
             log.exception(f'Upload failed: {exc}')
             ui.notify(f'Upload failed: {exc}', type='negative')
+            tmp.unlink(missing_ok=True)
         finally:
             e.sender.reset()
     return _handle

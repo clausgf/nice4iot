@@ -134,6 +134,9 @@ async def publish_file_now(project_name: str, device_name: str,
         logger.error(f"publish_file_now: cannot load project {project_name}: {e}")
         return False
 
+    if not project.is_mqtt_enabled:
+        return False
+
     config = await anyio.to_thread.run_sync(lambda: get_file_config(project_name))
 
     try:
@@ -218,7 +221,6 @@ async def check_and_publish_project(project_name: str) -> None:
         state = await anyio.to_thread.run_sync(
             lambda: load_file_state(project_name, device.name)
         )
-        updated = False
 
         # Build a merged list: device-specific files take priority over project files
         device_filenames = {p.name for p in device_files}
@@ -239,9 +241,7 @@ async def check_and_publish_project(project_name: str) -> None:
             stored = state.get(fname, {})
             stored_mtime = stored.get('mtime')
             if stored_mtime is None or current_mtime != stored_mtime:
-                published = await publish_file_now(project_name, device.name, file_path)
-                if published:
-                    updated = True
+                await publish_file_now(project_name, device.name, file_path)
 
 
 # ---------------------------------------------------------------------------
@@ -260,8 +260,11 @@ async def file_watcher_loop() -> None:
     """
     from app.core.project.backend import get_projects
 
+    first_run = True
     while True:
-        await asyncio.sleep(10)
+        if not first_run:
+            await asyncio.sleep(10)
+        first_run = False
         try:
             projects = await anyio.to_thread.run_sync(get_projects)
         except Exception as e:

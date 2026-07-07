@@ -169,7 +169,7 @@ async def _handle_message(topic: str, payload: bytes) -> None:
     from app.core.telemetry.backend import write_telemetry
     from app.core.logging.backend import write_log
 
-    route = _route_topic(topic)
+    route = await anyio.to_thread.run_sync(lambda: _route_topic(topic))
     if route is None:
         logger.debug(f"MQTT: no route for topic {topic!r}")
         return
