@@ -7,7 +7,7 @@ from app.routes import device_url, project_url
 from app.core.device.models import Device
 from app.core.device.backend import (
     create_device, delete_device, device_adapter, get_device, get_devices,
-    rename_device,
+    is_device_online, rename_device,
 )
 from app.core.device.files_ui import device_files_panel
 from app.core.device.data_ui import device_data_panel
@@ -69,17 +69,18 @@ async def device_subpage(
 # ***************************************************************************
 
 def device_dashboard_panel(project_name: str, device_name: str) -> None:
-    """Overview cards shown on the device Dashboard tab (auto-refreshes every 30 s)."""
+    """Overview cards shown on the device Dashboard tab (auto-refreshes every 10 s)."""
     @ui.refreshable
     def _content() -> None:
         device = get_device(project_name, device_name)
+        project = get_project(project_name, check_active=False)
         now = datetime.datetime.now(datetime.timezone.utc)
         with ui.grid().classes('grid-cols-1 sm:grid-cols-2 gap-4 w-full'):
-            _status_card(device, now)
+            _status_card(device, project.device_online_threshold_s, now)
             _provisioning_card(device)
 
     _content()
-    ui.timer(30.0, _content.refresh)
+    ui.timer(10.0, _content.refresh)
 
 
 def _ago(delta: datetime.timedelta) -> str:
@@ -93,13 +94,17 @@ def _ago(delta: datetime.timedelta) -> str:
     return f'{s // 86400}d ago'
 
 
-def _status_card(device: Device, now: datetime.datetime) -> None:
+def _status_card(device: Device, online_threshold_s: int, now: datetime.datetime) -> None:
     with ui.card().classes('w-full'):
         ui.label('Status').classes('text-subtitle1 font-bold')
         ui.separator()
         with ui.row().classes('items-center gap-2 q-mt-xs'):
             color = 'green' if device.is_active else 'grey'
             ui.chip('Active' if device.is_active else 'Inactive').props(f'dense color={color} text-color=white')
+            online = is_device_online(device, online_threshold_s)
+            ui.chip('Online' if online else 'Offline').props(
+                f'dense color={"green" if online else "grey"} text-color=white'
+            )
         if device.location:
             with ui.row().classes('items-center gap-1 q-mt-xs'):
                 ui.icon('place').classes('text-grey-6 text-sm')

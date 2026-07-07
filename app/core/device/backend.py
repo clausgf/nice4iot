@@ -72,6 +72,14 @@ def read_last_seen(project_name: str, device_name: str) -> datetime.datetime | N
 ###############################################################################
 
 
+def is_device_online(device, threshold_s: int) -> bool:
+    """Return True if the device was last seen within threshold_s seconds."""
+    if device.last_seen_at is None:
+        return False
+    delta = datetime.datetime.now(datetime.timezone.utc) - device.last_seen_at
+    return delta.total_seconds() <= threshold_s
+
+
 def get_device_path(project_name: str, device_name: str, check_device_exists: bool = True) -> Path:
     """Return the device directory path, with optional existence check.
 

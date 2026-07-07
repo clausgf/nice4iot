@@ -80,6 +80,14 @@ class Project(BaseModel):
             niceview.Field(widget_type='ui.number')
         ]
 
+    device_online_threshold_s: Annotated[int,
+            Field(default=120,
+                  title='Online threshold (s)',
+                  description='Seconds since last contact after which a device is shown as offline. '
+                              'Set to match the expected telemetry or keep-alive interval.'),
+            niceview.Field(widget_type='ui.number')
+        ]
+
     tags: Annotated[list[str],
             Field(description='Free-form labels for grouping and filtering projects.')
         ] = []
