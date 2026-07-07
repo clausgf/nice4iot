@@ -56,7 +56,7 @@ def flush_device_list_cache() -> None:
 def write_last_seen(project_name: str, device_name: str, dt: datetime.datetime) -> None:
     """Atomically write last_seen_at to .last_seen (separate from device.json)."""
     path = device_dir(project_name, device_name) / _LAST_SEEN_FILE
-    tmp = path.with_suffix('.tmp')
+    tmp = path.with_name(path.name + '.tmp')
     tmp.write_text(dt.isoformat())
     tmp.rename(path)
 
