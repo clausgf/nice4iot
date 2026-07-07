@@ -44,6 +44,10 @@ def _user_menu() -> None:
             with ui.menu_item().classes('items-center gap-x-2'):
                 ui.icon('dark_mode').props('size=large')
                 ui.label('Dark Mode').on('click', lambda: ui.dark_mode().enable())
+            ui.separator()
+            with ui.menu_item().classes('items-center gap-x-2'):
+                ui.icon('api').props('size=large')
+                ui.link('API Docs', '/docs', new_tab=True).classes('no-underline text-inherit')
 
 
 @ui.page('/')
