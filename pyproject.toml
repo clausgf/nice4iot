@@ -20,6 +20,7 @@ dependencies = [
     "pytz",
     "plotly",
     "niceview",
+    "aiomqtt>=2.5.1",
 ]
 
 [project.optional-dependencies]
