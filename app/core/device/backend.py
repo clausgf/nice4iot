@@ -136,7 +136,7 @@ def create_device(device: Device) -> Device:
         now = datetime.datetime.now(datetime.timezone.utc)
         device.created_at = now
         device.updated_at = now
-        temp_file = device_file.with_suffix('.tmp')
+        temp_file = device_file.with_name(device_file.name + '.tmp')
         temp_file.write_text(device.model_dump_json(indent=2))
         temp_file.rename(device_file)
     except Exception:
@@ -165,8 +165,8 @@ def get_device(project_name: str, device_name: str, check_active: bool = False) 
         device = Device(
             name=device_name,
             project_name=project_name,
-            created_at=datetime.datetime.fromtimestamp(stat_info.st_ctime),
-            updated_at=datetime.datetime.fromtimestamp(stat_info.st_mtime),
+            created_at=datetime.datetime.fromtimestamp(stat_info.st_ctime, tz=datetime.timezone.utc),
+            updated_at=datetime.datetime.fromtimestamp(stat_info.st_mtime, tz=datetime.timezone.utc),
         )
     # last_seen_at lives in .last_seen (not device.json) to avoid write conflicts
     # with the UI's autosave adapter. Fall back to device.json value during migration
@@ -189,7 +189,7 @@ def update_device(device: Device) -> Device:
     """
     device_file = get_device_path(device.project_name, device.name) / DEVICE_FILE_NAME
     device.updated_at = datetime.datetime.now(datetime.timezone.utc)
-    temp_file = device_file.with_suffix('.tmp')
+    temp_file = device_file.with_name(device_file.name + '.tmp')
     temp_file.write_text(device.model_dump_json(indent=2))
     temp_file.rename(device_file)
     return device
@@ -356,7 +356,7 @@ def rename_device(project_name: str, old_device_name: str, new_device_name: str)
     if device_json.is_file():
         device = Device.model_validate_json(device_json.read_text())
         device.name = new_device_name
-        temp = device_json.with_suffix('.tmp')
+        temp = device_json.with_name(device_json.name + '.tmp')
         temp.write_text(device.model_dump_json(indent=2))
         temp.rename(device_json)
     _invalidate_device_list_cache(project_name)

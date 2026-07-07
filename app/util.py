@@ -2,6 +2,8 @@ import datetime
 import logging
 import re
 
+import pytz
+
 logger = logging.getLogger('uvicorn.error')
 
 
@@ -36,11 +38,22 @@ def clean_path_parameter(path_element: str) -> str:
     return path_element.replace('/', '').replace('..', '')
 
 
-def render_datetime(dt: datetime.datetime) -> str:
+def render_datetime(dt: datetime.datetime | None) -> str:
+    """Render a UTC datetime as a local-time string using the configured timezone.
+
+    Falls back to system local time if the configured timezone is invalid.
+    Returns "never" for None.
     """
-    Render a datetime object to a string in ISO format.
-    """
-    return dt.astimezone().strftime("%d.%m.%y %H:%M:%S") if dt else "never"
+    if not dt:
+        return "never"
+    from app.config import app_config
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=datetime.timezone.utc)
+    try:
+        tz = pytz.timezone(app_config.timezone)
+    except pytz.UnknownTimeZoneError:
+        tz = pytz.utc
+    return dt.astimezone(tz).strftime("%d.%m.%y %H:%M:%S")
 
 
 def flatten_dict(d, parent_key: str = "", sep: str = "_"):
