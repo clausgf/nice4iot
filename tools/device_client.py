@@ -498,10 +498,17 @@ def cmd_loop(args: argparse.Namespace) -> None:
         log.info("=== Boot %d ===", boot)
         temp = round(20 + random.gauss(0, 2), 2)
         humidity = round(60 + random.gauss(0, 5), 1)
-        client.run_cycle(
-            telemetry={"sensors": {"temperature": temp, "humidity": humidity}},
-            log_message=f"Boot {boot}: temp={temp}°C humidity={humidity}%",
-        )
+        try:
+            client.run_cycle(
+                telemetry={"sensors": {"temperature": temp, "humidity": humidity}},
+                log_message=f"Boot {boot}: temp={temp}°C humidity={humidity}%",
+            )
+        except httpx.ConnectError as e:
+            log.error("Server unreachable: %s — retrying in %ds", e, args.interval)
+        except httpx.TimeoutException as e:
+            log.error("Request timed out: %s — retrying in %ds", e, args.interval)
+        except Exception as e:
+            log.error("Cycle failed: %s — retrying in %ds", e, args.interval)
         log.info("Sleeping %ds", args.interval)
         time.sleep(args.interval)
 

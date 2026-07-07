@@ -48,6 +48,9 @@ def _user_menu() -> None:
             with ui.menu_item().classes('items-center gap-x-2'):
                 ui.icon('api').props('size=large')
                 ui.link('API Docs', '/docs', new_tab=True).classes('no-underline text-inherit')
+            with ui.menu_item().classes('items-center gap-x-2'):
+                ui.icon('code').props('size=large')
+                ui.link('Repository', 'https://github.com/clausgf/nice4iot', new_tab=True).classes('no-underline text-inherit')
 
 
 @ui.page('/')

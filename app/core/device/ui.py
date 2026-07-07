@@ -95,16 +95,17 @@ def _ago(delta: datetime.timedelta) -> str:
 
 
 def _status_card(device: Device, online_threshold_s: int, now: datetime.datetime) -> None:
+    online = is_device_online(device, online_threshold_s)
     with ui.card().classes('w-full'):
-        ui.label('Status').classes('text-subtitle1 font-bold')
-        ui.separator()
-        with ui.row().classes('items-center gap-2 q-mt-xs'):
+        with ui.row().classes('items-center w-full'):
+            ui.label('Status').classes('text-subtitle1 font-bold')
+            ui.space()
             color = 'green' if device.is_active else 'grey'
             ui.chip('Active' if device.is_active else 'Inactive').props(f'dense color={color} text-color=white')
-            online = is_device_online(device, online_threshold_s)
             ui.chip('Online' if online else 'Offline').props(
                 f'dense color={"green" if online else "grey"} text-color=white'
             )
+        ui.separator()
         if device.location:
             with ui.row().classes('items-center gap-1 q-mt-xs'):
                 ui.icon('place').classes('text-grey-6 text-sm')
@@ -121,13 +122,14 @@ def _status_card(device: Device, online_threshold_s: int, now: datetime.datetime
 
 
 def _provisioning_card(device: Device) -> None:
+    prov_color = 'green' if device.is_provisioning_approved else 'orange'
+    prov_text = 'Approved' if device.is_provisioning_approved else 'Pending'
     with ui.card().classes('w-full'):
-        ui.label('Provisioning').classes('text-subtitle1 font-bold')
-        ui.separator()
-        with ui.row().classes('items-center gap-2 q-mt-xs'):
-            prov_color = 'green' if device.is_provisioning_approved else 'orange'
-            prov_text = 'Approved' if device.is_provisioning_approved else 'Pending Approval'
+        with ui.row().classes('items-center w-full'):
+            ui.label('Provisioning').classes('text-subtitle1 font-bold')
+            ui.space()
             ui.chip(prov_text).props(f'dense color={prov_color} text-color=white')
+        ui.separator()
         with ui.grid().classes('grid-cols-2 gap-y-1 q-mt-sm'):
             ui.label('Last provisioned').classes('text-caption text-grey-6')
             ui.label(render_datetime(device.last_provisioned_at)).classes('text-caption')
