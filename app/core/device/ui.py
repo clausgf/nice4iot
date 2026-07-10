@@ -82,7 +82,7 @@ def device_dashboard_panel(project_name: str, device_name: str) -> None:
         project = get_project(project_name, check_active=False)
         now = datetime.datetime.now(datetime.timezone.utc)
         with ui.grid().classes('grid-cols-1 sm:grid-cols-2 gap-4 w-full'):
-            _status_card(device, project.device_online_threshold_s, now)
+            _status_card(device, project_name, project.device_online_threshold_s, now)
             _provisioning_card(device)
 
     _content()
@@ -101,12 +101,17 @@ def _ago(delta: datetime.timedelta) -> str:
     return f'{s // 86400}d ago'
 
 
-def _status_card(device: Device, online_threshold_s: int, now: datetime.datetime) -> None:
+def _status_card(device: Device, project_name: str, online_threshold_s: int, now: datetime.datetime) -> None:
+    from app.core.alarm.backend import get_device_alarm_count
     online = is_device_online(device, online_threshold_s)
+    alarm_count = get_device_alarm_count(project_name, device.name)
     with ui.card().classes('w-full'):
         with ui.row().classes('items-center w-full'):
             ui.label('Status').classes('text-subtitle1 font-bold')
             ui.space()
+            if alarm_count:
+                ui.chip(str(alarm_count)).props('dense color=red text-color=white icon=notifications_active') \
+                    .tooltip(f'{alarm_count} active alarm(s)')
             color = 'green' if device.is_active else 'grey'
             ui.chip('Active' if device.is_active else 'Inactive').props(f'dense color={color} text-color=white')
             ui.chip('Online' if online else 'Offline').props(

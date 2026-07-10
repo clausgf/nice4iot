@@ -153,8 +153,13 @@ def _alarm_event_row(project_name: str, event, on_ack) -> None:
             ui.label(f'{event.device_name} — {event.rule_name}').classes('text-body2 font-bold')
             ui.label(event.message).classes('text-caption text-grey-7')
             ui.label(f'Since {render_datetime(event.triggered_at)}').classes('text-caption text-grey-6')
-        ui.button(icon='check', on_click=lambda e=event: on_ack(e.id)) \
-            .props('flat dense color=positive').tooltip('Acknowledge')
+        if event.is_acknowledged:
+            # Already acknowledged — static green icon, not interactive
+            ui.icon('check_circle').classes('text-positive text-xl').tooltip('Acknowledged')
+        else:
+            # Needs acknowledgment — clickable button
+            ui.button(icon='notification_important', on_click=lambda e=event: on_ack(e.id)) \
+                .props('flat dense color=negative').tooltip('Acknowledge')
 
 
 # ---------------------------------------------------------------------------
