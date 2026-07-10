@@ -16,6 +16,8 @@ def MqttGlobalConfigCard() -> None:
         status = _mqtt_backend.connection_status
         if status == 'connected':
             color = 'green'
+        elif status == 'disabled':
+            color = 'grey'
         elif status.startswith('error'):
             color = 'orange'
         else:
@@ -23,11 +25,11 @@ def MqttGlobalConfigCard() -> None:
         ui.chip(status).props(f'dense color={color} text-color=white')
 
     with ui.expansion('MQTT Broker').classes('w-full').props('dense header-class="text-h6 font-bold"'):
+        form = ModelForm.from_adapter(MqttGlobalConfig, adapter,
+                                      include=['is_enabled', 'server', 'port', 'username', 'password', 'client_id'],
+                                      autosave=True)
+        form.render_field('is_enabled')
         _status()
         ui.timer(5.0, _status.refresh)
-        form = ModelForm.from_adapter(MqttGlobalConfig, adapter,
-                                      include=['server', 'port', 'username', 'password', 'client_id'],
-                                      autosave=True)
-        form.render()
-        for w in form.widgets.values():
-            w.props('outlined dense').classes('w-full')
+        for name in ['server', 'port', 'username', 'password', 'client_id']:
+            form.render_field(name).props('outlined dense').classes('w-full')

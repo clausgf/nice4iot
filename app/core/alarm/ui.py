@@ -45,7 +45,7 @@ class _DeviceOfflineAdapter:
 def AlarmConfigCard(project_name: str) -> None:
     """Configuration card for alarm rules, rendered inside Project/General."""
     with ui.expansion('Alarms', value=False).classes('w-full').props(
-        'dense header-class="text-subtitle1 font-bold"'
+        'dense header-class="text-h6 font-bold"'
     ):
         adapter = get_alarm_config_adapter(project_name)
 

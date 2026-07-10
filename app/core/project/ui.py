@@ -223,6 +223,13 @@ def project_card(project_id: str) -> None:
         with ui.row().classes('w-full gap-4 q-mt-none'):
             form.render_field('is_http_enabled')
             form.render_field('is_mqtt_enabled')
+        project = project_adapter(project_id).read()
+        from app.mqtt.backend import get_mqtt_adapter as _get_mqtt_adapter
+        if project.is_mqtt_enabled and not _get_mqtt_adapter().read().is_enabled:
+            with ui.row().classes('items-center gap-1'):
+                ui.icon('warning').classes('text-warning text-sm')
+                ui.label('Globaler MQTT-Broker deaktiviert (Projekte → MQTT Broker)') \
+                    .classes('text-caption text-warning')
         form.render_field('mqtt_topic_base').props('outlined dense').classes('w-full')
         form.render_field('device_tokens_expire_in').props('outlined dense').classes('w-full')
         form.render_field('device_token_length').props('outlined dense').classes('w-full')

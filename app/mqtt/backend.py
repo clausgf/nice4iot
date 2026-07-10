@@ -300,6 +300,14 @@ async def mqtt_main_loop() -> None:
         try:
             config = await anyio.to_thread.run_sync(lambda: get_mqtt_adapter().read())
 
+            if not config.is_enabled:
+                if connection_status != "disabled":
+                    _client = None
+                    connection_status = "disabled"
+                    logger.info("MQTT broker disabled — connection suspended")
+                await asyncio.sleep(30)
+                continue
+
             connect_kwargs: dict = {
                 'hostname': config.server,
                 'port': config.port,
