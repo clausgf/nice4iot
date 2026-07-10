@@ -26,6 +26,22 @@ from niceview.form import ModelForm
 # Project/General — alarm configuration card
 # ---------------------------------------------------------------------------
 
+class _DeviceUnavailableAdapter:
+    """Thin adapter that reads/writes only the device_unavailable sub-object."""
+
+    def __init__(self, alarm_adapter) -> None:
+        self._alarm = alarm_adapter
+
+    def read(self) -> DeviceUnavailableConfig:
+        return self._alarm.read().device_unavailable
+
+    def save(self, item: DeviceUnavailableConfig) -> DeviceUnavailableConfig:
+        cfg = self._alarm.read()
+        cfg.device_unavailable = item
+        self._alarm.save(cfg)
+        return item
+
+
 def AlarmConfigCard(project_name: str) -> None:
     """Configuration card for alarm rules, rendered inside Project/General."""
     with ui.expansion('Alarms', value=False).classes('w-full').props(
@@ -33,17 +49,19 @@ def AlarmConfigCard(project_name: str) -> None:
     ):
         adapter = get_alarm_config_adapter(project_name)
 
-        # Built-in: device unavailable
+        # Built-in: device unavailable — use a sub-adapter so ModelForm never
+        # sees the nested DeviceUnavailableConfig as an opaque widget value.
         with ui.card().classes('w-full q-mb-sm'):
             ui.label('Device Unavailable').classes('text-caption font-bold text-grey-7')
+            du_adapter = _DeviceUnavailableAdapter(adapter)
             form_builtin = ModelForm.from_adapter(
-                AlarmConfig,
-                adapter,
-                include=['device_unavailable'],
+                DeviceUnavailableConfig,
+                du_adapter,
                 autosave=True,
             )
             with ui.row().classes('items-center gap-4 w-full'):
-                form_builtin.render_field('device_unavailable')
+                form_builtin.render_field('is_active')
+                form_builtin.render_field('threshold_s').props('dense outlined').classes('w-48')
 
         # Metric rules list
         ui.separator()
