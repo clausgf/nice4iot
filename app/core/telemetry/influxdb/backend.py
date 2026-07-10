@@ -66,9 +66,16 @@ class InfluxLineBackend:
         line = self._build_line(device_name, values, kind, timestamp_ns)
         if not line:
             return
-        async with httpx.AsyncClient() as client:
-            async with asyncio.timeout(self.config.timeout):
-                await client.post(self._build_url(), content=line.encode(), headers=self._build_headers())
+        try:
+            async with httpx.AsyncClient() as client:
+                async with asyncio.timeout(self.config.timeout):
+                    resp = await client.post(self._build_url(), content=line.encode(),
+                                             headers=self._build_headers())
+            if resp.status_code >= 400:
+                raise RuntimeError(f"InfluxDB returned HTTP {resp.status_code}: {resp.text[:200]}")
+        except Exception as e:
+            logger.error(f"InfluxDB backend error for {self.project_name}: {e}")
+            raise
 
     async def read(self, device_name: str, kind: str = 'default',
                    start: datetime.datetime | None = None,

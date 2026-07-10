@@ -31,5 +31,10 @@ def _get_active_backends(project_name: str) -> list[LoggingBackend]:
 
 async def write_log(project_name: str, device_name: str, logmsg: str) -> None:
     """Write a log message to all active backends for a project."""
+    from app.health import set_health
     for backend in _get_active_backends(project_name):
-        await backend.write(device_name, logmsg)
+        try:
+            await backend.write(device_name, logmsg)
+            set_health(f'{project_name}:logging', True)
+        except Exception as e:
+            set_health(f'{project_name}:logging', False, str(e))

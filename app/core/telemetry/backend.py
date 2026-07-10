@@ -7,6 +7,7 @@ import anyio
 from niceview.dataadapter import JsonAdapter
 
 from app.paths import project_dir, device_dir
+from app.util import logger
 from app.core.telemetry.models import TelemetryBackend, TelemetryConfig
 from app.core.telemetry.prometheus.backend import PrometheusBackend
 from app.core.telemetry.influxdb.backend import InfluxLineBackend
@@ -114,6 +115,15 @@ def read_local_metrics(project_name: str, device_name: str,
     return records
 
 
+def _evaluate_alarms(project_name: str, device_name: str, kind: str, values: dict) -> None:
+    """Evaluate metric alarm rules — called from write_telemetry via thread pool."""
+    try:
+        from app.core.alarm.backend import evaluate_metric_rules
+        evaluate_metric_rules(project_name, device_name, kind, values)
+    except Exception as e:
+        logger.error(f"Alarm evaluation error for {project_name}/{device_name}: {e}")
+
+
 async def write_telemetry(project_name: str, device_name: str, values: dict,
                           kind: str = 'default',
                           timestamp: datetime.datetime | None = None) -> None:
@@ -121,11 +131,19 @@ async def write_telemetry(project_name: str, device_name: str, values: dict,
     now = timestamp or datetime.datetime.now(datetime.timezone.utc)
     backend = _get_active_backend(project_name)
     if backend:
-        await backend.write(device_name, values, kind, now)
-    # _append_local_metrics does file IO — offload to thread pool to avoid blocking
-    # the event loop on every telemetry push.
+        try:
+            await backend.write(device_name, values, kind, now)
+            from app.health import set_health
+            set_health(f'{project_name}:telemetry', True)
+        except Exception as e:
+            from app.health import set_health
+            set_health(f'{project_name}:telemetry', False, str(e))
+    # _append_local_metrics and alarm evaluation do file IO — offload to thread pool.
     await anyio.to_thread.run_sync(
         lambda: _append_local_metrics(project_name, device_name, kind, values, now)
+    )
+    await anyio.to_thread.run_sync(
+        lambda: _evaluate_alarms(project_name, device_name, kind, values)
     )
 
 

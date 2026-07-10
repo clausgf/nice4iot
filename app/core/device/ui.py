@@ -50,6 +50,7 @@ async def device_subpage(
         files_tab     = ui.tab('Files')
         data_tab      = ui.tab('Data')
         logs_tab      = ui.tab('Logs')
+        alarms_tab    = ui.tab('Alarms')
     tab = tab or 'Dashboard'
     with ui.tab_panels(tabs, value=tab).classes('w-full'):
         with ui.tab_panel(dashboard_tab):
@@ -62,6 +63,9 @@ async def device_subpage(
             await device_data_panel(project_id, device_id)
         with ui.tab_panel(logs_tab):
             device_logs_panel(project_id, device_id)
+        with ui.tab_panel(alarms_tab):
+            from app.core.alarm.ui import DeviceAlarmsTab
+            DeviceAlarmsTab(project_id, device_id)
 
 
 # ***************************************************************************
@@ -70,6 +74,8 @@ async def device_subpage(
 
 def device_dashboard_panel(project_name: str, device_name: str) -> None:
     """Overview cards shown on the device Dashboard tab (auto-refreshes every 10 s)."""
+    from app.core.alarm.ui import DeviceAlarmPanel
+
     @ui.refreshable
     def _content() -> None:
         device = get_device(project_name, device_name)
@@ -81,6 +87,7 @@ def device_dashboard_panel(project_name: str, device_name: str) -> None:
 
     _content()
     ui.timer(10.0, _content.refresh)
+    DeviceAlarmPanel(project_name, device_name)
 
 
 def _ago(delta: datetime.timedelta) -> str:
@@ -256,11 +263,13 @@ class ProjectDevicesTable:
     """Table of all devices in a project."""
 
     def __init__(self, project_name: str):
+        from app.core.alarm.backend import get_device_alarm_count
         self.project_name = project_name
         self.devices = get_devices(project_name)
 
         columns = [
             {'name': 'name', 'label': 'Name', 'field': 'name', 'required': True, 'sortable': True},
+            {'name': 'alarms', 'label': 'Alarms', 'field': 'alarms', 'sortable': True},
             {'name': 'is_active', 'label': 'Active', 'field': 'is_active', 'sortable': True},
             {'name': 'location', 'label': 'Location', 'field': 'location', 'sortable': True},
             {'name': 'last_seen_at', 'label': 'Last Seen', 'field': 'last_seen_at', 'sortable': True},
@@ -270,6 +279,7 @@ class ProjectDevicesTable:
             {
                 'id': d.name,
                 'name': d.name,
+                'alarms': get_device_alarm_count(project_name, d.name),
                 'is_active': d.is_active,
                 'location': d.location or '',
                 'last_seen_at': render_datetime(d.last_seen_at),

@@ -18,6 +18,7 @@ from app.routes import device_url, project_url, projects_url
 from app.util import is_valid_filename, render_datetime
 from app.core.project.models import Project
 from app.core.project.backend import create_project, delete_project, get_project, get_projects, project_adapter, rename_project
+from app.core.alarm.ui import AlarmConfigCard, ProjectAlarmPanel
 from niceview.form import ModelForm
 from niceview.util import confirm_dialog, input_dialog
 
@@ -161,6 +162,9 @@ async def project_dashboard_panel(project_id: str) -> None:
                         ui.label(str(len(pending_approval))).classes(f'text-h5 font-bold {warn_color}')
                         ui.label('Pending').classes('text-caption text-grey-7')
 
+            # System health card
+            _system_health_card(project_id)
+
             # Recent activity card
             if seen:
                 with ui.card().classes('w-full'):
@@ -176,6 +180,7 @@ async def project_dashboard_panel(project_id: str) -> None:
 
     _content()
     ui.timer(10.0, _content.refresh)
+    ProjectAlarmPanel(project_id)
 
 
 # ***************************************************************************
@@ -192,6 +197,8 @@ async def general_panel(project_id: str):
             LoggingCard(project_id)
         with ui.card().classes('w-full dense'):
             FileConfigCard(project_id)
+        with ui.card().classes('w-full dense'):
+            AlarmConfigCard(project_id)
         with ui.card().classes('w-full'):
             await danger_card(project_id)
 
@@ -300,12 +307,59 @@ async def provisioning_panel(project_id: str):
 async def devices_panel(project_id: str):
     with ui.expansion('Devices', value=True).classes('w-full q-mb-none').props('dense header-class="text-h6 font-bold"'):
         ui.markdown("""
-                _Devices_ are physical IoT nodes that connect to this project. 
-                Each device has its own directory and can be provisioned with a 
+                _Devices_ are physical IoT nodes that connect to this project.
+                Each device has its own directory and can be provisioned with a
                 short-lived bearer token.
-                
+
                 Double-click a device to edit its settings. Use the "New" button to create a new device.
                 """).classes('text-caption q-ma-none')
         ProjectDevicesTable(project_id)
+
+
+# ***************************************************************************
+
+def _system_health_card(project_id: str) -> None:
+    """Read-only card showing last known health of external backends."""
+    from app.health import get_project_health
+    import app.mqtt.backend as _mqtt_backend
+
+    health = get_project_health(project_id)
+    mqtt_status = _mqtt_backend.connection_status
+
+    with ui.card().classes('w-full'):
+        ui.label('System Health').classes('text-subtitle1 font-bold')
+        ui.separator()
+        with ui.column().classes('gap-1 q-mt-xs w-full'):
+            # MQTT
+            mqtt_ok = mqtt_status == 'connected'
+            _health_row('MQTT', mqtt_ok, mqtt_status if not mqtt_ok else '')
+
+            # Telemetry backend
+            tel = health.get(f'{project_id}:telemetry')
+            if tel is not None:
+                _health_row('Telemetry', tel['ok'], tel['message'] if not tel['ok'] else '')
+            else:
+                _health_row('Telemetry', None, 'No data received yet')
+
+            # Logging backend
+            log_h = health.get(f'{project_id}:logging')
+            if log_h is not None:
+                _health_row('Logging', log_h['ok'], log_h['message'] if not log_h['ok'] else '')
+            else:
+                _health_row('Logging', None, 'No data received yet')
+
+
+def _health_row(label: str, ok: bool | None, detail: str) -> None:
+    color = 'green' if ok is True else ('red' if ok is False else 'grey')
+    icon = 'check_circle' if ok is True else ('error' if ok is False else 'help')
+    with ui.row().classes('items-center gap-2 w-full'):
+        ui.icon(icon).classes(f'text-{color}')
+        ui.label(label).classes('text-body2 font-bold w-24')
+        if detail:
+            ui.label(detail).classes('text-caption text-grey-7 grow').style(
+                'overflow:hidden;text-overflow:ellipsis;white-space:nowrap'
+            )
+        else:
+            ui.space()
 
 

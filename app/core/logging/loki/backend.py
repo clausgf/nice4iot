@@ -1,6 +1,10 @@
-import httpx, json, time
+import asyncio
+import httpx
+import json
+import time
 
 from app.core.logging.models import LokiConfig
+from app.util import logger
 
 
 class LokiBackend:
@@ -17,11 +21,17 @@ class LokiBackend:
         if self.config.tenant_id:
             headers["X-Scope-OrgID"] = self.config.tenant_id
         auth = (self.config.username, self.config.password) if self.config.username else None
-        async with httpx.AsyncClient() as client:
-            await client.post(
-                self.config.log_url,
-                data=payload,
-                headers=headers,
-                auth=auth,
-                timeout=self.config.timeout,
-            )
+        try:
+            async with httpx.AsyncClient() as client:
+                async with asyncio.timeout(self.config.timeout):
+                    resp = await client.post(
+                        self.config.log_url,
+                        data=payload,
+                        headers=headers,
+                        auth=auth,
+                    )
+            if resp.status_code >= 400:
+                raise RuntimeError(f"Loki returned HTTP {resp.status_code}: {resp.text[:200]}")
+        except Exception as e:
+            logger.error(f"Loki backend error for {self.project_name}/{device_name}: {e}")
+            raise

@@ -13,6 +13,8 @@ An IoT device management platform written in Python. It provides a REST API for 
 - **HTTP forwarding** — authenticated devices can proxy arbitrary requests through the platform to configured backend URLs
 - **File serving & upload** — devices can fetch and upload files; device-specific files take precedence over project-wide defaults (ETag caching supported)
 - **Auto-generated UI** — forms and tables are derived from Pydantic models via [niceview](https://github.com/clausgf/niceview), keeping model and UI in sync without boilerplate
+- **Alarm system** — per-project alarm rules (metric thresholds + built-in device-unavailable rule); state-based with acknowledgment; alarm panels on project and device dashboards
+- **System health** — project dashboard shows live green/red status for MQTT, telemetry, and logging backends; external-call errors are captured without raising exceptions
 
 ### Management UI tabs
 
@@ -20,7 +22,7 @@ An IoT device management platform written in Python. It provides a REST API for 
 |---|---|
 | Projects list | — card grid |
 | Project | Dashboard · General · Provisioning · Files · Devices |
-| Device | Dashboard · General · Files · Data · Logs |
+| Device | Dashboard · General · Files · Data · Logs · Alarms |
 
 ---
 
@@ -188,6 +190,32 @@ Every call to `POST /api/telemetry` also appends a line to `<device>/.device_met
 ### UI Generation via niceview
 
 Forms and tables are not coded by hand. [niceview](https://github.com/clausgf/niceview) inspects Pydantic models and generates NiceGUI widgets. Field metadata (labels, editability, widget type) is expressed via `niceview.Field(...)` annotations on the model. `ModelForm.from_adapter(..., autosave=True)` binds the form to a `JsonAdapter` and saves on every change, removing the need for explicit Save buttons.
+
+### Alarm System
+
+Each project can define alarm rules that are evaluated whenever telemetry arrives or (for the built-in device-unavailable rule) by a background loop every 60 seconds.
+
+**Metric rules** — configured under *Project → General → Alarms*. Each rule specifies a telemetry kind, metric name, comparison operator (`<`, `=`, `>`), and threshold. When the condition is met the first time an `AlarmEvent` is created with `is_active=True`. When the condition clears the event is resolved (`is_active=False`). Condition re-fires re-open a resolved event rather than creating a duplicate.
+
+**Device unavailable rule** — built-in rule that fires when a device's `last_seen_at` is older than the project's online threshold (or the rule-specific override). Enabled/disabled and threshold-configurable under *Project → General → Alarms*.
+
+**Acknowledgment** — operators acknowledge individual events or all events at once. An acknowledged and resolved event is automatically pruned from storage on the next save. The **Device → Alarms** tab shows all events for one device; the **Project Dashboard** alarm panel shows project-wide events.
+
+**Device alarm badge** — the project Devices table shows an *Alarms* column with the count of active unacknowledged alarms per device.
+
+Storage: `<project>/.alarm_config.json` (rules) and `<project>/.alarm_events.json` (events), both written atomically.
+
+### System Health
+
+The *Project Dashboard* includes a **System Health** card showing the last known status of each external backend. Services tracked:
+
+| Indicator | Source |
+|---|---|
+| MQTT | `connection_status` from `app/mqtt/backend.py` |
+| Telemetry | Last write attempt to the configured remote backend (Prometheus / InfluxDB) |
+| Logging | Last write attempt to the configured log backend (Loki / file) |
+
+External-call errors are caught and recorded via `app/health.py` (`set_health(key, ok, message)`) instead of propagating exceptions. The dashboard card shows a green check or red error icon with the last error message.
 
 ---
 

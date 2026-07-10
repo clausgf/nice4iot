@@ -37,6 +37,23 @@ async def _mqtt_loop_wrapper() -> None:
     await mqtt_main_loop()
 
 
+async def _alarm_check_loop() -> None:
+    """Periodically evaluate the device-unavailable built-in alarm rule."""
+    import anyio
+    while True:
+        await asyncio.sleep(60)
+        try:
+            from app.core.project.backend import get_projects
+            from app.core.alarm.backend import evaluate_device_unavailable
+            projects = await anyio.to_thread.run_sync(get_projects)
+            for project in projects:
+                await anyio.to_thread.run_sync(
+                    lambda pn=project.name: evaluate_device_unavailable(pn)
+                )
+        except Exception as e:
+            _main_log.error(f"alarm_check_loop error: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Register callbacks to wire up MQTT ↔ file-backend without circular imports
@@ -51,19 +68,17 @@ async def lifespan(app: FastAPI):
     # Start background tasks
     mqtt_task = asyncio.create_task(_mqtt_loop_wrapper())
     watcher_task = asyncio.create_task(file_watcher_loop())
+    alarm_task = asyncio.create_task(_alarm_check_loop())
 
     yield
 
-    mqtt_task.cancel()
-    watcher_task.cancel()
-    try:
-        await mqtt_task
-    except asyncio.CancelledError:
-        pass
-    try:
-        await watcher_task
-    except asyncio.CancelledError:
-        pass
+    for task in (mqtt_task, watcher_task, alarm_task):
+        task.cancel()
+    for task in (mqtt_task, watcher_task, alarm_task):
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(lifespan=lifespan)

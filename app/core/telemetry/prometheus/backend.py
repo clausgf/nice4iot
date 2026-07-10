@@ -80,9 +80,16 @@ class PrometheusBackend:
             wr.timeseries.append(ts)
 
         payload = snappy.compress(wr.SerializeToString())
-        async with httpx.AsyncClient() as client:
-            async with asyncio.timeout(self.config.write_timeout):
-                await client.post(self.config.push_url, data=payload, headers=self._write_headers())
+        try:
+            async with httpx.AsyncClient() as client:
+                async with asyncio.timeout(self.config.write_timeout):
+                    resp = await client.post(self.config.push_url, data=payload,
+                                             headers=self._write_headers())
+            if resp.status_code >= 400:
+                raise RuntimeError(f"Prometheus remote write returned HTTP {resp.status_code}: {resp.text[:200]}")
+        except Exception as e:
+            logger.error(f"Prometheus backend error for {self.project_name}: {e}")
+            raise
 
     async def read(self, device_name: str, kind: str = 'default',
                    start: datetime.datetime | None = None,
