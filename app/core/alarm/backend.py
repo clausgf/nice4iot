@@ -16,6 +16,7 @@ from niceview.dataadapter import JsonAdapter
 from app.paths import project_dir
 from app.core.alarm.models import AlarmConfig, AlarmEvent
 from app.util import logger
+from app.util_json import LenientJsonAdapter, lenient_list_load
 
 # ---------------------------------------------------------------------------
 # File names and adapters
@@ -29,9 +30,9 @@ _events_ta = TypeAdapter(list[AlarmEvent])
 BUILTIN_DEVICE_UNAVAILABLE = 'device_unavailable'
 
 
-def get_alarm_config_adapter(project_name: str) -> JsonAdapter:
-    """Return a JsonAdapter for the project alarm configuration."""
-    return JsonAdapter(
+def get_alarm_config_adapter(project_name: str) -> LenientJsonAdapter:
+    """Return a LenientJsonAdapter for the project alarm configuration."""
+    return LenientJsonAdapter(
         AlarmConfig,
         project_dir(project_name) / ALARM_CONFIG_FILE,
         create_if_not_exist=True,
@@ -48,11 +49,7 @@ def load_alarm_events(project_name: str) -> list[AlarmEvent]:
     path = project_dir(project_name) / ALARM_EVENTS_FILE
     if not path.is_file():
         return []
-    try:
-        return _events_ta.validate_json(path.read_text())
-    except Exception as e:
-        logger.error(f"Failed to load alarm events for {project_name!r}: {e}")
-        return []
+    return lenient_list_load(AlarmEvent, path.read_text(), str(path))
 
 
 def save_alarm_events(project_name: str, events: list[AlarmEvent]) -> None:

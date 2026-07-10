@@ -8,6 +8,7 @@ from niceview.dataadapter import JsonAdapter
 
 from app.paths import project_dir, device_dir
 from app.util import logger
+from app.util_json import LenientJsonAdapter
 from app.core.telemetry.models import TelemetryBackend, TelemetryConfig
 from app.core.telemetry.prometheus.backend import PrometheusBackend
 from app.core.telemetry.influxdb.backend import InfluxLineBackend
@@ -36,10 +37,10 @@ def flush_telemetry_backend_cache() -> None:
     _backend_cache.clear()
 
 
-def get_telemetry_adapter(project_name: str) -> JsonAdapter:
-    """Get a JsonAdapter for the telemetry configuration of a project."""
-    return JsonAdapter(TelemetryConfig, project_dir(project_name) / TEL_FILE,
-                       create_if_not_exist=True, lock_field='updated_at')
+def get_telemetry_adapter(project_name: str) -> LenientJsonAdapter:
+    """Get a LenientJsonAdapter for the telemetry configuration of a project."""
+    return LenientJsonAdapter(TelemetryConfig, project_dir(project_name) / TEL_FILE,
+                              create_if_not_exist=True, lock_field='updated_at')
 
 
 def _get_active_backend(project_name: str) -> TelemetryBackend | None:

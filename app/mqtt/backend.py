@@ -26,6 +26,7 @@ from app.mqtt.models import MqttGlobalConfig
 from app.util import logger, is_valid_filename, is_valid_upload_filename
 
 from niceview.dataadapter import JsonAdapter
+from app.util_json import LenientJsonAdapter
 
 # ---------------------------------------------------------------------------
 # Module-level state
@@ -51,11 +52,11 @@ def register_file_publish_callback(callback: Callable) -> None:
 # Config adapter
 # ---------------------------------------------------------------------------
 
-def get_mqtt_adapter() -> JsonAdapter:
-    """Return a JsonAdapter for the global MQTT broker configuration."""
+def get_mqtt_adapter() -> LenientJsonAdapter:
+    """Return a LenientJsonAdapter for the global MQTT broker configuration."""
     config_path = Path(app_config.projects_dir).resolve().parent / '.mqtt.json'
-    return JsonAdapter(MqttGlobalConfig, config_path,
-                       create_if_not_exist=True, lock_field='updated_at')
+    return LenientJsonAdapter(MqttGlobalConfig, config_path,
+                              create_if_not_exist=True, lock_field='updated_at')
 
 
 # ---------------------------------------------------------------------------

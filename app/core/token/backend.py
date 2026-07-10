@@ -10,6 +10,7 @@ from pydantic import TypeAdapter
 from app.exceptions import AuthError
 from app.paths import project_dir
 from app.core.token.models import AuthToken, TOKEN_CHARS, TOKEN_MIN_LENGTH
+from app.util_json import lenient_list_load
 
 ###############################################################################
 
@@ -110,7 +111,7 @@ def load_device_tokens(project_name: str, device_name: str) -> list[AuthToken]:
     file = get_device_token_filename(project_name, device_name)
     if not file.exists():
         return []
-    return _token_list_adapter.validate_json(file.read_text())
+    return lenient_list_load(AuthToken, file.read_text(), str(file))
 
 
 def save_device_tokens(project_name: str, device_name: str, tokens: list[AuthToken]) -> None:

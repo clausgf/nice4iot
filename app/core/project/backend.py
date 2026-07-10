@@ -10,6 +10,7 @@ from app.paths import project_dir
 from app.core.token.backend import get_provisioning_token_adapter, validate_token
 from app.core.project.models import Project
 from app.util import logger, is_valid_filename
+from app.util_json import LenientJsonAdapter, lenient_model_load
 
 ###############################################################################
 
@@ -22,13 +23,13 @@ def project_filename(project_name: str) -> Path:
     return project_dir(project_name) / PROJECT_FILENAME
 
 
-def project_adapter(project_name: str) -> JsonAdapter:
-    """Return a JsonAdapter for the project file."""
-    return JsonAdapter(Project,
-                       project_filename(project_name),
-                       create_if_not_exist=True,
-                       created_field='created_at',
-                       lock_field='updated_at')
+def project_adapter(project_name: str) -> LenientJsonAdapter:
+    """Return a LenientJsonAdapter for the project file."""
+    return LenientJsonAdapter(Project,
+                              project_filename(project_name),
+                              create_if_not_exist=True,
+                              created_field='created_at',
+                              lock_field='updated_at')
 
 
 
@@ -62,7 +63,7 @@ def create_project(project_name: str) -> Project:
     try:
         now = datetime.datetime.now(datetime.timezone.utc)
         project = Project(name=project_name, created_at=now, updated_at=now)
-        JsonAdapter(Project, project_filename(project_name), create_if_not_exist=False).save(project)
+        LenientJsonAdapter(Project, project_filename(project_name), create_if_not_exist=False).save(project)
     except Exception:
         shutil.rmtree(project_path, ignore_errors=True)
         raise
@@ -81,7 +82,7 @@ def get_project(project_name: str, check_active: bool = True) -> Project:
     project_path = get_project_path(project_name)
     project_file = project_filename(project_name)
     if project_file.is_file():
-        project = Project.model_validate_json(project_file.read_text())
+        project = lenient_model_load(Project, project_file.read_text(), str(project_file))
         project.name = project_name
     else:
         stat_info = project_path.stat()
@@ -111,7 +112,7 @@ def rename_project(old_project_name: str, new_project_name: str) -> None:
     old_project_path.rename(new_project_path)
     new_json = project_filename(new_project_name)
     if new_json.is_file():
-        adapter = JsonAdapter(Project, new_json, create_if_not_exist=False, lock_field='updated_at')
+        adapter = LenientJsonAdapter(Project, new_json, create_if_not_exist=False, lock_field='updated_at')
         project_data = adapter.read()
         project_data.name = new_project_name
         adapter.save(project_data)

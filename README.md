@@ -191,6 +191,20 @@ Every call to `POST /api/telemetry` also appends a line to `<device>/.device_met
 
 Forms and tables are not coded by hand. [niceview](https://github.com/clausgf/niceview) inspects Pydantic models and generates NiceGUI widgets. Field metadata (labels, editability, widget type) is expressed via `niceview.Field(...)` annotations on the model. `ModelForm.from_adapter(..., autosave=True)` binds the form to a `JsonAdapter` and saves on every change, removing the need for explicit Save buttons.
 
+### Lenient JSON loading
+
+All config and data files (`.project.json`, `.device.json`, `.alarm_config.json`, `.tokens.json`, etc.) are read via `LenientJsonAdapter` / `lenient_model_load` / `lenient_list_load` from `app/util_json.py`. The loaders tolerate hand-edited files:
+
+| Situation | Behaviour |
+|---|---|
+| Malformed JSON | `log.error`, return model defaults |
+| Unknown field | `log.error`, ignore the field |
+| Bad field value | `log.error`, use model default for that field only |
+| Missing required field (no default) | `log.error`, raise (last resort) |
+| Bad item in a list | `log.error`, skip that item, keep the rest |
+
+Exceptions are never raised for recoverable errors; each field is treated independently so a single corrupt value never blocks the rest of the document.
+
 ### Alarm System
 
 Each project can define alarm rules that are evaluated whenever telemetry arrives or (for the built-in device-unavailable rule) by a background loop every 60 seconds.

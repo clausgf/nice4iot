@@ -15,6 +15,7 @@ from app.core.device.models import Device
 from app.core.project.backend import get_project, get_project_path
 from app.core.project.models import Project
 from app.util import logger, is_valid_filename
+from app.util_json import LenientJsonAdapter, lenient_model_load
 
 ###############################################################################
 
@@ -158,7 +159,7 @@ def get_device(project_name: str, device_name: str, check_active: bool = False) 
     device_path = get_device_path(project_name, device_name)
     device_file = device_path / DEVICE_FILE_NAME
     if device_file.is_file():
-        device = Device.model_validate_json(device_file.read_text())
+        device = lenient_model_load(Device, device_file.read_text(), str(device_file))
         device.name = device_name
     else:
         stat_info = device_path.stat()
@@ -336,11 +337,11 @@ def device_provision(project: Project, device_name: str):
 
 ###############################################################################
 
-def device_adapter(project_name: str, device_name: str) -> JsonAdapter:
-    """Return a JsonAdapter for the device JSON file (for UI ModelForm binding)."""
+def device_adapter(project_name: str, device_name: str) -> LenientJsonAdapter:
+    """Return a LenientJsonAdapter for the device JSON file (for UI ModelForm binding)."""
     device_file = get_device_path(project_name, device_name) / DEVICE_FILE_NAME
-    return JsonAdapter(Device, device_file, create_if_not_exist=True,
-                       created_field='created_at', lock_field='updated_at')
+    return LenientJsonAdapter(Device, device_file, create_if_not_exist=True,
+                              created_field='created_at', lock_field='updated_at')
 
 
 def rename_device(project_name: str, old_device_name: str, new_device_name: str) -> None:
@@ -361,7 +362,7 @@ def rename_device(project_name: str, old_device_name: str, new_device_name: str)
     old_path.rename(new_path)
     device_json = new_path / DEVICE_FILE_NAME
     if device_json.is_file():
-        device = Device.model_validate_json(device_json.read_text())
+        device = lenient_model_load(Device, device_json.read_text(), str(device_json))
         device.name = new_device_name
         temp = device_json.with_name(device_json.name + '.tmp')
         temp.write_text(device.model_dump_json(indent=2))
