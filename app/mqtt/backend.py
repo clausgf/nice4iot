@@ -327,7 +327,7 @@ async def mqtt_main_loop() -> None:
                     for suffix in ('telemetry/+', 'log', 'upload/+'):
                         sub_topic = f"{prefix}/{suffix}"
                         await client.subscribe(sub_topic)
-                        logger.info(f"MQTT subscribed to {sub_topic}")
+                        logger.info(f"MQTT subscribed to {sub_topic} [{project.name!r}]")
 
                 # Process incoming messages
                 async for message in client.messages:

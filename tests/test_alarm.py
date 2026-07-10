@@ -3,7 +3,7 @@ Acceptance tests for core.alarm.
 
 Tests cover:
 - Metric alarm rule evaluation (trigger, resolve, re-trigger, inactive rule)
-- Built-in device-unavailable rule
+- Built-in device-offline rule
 - Event acknowledgment (single and bulk)
 - Event persistence (save / load round-trip)
 - Query helpers (get_pending_alarms, counts)
@@ -17,19 +17,20 @@ from app.config import app_config
 from app.core.project.backend import create_project
 from app.core.device.backend import create_device, get_device, update_device
 from app.core.device.models import Device
-from app.core.alarm.models import AlarmConfig, AlarmEvent, MetricAlarmRule, DeviceUnavailableConfig
+from app.core.alarm.models import AlarmConfig, AlarmEvent, MetricAlarmRule, DeviceOfflineConfig
 from app.core.device.backend import flush_device_list_cache
 from app.core.alarm.backend import (
     get_alarm_config_adapter,
     load_alarm_events,
     save_alarm_events,
     evaluate_metric_rules,
-    evaluate_device_unavailable,
+    evaluate_device_offline,
     acknowledge_alarm,
     acknowledge_all_alarms,
     get_pending_alarms,
     get_device_alarm_count,
     get_project_alarm_count,
+    BUILTIN_DEVICE_OFFLINE,
 )
 from app.health import set_health, get_health, get_project_health
 
@@ -192,63 +193,63 @@ def test_metric_rule_greater_than(project, device):
 
 
 # ---------------------------------------------------------------------------
-# Device unavailable rule
+# Device offline rule
 # ---------------------------------------------------------------------------
 
-def test_device_unavailable_triggers(project, device):
+def test_device_offline_triggers(project, device):
     # Mark device as last seen a long time ago
     d = get_device(PROJECT, DEVICE)
     d.last_seen_at = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)
     update_device(d)
 
     config = get_alarm_config_adapter(PROJECT).read()
-    config.device_unavailable = DeviceUnavailableConfig(is_active=True, threshold_s=60)
+    config.device_offline = DeviceOfflineConfig(is_active=True)
     get_alarm_config_adapter(PROJECT).save(config)
 
-    evaluate_device_unavailable(PROJECT)
+    evaluate_device_offline(PROJECT)
     events = load_alarm_events(PROJECT)
     assert len(events) == 1
-    assert events[0].rule_name == 'device_unavailable'
+    assert events[0].rule_name == BUILTIN_DEVICE_OFFLINE
     assert events[0].device_name == DEVICE
     assert events[0].is_active is True
 
 
-def test_device_unavailable_does_not_trigger_if_online(project, device):
+def test_device_offline_does_not_trigger_if_online(project, device):
     d = get_device(PROJECT, DEVICE)
     d.last_seen_at = datetime.datetime.now(datetime.timezone.utc)
     update_device(d)
 
     config = get_alarm_config_adapter(PROJECT).read()
-    config.device_unavailable = DeviceUnavailableConfig(is_active=True, threshold_s=300)
+    config.device_offline = DeviceOfflineConfig(is_active=True)
     get_alarm_config_adapter(PROJECT).save(config)
 
-    evaluate_device_unavailable(PROJECT)
+    evaluate_device_offline(PROJECT)
     assert load_alarm_events(PROJECT) == []
 
 
-def test_device_unavailable_inactive_rule_skipped(project, device):
+def test_device_offline_inactive_rule_skipped(project, device):
     d = get_device(PROJECT, DEVICE)
     d.last_seen_at = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)
     update_device(d)
 
     config = get_alarm_config_adapter(PROJECT).read()
-    config.device_unavailable = DeviceUnavailableConfig(is_active=False, threshold_s=60)
+    config.device_offline = DeviceOfflineConfig(is_active=False)
     get_alarm_config_adapter(PROJECT).save(config)
 
-    evaluate_device_unavailable(PROJECT)
+    evaluate_device_offline(PROJECT)
     assert load_alarm_events(PROJECT) == []
 
 
-def test_device_unavailable_resolves_when_back_online(project, device):
+def test_device_offline_resolves_when_back_online(project, device):
     d = get_device(PROJECT, DEVICE)
     d.last_seen_at = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)
     update_device(d)
 
     config = get_alarm_config_adapter(PROJECT).read()
-    config.device_unavailable = DeviceUnavailableConfig(is_active=True, threshold_s=60)
+    config.device_offline = DeviceOfflineConfig(is_active=True)
     get_alarm_config_adapter(PROJECT).save(config)
 
-    evaluate_device_unavailable(PROJECT)
+    evaluate_device_offline(PROJECT)
     assert load_alarm_events(PROJECT)[0].is_active is True
 
     d = get_device(PROJECT, DEVICE)
@@ -256,21 +257,21 @@ def test_device_unavailable_resolves_when_back_online(project, device):
     update_device(d)
     flush_device_list_cache()  # bypass the TTL cache so get_devices sees fresh data
 
-    evaluate_device_unavailable(PROJECT)
+    evaluate_device_offline(PROJECT)
     assert load_alarm_events(PROJECT)[0].is_active is False
 
 
-def test_device_unavailable_no_duplicate_on_repeated_eval(project, device):
+def test_device_offline_no_duplicate_on_repeated_eval(project, device):
     d = get_device(PROJECT, DEVICE)
     d.last_seen_at = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)
     update_device(d)
 
     config = get_alarm_config_adapter(PROJECT).read()
-    config.device_unavailable = DeviceUnavailableConfig(is_active=True, threshold_s=60)
+    config.device_offline = DeviceOfflineConfig(is_active=True)
     get_alarm_config_adapter(PROJECT).save(config)
 
-    evaluate_device_unavailable(PROJECT)
-    evaluate_device_unavailable(PROJECT)
+    evaluate_device_offline(PROJECT)
+    evaluate_device_offline(PROJECT)
     assert len(load_alarm_events(PROJECT)) == 1
 
 

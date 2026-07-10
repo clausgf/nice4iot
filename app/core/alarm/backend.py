@@ -26,7 +26,7 @@ ALARM_EVENTS_FILE = '.alarm_events.json'
 
 _events_ta = TypeAdapter(list[AlarmEvent])
 
-BUILTIN_DEVICE_UNAVAILABLE = 'device_unavailable'
+BUILTIN_DEVICE_OFFLINE = 'device_offline'
 
 
 def get_alarm_config_adapter(project_name: str) -> JsonAdapter:
@@ -151,8 +151,8 @@ def evaluate_metric_rules(project_name: str, device_name: str,
         save_alarm_events(project_name, events)
 
 
-def evaluate_device_unavailable(project_name: str) -> None:
-    """Evaluate the built-in device-unavailable rule for all active devices.
+def evaluate_device_offline(project_name: str) -> None:
+    """Evaluate the built-in device-offline rule for all active devices.
 
     Called synchronously from the background alarm check loop.
     """
@@ -164,7 +164,7 @@ def evaluate_device_unavailable(project_name: str) -> None:
     except Exception:
         return
 
-    if not config.device_unavailable.is_active:
+    if not config.device_offline.is_active:
         return
 
     try:
@@ -173,7 +173,7 @@ def evaluate_device_unavailable(project_name: str) -> None:
     except Exception:
         return
 
-    threshold_s = config.device_unavailable.threshold_s or project.device_online_threshold_s
+    threshold_s = project.device_online_threshold_s
     events = load_alarm_events(project_name)
     now = datetime.datetime.now(datetime.timezone.utc)
     changed = False
@@ -181,13 +181,13 @@ def evaluate_device_unavailable(project_name: str) -> None:
     for device in devices:
         if not device.is_active:
             continue
-        unavailable = not is_device_online(device, threshold_s)
-        existing = _find(events, BUILTIN_DEVICE_UNAVAILABLE, device.name)
+        offline = not is_device_online(device, threshold_s)
+        existing = _find(events, BUILTIN_DEVICE_OFFLINE, device.name)
 
-        if unavailable:
+        if offline:
             if existing is None:
                 events.append(AlarmEvent(
-                    rule_name=BUILTIN_DEVICE_UNAVAILABLE,
+                    rule_name=BUILTIN_DEVICE_OFFLINE,
                     device_name=device.name,
                     triggered_at=now,
                     last_seen_at=now,
@@ -195,7 +195,7 @@ def evaluate_device_unavailable(project_name: str) -> None:
                     is_active=True,
                 ))
                 logger.warning(f"Alarm triggered [{project_name}/{device.name}] "
-                               f"rule=device_unavailable: not seen for >{threshold_s}s")
+                               f"rule=device_offline: not seen for >{threshold_s}s")
                 changed = True
             elif not existing.is_active:
                 existing.is_active = True

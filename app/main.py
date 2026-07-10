@@ -38,17 +38,17 @@ async def _mqtt_loop_wrapper() -> None:
 
 
 async def _alarm_check_loop() -> None:
-    """Periodically evaluate the device-unavailable built-in alarm rule."""
+    """Periodically evaluate the device-offline built-in alarm rule."""
     import anyio
     while True:
         await asyncio.sleep(60)
         try:
             from app.core.project.backend import get_projects
-            from app.core.alarm.backend import evaluate_device_unavailable
+            from app.core.alarm.backend import evaluate_device_offline
             projects = await anyio.to_thread.run_sync(get_projects)
             for project in projects:
                 await anyio.to_thread.run_sync(
-                    lambda pn=project.name: evaluate_device_unavailable(pn)
+                    lambda pn=project.name: evaluate_device_offline(pn)
                 )
         except Exception as e:
             _main_log.error(f"alarm_check_loop error: {e}")

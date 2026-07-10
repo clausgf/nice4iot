@@ -1,7 +1,7 @@
 """
 Alarm UI components.
 
-AlarmConfigCard       — Project/General tab: device-unavailable + metric rules
+AlarmConfigCard       — Project/General tab: device-offline + metric rules
 ProjectAlarmPanel     — Project Dashboard: alarm summary across all devices
 DeviceAlarmPanel      — Device Dashboard: alarms for one device
 DeviceAlarmsTab       — Device "Alarms" tab: full list + acknowledgment
@@ -18,7 +18,7 @@ from app.core.alarm.backend import (
     acknowledge_alarm,
     acknowledge_all_alarms,
 )
-from app.core.alarm.models import AlarmConfig, MetricAlarmRule, DeviceUnavailableConfig
+from app.core.alarm.models import AlarmConfig, MetricAlarmRule, DeviceOfflineConfig
 from niceview.form import ModelForm
 
 
@@ -26,18 +26,18 @@ from niceview.form import ModelForm
 # Project/General — alarm configuration card
 # ---------------------------------------------------------------------------
 
-class _DeviceUnavailableAdapter:
-    """Thin adapter that reads/writes only the device_unavailable sub-object."""
+class _DeviceOfflineAdapter:
+    """Thin adapter that reads/writes only the device_offline sub-object."""
 
     def __init__(self, alarm_adapter) -> None:
         self._alarm = alarm_adapter
 
-    def read(self) -> DeviceUnavailableConfig:
-        return self._alarm.read().device_unavailable
+    def read(self) -> DeviceOfflineConfig:
+        return self._alarm.read().device_offline
 
-    def save(self, item: DeviceUnavailableConfig) -> DeviceUnavailableConfig:
+    def save(self, item: DeviceOfflineConfig) -> DeviceOfflineConfig:
         cfg = self._alarm.read()
-        cfg.device_unavailable = item
+        cfg.device_offline = item
         self._alarm.save(cfg)
         return item
 
@@ -49,19 +49,18 @@ def AlarmConfigCard(project_name: str) -> None:
     ):
         adapter = get_alarm_config_adapter(project_name)
 
-        # Built-in: device unavailable — use a sub-adapter so ModelForm never
-        # sees the nested DeviceUnavailableConfig as an opaque widget value.
+        # Built-in: device offline — use a sub-adapter so ModelForm never
+        # sees the nested DeviceOfflineConfig as an opaque widget value.
         with ui.card().classes('w-full q-mb-sm'):
-            ui.label('Device Unavailable').classes('text-caption font-bold text-grey-7')
-            du_adapter = _DeviceUnavailableAdapter(adapter)
+            ui.label('Device Offline').classes('text-caption font-bold text-grey-7')
+            du_adapter = _DeviceOfflineAdapter(adapter)
             form_builtin = ModelForm.from_adapter(
-                DeviceUnavailableConfig,
+                DeviceOfflineConfig,
                 du_adapter,
                 autosave=True,
             )
             with ui.row().classes('items-center gap-4 w-full'):
                 form_builtin.render_field('is_active')
-                form_builtin.render_field('threshold_s').props('dense outlined').classes('w-48')
 
         # Metric rules list
         ui.separator()

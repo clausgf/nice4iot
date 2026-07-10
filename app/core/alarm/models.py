@@ -51,21 +51,13 @@ class MetricAlarmRule(BaseModel):
         ] = ''
 
 
-class DeviceUnavailableConfig(BaseModel):
-    """Built-in rule: fire when a device has not been seen for longer than threshold_s."""
+class DeviceOfflineConfig(BaseModel):
+    """Built-in rule: fire when a device has not been seen within the project online threshold."""
 
     is_active: Annotated[bool,
-            Field(title='Device unavailable alarm active'),
+            Field(title='Device offline alarm active'),
             niceview.Field()
         ] = True
-
-    threshold_s: Annotated[int,
-            Field(default=0,
-                  title='Unavailability threshold (s)',
-                  description='Seconds without contact before alarm fires. '
-                              '0 = use the project-level online threshold.'),
-            niceview.Field(widget_type='ui.number')
-        ]
 
 
 class AlarmConfig(BaseModel):
@@ -73,8 +65,8 @@ class AlarmConfig(BaseModel):
 
     updated_at: datetime.datetime | None = None
 
-    device_unavailable: DeviceUnavailableConfig = Field(
-        default_factory=DeviceUnavailableConfig
+    device_offline: DeviceOfflineConfig = Field(
+        default_factory=DeviceOfflineConfig
     )
 
     rules: list[MetricAlarmRule] = []

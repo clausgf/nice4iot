@@ -13,7 +13,7 @@ An IoT device management platform written in Python. It provides a REST API for 
 - **HTTP forwarding** — authenticated devices can proxy arbitrary requests through the platform to configured backend URLs
 - **File serving & upload** — devices can fetch and upload files; device-specific files take precedence over project-wide defaults (ETag caching supported)
 - **Auto-generated UI** — forms and tables are derived from Pydantic models via [niceview](https://github.com/clausgf/niceview), keeping model and UI in sync without boilerplate
-- **Alarm system** — per-project alarm rules (metric thresholds + built-in device-unavailable rule); state-based with acknowledgment; alarm panels on project and device dashboards
+- **Alarm system** — per-project alarm rules (metric thresholds + built-in device-offline rule); state-based with acknowledgment; alarm panels on project and device dashboards
 - **System health** — project dashboard shows live green/red status for MQTT, telemetry, and logging backends; external-call errors are captured without raising exceptions
 
 ### Management UI tabs
@@ -207,11 +207,11 @@ Exceptions are never raised for recoverable errors; each field is treated indepe
 
 ### Alarm System
 
-Each project can define alarm rules that are evaluated whenever telemetry arrives or (for the built-in device-unavailable rule) by a background loop every 60 seconds.
+Each project can define alarm rules that are evaluated whenever telemetry arrives or (for the built-in device-offline rule) by a background loop every 60 seconds.
 
 **Metric rules** — configured under *Project → General → Alarms*. Each rule specifies a telemetry kind, metric name, comparison operator (`<`, `=`, `>`), and threshold. When the condition is met the first time an `AlarmEvent` is created with `is_active=True`. When the condition clears the event is resolved (`is_active=False`). Condition re-fires re-open a resolved event rather than creating a duplicate.
 
-**Device unavailable rule** — built-in rule that fires when a device's `last_seen_at` is older than the project's online threshold (or the rule-specific override). Enabled/disabled and threshold-configurable under *Project → General → Alarms*.
+**Device offline rule** — built-in rule that fires when a device's `last_seen_at` is older than the project's online threshold (configured under *Project → General*). Enabled/disabled under *Project → General → Alarms*.
 
 **Acknowledgment** — operators acknowledge individual events or all events at once. An acknowledged and resolved event is automatically pruned from storage on the next save. The **Device → Alarms** tab shows all events for one device; the **Project Dashboard** alarm panel shows project-wide events.
 
