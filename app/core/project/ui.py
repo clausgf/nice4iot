@@ -119,15 +119,21 @@ async def project_dashboard_panel(project_id: str) -> None:
         with ui.grid().classes('grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 w-full'):
             # Overview card
             with ui.card().classes('w-full'):
-                ui.label('Project Overview').classes('text-subtitle1 font-bold')
-                ui.separator()
-                with ui.row().classes('items-center gap-2 q-mt-xs'):
+                # Row 1: project name — space — tags
+                with ui.row().classes('items-center w-full gap-2'):
+                    ui.label(project.name).classes('text-subtitle1 font-bold')
+                    ui.space()
+                    if project.tags:
+                        for tag in project.tags[:4]:
+                            ui.chip(tag).props('dense color=primary text-color=white')
+                        if len(project.tags) > 4:
+                            ui.chip(f'+{len(project.tags) - 4}').props('dense color=grey text-color=white')
+                # Row 2: status chips
+                with ui.row().classes('items-center gap-2'):
                     color = 'green' if project.is_active else 'grey'
                     ui.chip('Active' if project.is_active else 'Inactive').props(f'dense color={color} text-color=white')
-                    # HTTP chip
                     http_color = 'green' if project.is_http_enabled else 'grey'
                     ui.chip('HTTP').props(f'dense color={http_color} text-color=white')
-                    # MQTT chip
                     if project.is_mqtt_enabled:
                         mqtt_color = 'green' if mqtt_connection_status == 'connected' else 'orange'
                     else:
@@ -135,12 +141,6 @@ async def project_dashboard_panel(project_id: str) -> None:
                     ui.chip('MQTT').props(f'dense color={mqtt_color} text-color=white')
                 if project.description:
                     ui.label(project.description).classes('text-body2 q-mt-xs')
-                if project.tags:
-                    with ui.row().classes('gap-1 q-mt-xs flex-wrap'):
-                        for tag in project.tags[:4]:
-                            ui.chip(tag).props('dense color=primary text-color=white')
-                        if len(project.tags) > 4:
-                            ui.chip(f'+{len(project.tags) - 4}').props('dense color=grey text-color=white')
                 ui.label(f'Created: {render_datetime(project.created_at)}').classes('text-caption text-grey-7 q-mt-sm')
 
             # Device health card
