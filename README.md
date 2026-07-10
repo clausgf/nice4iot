@@ -193,7 +193,7 @@ Forms and tables are not coded by hand. [niceview](https://github.com/clausgf/ni
 
 ### Lenient JSON loading
 
-All config and data files (`.project.json`, `.device.json`, `.alarm_config.json`, `.tokens.json`, etc.) are read via `LenientJsonAdapter` / `lenient_model_load` / `lenient_list_load` from `app/util_json.py`. The loaders tolerate hand-edited files:
+All config and data files (`.project.json`, `.device.json`, `.alarm_config.json`, `.tokens.json`, etc.) are read via `JsonAdapter` / `lenient_model_load` / `lenient_list_load` from [niceview](https://github.com/clausgf/niceview). The loaders tolerate hand-edited files:
 
 | Situation | Behaviour |
 |---|---|

@@ -12,7 +12,7 @@ import pytest
 from pathlib import Path
 from pydantic import BaseModel, Field
 
-from app.util_json import lenient_model_load, lenient_list_load, LenientJsonAdapter
+from niceview.dataadapter import JsonAdapter, lenient_model_load, lenient_list_load
 
 
 # ---------------------------------------------------------------------------
@@ -57,7 +57,7 @@ class TestLenientModelLoad:
         with caplog.at_level(logging.ERROR, logger='uvicorn'):
             obj = lenient_model_load(Simple, '[1, 2, 3]', context='test.json')
         assert obj == Simple()
-        assert 'not an object' in caplog.text
+        assert 'JSON object' in caplog.text
 
     def test_unknown_field_is_logged_and_ignored(self, caplog):
         import logging
@@ -160,7 +160,7 @@ class TestLenientListLoad:
         with caplog.at_level(logging.ERROR, logger='uvicorn'):
             result = lenient_list_load(Simple, '{"a": 1}', context='tokens.json')
         assert result == []
-        assert 'not an array' in caplog.text
+        assert 'JSON array' in caplog.text
 
     def test_one_bad_item_skipped_rest_kept(self, caplog):
         import logging
@@ -189,7 +189,7 @@ class TestLenientListLoad:
         assert len(result) == 2
         assert result[0].required_id == 'ok'
         assert result[1].required_id == 'also_ok'
-        assert 'Cannot load item' in caplog.text
+        assert 'Skipping item' in caplog.text
 
     def test_empty_list_returns_empty(self):
         result = lenient_list_load(Simple, '[]')
@@ -206,15 +206,15 @@ class TestLenientListLoad:
 
 
 # ===========================================================================
-# LenientJsonAdapter (integration)
+# JsonAdapter (integration)
 # ===========================================================================
 
-class TestLenientJsonAdapter:
+class TestJsonAdapter:
 
     def test_reads_valid_file(self, tmp_path):
         f = tmp_path / 'cfg.json'
         f.write_text('{"name": "hello", "count": 3}')
-        adapter = LenientJsonAdapter(Simple, f, create_if_not_exist=False)
+        adapter = JsonAdapter(Simple, f, create_if_not_exist=False)
         obj = adapter.read()
         assert obj.name == 'hello'
         assert obj.count == 3
@@ -223,7 +223,7 @@ class TestLenientJsonAdapter:
         import logging
         f = tmp_path / 'cfg.json'
         f.write_text('{broken json')
-        adapter = LenientJsonAdapter(Simple, f, create_if_not_exist=False)
+        adapter = JsonAdapter(Simple, f, create_if_not_exist=False)
         with caplog.at_level(logging.ERROR, logger='uvicorn'):
             obj = adapter.read()
         assert obj == Simple()
@@ -232,7 +232,7 @@ class TestLenientJsonAdapter:
     def test_missing_file_returns_default(self, tmp_path, caplog):
         import logging
         f = tmp_path / 'does_not_exist.json'
-        adapter = LenientJsonAdapter(Simple, f, create_if_not_exist=False)
+        adapter = JsonAdapter(Simple, f, create_if_not_exist=False)
         with caplog.at_level(logging.ERROR, logger='uvicorn'):
             obj = adapter.read()
         assert obj == Simple()
@@ -242,7 +242,7 @@ class TestLenientJsonAdapter:
         import logging
         f = tmp_path / 'cfg.json'
         f.write_text('{"name": "x", "obsolete_field": 99}')
-        adapter = LenientJsonAdapter(Simple, f, create_if_not_exist=False)
+        adapter = JsonAdapter(Simple, f, create_if_not_exist=False)
         with caplog.at_level(logging.ERROR, logger='uvicorn'):
             obj = adapter.read()
         assert obj.name == 'x'
@@ -252,7 +252,7 @@ class TestLenientJsonAdapter:
         import logging
         f = tmp_path / 'cfg.json'
         f.write_text('{"name": "ok", "count": "bad"}')
-        adapter = LenientJsonAdapter(Simple, f, create_if_not_exist=False)
+        adapter = JsonAdapter(Simple, f, create_if_not_exist=False)
         with caplog.at_level(logging.ERROR, logger='uvicorn'):
             obj = adapter.read()
         assert obj.name == 'ok'
@@ -260,7 +260,7 @@ class TestLenientJsonAdapter:
 
     def test_save_and_read_roundtrip(self, tmp_path):
         f = tmp_path / 'cfg.json'
-        adapter = LenientJsonAdapter(Simple, f, create_if_not_exist=False)
+        adapter = JsonAdapter(Simple, f, create_if_not_exist=False)
         obj = Simple(name='saved', count=42)
         adapter.save(obj)
         loaded = adapter.read()
@@ -270,7 +270,7 @@ class TestLenientJsonAdapter:
     def test_create_if_not_exist_writes_defaults(self, tmp_path):
         f = tmp_path / 'new.json'
         assert not f.exists()
-        LenientJsonAdapter(Simple, f, create_if_not_exist=True)
+        JsonAdapter(Simple, f, create_if_not_exist=True)
         assert f.exists()
-        obj = LenientJsonAdapter(Simple, f, create_if_not_exist=False).read()
+        obj = JsonAdapter(Simple, f, create_if_not_exist=False).read()
         assert obj == Simple()

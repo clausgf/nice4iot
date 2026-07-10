@@ -23,7 +23,7 @@ from app.config import app_config
 from app.paths import project_dir as get_project_dir, device_dir as get_device_dir
 from app.core.file.models import FileConfig
 from app.util import logger, is_valid_upload_filename
-from app.util_json import LenientJsonAdapter
+from niceview.dataadapter import JsonAdapter
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -36,9 +36,9 @@ _FILE_CONFIG_FILENAME = '.file_config.json'
 # Config adapter
 # ---------------------------------------------------------------------------
 
-def get_file_adapter(project_name: str) -> LenientJsonAdapter:
-    """Return a LenientJsonAdapter for the per-project file configuration."""
-    return LenientJsonAdapter(FileConfig,
+def get_file_adapter(project_name: str) -> JsonAdapter:
+    """Return a JsonAdapter for the per-project file configuration."""
+    return JsonAdapter(FileConfig,
                               get_project_dir(project_name) / _FILE_CONFIG_FILENAME,
                               create_if_not_exist=True, lock_field='updated_at')
 

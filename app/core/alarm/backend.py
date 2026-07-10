@@ -11,12 +11,11 @@ Storage layout
 """
 import datetime
 from pydantic import TypeAdapter
-from niceview.dataadapter import JsonAdapter
+from niceview.dataadapter import JsonAdapter, lenient_list_load
 
 from app.paths import project_dir
 from app.core.alarm.models import AlarmConfig, AlarmEvent
 from app.util import logger
-from app.util_json import LenientJsonAdapter, lenient_list_load
 
 # ---------------------------------------------------------------------------
 # File names and adapters
@@ -30,9 +29,9 @@ _events_ta = TypeAdapter(list[AlarmEvent])
 BUILTIN_DEVICE_UNAVAILABLE = 'device_unavailable'
 
 
-def get_alarm_config_adapter(project_name: str) -> LenientJsonAdapter:
-    """Return a LenientJsonAdapter for the project alarm configuration."""
-    return LenientJsonAdapter(
+def get_alarm_config_adapter(project_name: str) -> JsonAdapter:
+    """Return a JsonAdapter for the project alarm configuration."""
+    return JsonAdapter(
         AlarmConfig,
         project_dir(project_name) / ALARM_CONFIG_FILE,
         create_if_not_exist=True,

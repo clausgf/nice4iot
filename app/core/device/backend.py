@@ -15,7 +15,7 @@ from app.core.device.models import Device
 from app.core.project.backend import get_project, get_project_path
 from app.core.project.models import Project
 from app.util import logger, is_valid_filename
-from app.util_json import LenientJsonAdapter, lenient_model_load
+from niceview.dataadapter import JsonAdapter, lenient_model_load
 
 ###############################################################################
 
@@ -337,10 +337,10 @@ def device_provision(project: Project, device_name: str):
 
 ###############################################################################
 
-def device_adapter(project_name: str, device_name: str) -> LenientJsonAdapter:
-    """Return a LenientJsonAdapter for the device JSON file (for UI ModelForm binding)."""
+def device_adapter(project_name: str, device_name: str) -> JsonAdapter:
+    """Return a JsonAdapter for the device JSON file (for UI ModelForm binding)."""
     device_file = get_device_path(project_name, device_name) / DEVICE_FILE_NAME
-    return LenientJsonAdapter(Device, device_file, create_if_not_exist=True,
+    return JsonAdapter(Device, device_file, create_if_not_exist=True,
                               created_field='created_at', lock_field='updated_at')
 
 

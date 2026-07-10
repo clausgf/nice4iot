@@ -10,7 +10,7 @@ from pydantic import TypeAdapter
 from app.exceptions import AuthError
 from app.paths import project_dir
 from app.core.token.models import AuthToken, TOKEN_CHARS, TOKEN_MIN_LENGTH
-from app.util_json import lenient_list_load
+from niceview.dataadapter import lenient_list_load
 
 ###############################################################################
 

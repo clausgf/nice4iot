@@ -4,14 +4,14 @@ from app.paths import project_dir
 from app.core.logging.models import LoggingBackend, LoggingConfig
 from app.core.logging.loki.backend import LokiBackend
 from app.core.logging.file.backend import FileLogBackend
-from app.util_json import LenientJsonAdapter
+from niceview.dataadapter import JsonAdapter
 
 LOG_FILE = '.logging.json'
 
 
-def get_logging_adapter(project_name: str) -> LenientJsonAdapter:
-    """Get a LenientJsonAdapter for the logging configuration of a project."""
-    return LenientJsonAdapter(LoggingConfig, project_dir(project_name) / LOG_FILE,
+def get_logging_adapter(project_name: str) -> JsonAdapter:
+    """Get a JsonAdapter for the logging configuration of a project."""
+    return JsonAdapter(LoggingConfig, project_dir(project_name) / LOG_FILE,
                               create_if_not_exist=True, lock_field='updated_at')
 
 

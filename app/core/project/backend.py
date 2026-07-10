@@ -10,7 +10,7 @@ from app.paths import project_dir
 from app.core.token.backend import get_provisioning_token_adapter, validate_token
 from app.core.project.models import Project
 from app.util import logger, is_valid_filename
-from app.util_json import LenientJsonAdapter, lenient_model_load
+from niceview.dataadapter import JsonAdapter, lenient_model_load
 
 ###############################################################################
 
@@ -23,9 +23,9 @@ def project_filename(project_name: str) -> Path:
     return project_dir(project_name) / PROJECT_FILENAME
 
 
-def project_adapter(project_name: str) -> LenientJsonAdapter:
-    """Return a LenientJsonAdapter for the project file."""
-    return LenientJsonAdapter(Project,
+def project_adapter(project_name: str) -> JsonAdapter:
+    """Return a JsonAdapter for the project file."""
+    return JsonAdapter(Project,
                               project_filename(project_name),
                               create_if_not_exist=True,
                               created_field='created_at',
@@ -63,7 +63,7 @@ def create_project(project_name: str) -> Project:
     try:
         now = datetime.datetime.now(datetime.timezone.utc)
         project = Project(name=project_name, created_at=now, updated_at=now)
-        LenientJsonAdapter(Project, project_filename(project_name), create_if_not_exist=False).save(project)
+        JsonAdapter(Project, project_filename(project_name), create_if_not_exist=False).save(project)
     except Exception:
         shutil.rmtree(project_path, ignore_errors=True)
         raise
@@ -112,7 +112,7 @@ def rename_project(old_project_name: str, new_project_name: str) -> None:
     old_project_path.rename(new_project_path)
     new_json = project_filename(new_project_name)
     if new_json.is_file():
-        adapter = LenientJsonAdapter(Project, new_json, create_if_not_exist=False, lock_field='updated_at')
+        adapter = JsonAdapter(Project, new_json, create_if_not_exist=False, lock_field='updated_at')
         project_data = adapter.read()
         project_data.name = new_project_name
         adapter.save(project_data)
