@@ -18,6 +18,7 @@ from app.core.token.ui import TokenListCard
 from app.util import is_valid_filename, render_datetime
 from niceview.form import ModelForm
 from niceview.util import confirm_dialog, input_dialog
+from app.extensions import get_device_cards, get_device_tabs, maybe_await
 
 import logging
 log = logging.getLogger("uvicorn")
@@ -51,6 +52,7 @@ async def device_subpage(
         data_tab      = ui.tab('Data')
         logs_tab      = ui.tab('Logs')
         alarms_tab    = ui.tab('Alarms')
+        extension_tabs = [(ui.tab(label), render_fn) for label, render_fn in get_device_tabs()]
     tab = tab or 'Dashboard'
     with ui.tab_panels(tabs, value=tab).classes('w-full'):
         with ui.tab_panel(dashboard_tab):
@@ -66,6 +68,9 @@ async def device_subpage(
         with ui.tab_panel(alarms_tab):
             from app.core.alarm.ui import DeviceAlarmsTab
             DeviceAlarmsTab(project_id, device_id)
+        for extension_tab, render_fn in extension_tabs:
+            with ui.tab_panel(extension_tab):
+                await maybe_await(render_fn(project_id, device_id))
 
 
 # ***************************************************************************
@@ -77,13 +82,15 @@ def device_dashboard_panel(project_name: str, device_name: str) -> None:
     from app.core.alarm.ui import DeviceAlarmPanel
 
     @ui.refreshable
-    def _content() -> None:
+    async def _content() -> None:
         device = get_device(project_name, device_name)
         project = get_project(project_name, check_active=False)
         now = datetime.datetime.now(datetime.timezone.utc)
         with ui.grid().classes('grid-cols-1 sm:grid-cols-2 gap-4 w-full'):
             _status_card(device, project_name, project.device_online_threshold_s, now)
             _provisioning_card(device)
+            for render_fn in get_device_cards('dashboard'):
+                await maybe_await(render_fn(project_name, device_name))
 
     _content()
     ui.timer(10.0, _content.refresh)
@@ -166,6 +173,8 @@ async def device_general_panel(project_name: str, device_name: str) -> None:
             _device_tokens_card(project_name, device_name)
         with ui.card().classes('w-full'):
             await _device_danger_card(project_name, device_name)
+        for render_fn in get_device_cards('general'):
+            await maybe_await(render_fn(project_name, device_name))
 
 
 def _device_general_card(project_name: str, device_name: str) -> None:

@@ -144,6 +144,10 @@ def create_device(device: Device) -> Device:
         shutil.rmtree(device_path, ignore_errors=True)
         raise
     _invalidate_device_list_cache(device.project_name)
+
+    from app.extensions import notify_device_provisioned
+    notify_device_provisioned(device)
+
     return device
 
 

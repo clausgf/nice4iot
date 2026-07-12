@@ -19,6 +19,7 @@ from app.util import is_valid_filename, render_datetime
 from app.core.project.models import Project
 from app.core.project.backend import create_project, delete_project, get_project, get_projects, project_adapter, rename_project
 from app.core.alarm.ui import AlarmConfigCard, ProjectAlarmPanel
+from app.extensions import get_project_cards, get_project_tabs, maybe_await
 from niceview.form import ModelForm
 from niceview.util import confirm_dialog, input_dialog
 
@@ -87,6 +88,7 @@ async def project_subpage(args: PageArguments, nav: ui.element, project_id: str,
         provisioning_tab = ui.tab('Provisioning')
         files_tab = ui.tab('Files')
         devices_tab = ui.tab('Devices')
+        extension_tabs = [(ui.tab(label), render_fn) for label, render_fn in get_project_tabs()]
     tab = tab if tab else dashboard_tab.label
     with ui.tab_panels(tabs, value=tab).classes('w-full'):
         with ui.tab_panel(dashboard_tab):
@@ -99,6 +101,9 @@ async def project_subpage(args: PageArguments, nav: ui.element, project_id: str,
             project_files_panel(project_id)
         with ui.tab_panel(devices_tab):
             await devices_panel(project_id)
+        for extension_tab, render_fn in extension_tabs:
+            with ui.tab_panel(extension_tab):
+                await maybe_await(render_fn(project_id))
 
 # ***************************************************************************
 
@@ -106,7 +111,7 @@ async def project_dashboard_panel(project_id: str) -> None:
     """Overview cards shown on the project Dashboard tab (auto-refreshes every 10 s)."""
 
     @ui.refreshable
-    def _content() -> None:
+    async def _content() -> None:
         from app.mqtt.backend import connection_status as mqtt_connection_status
         project = get_project(project_id, check_active=False)
         devices = get_devices(project_id)
@@ -178,6 +183,10 @@ async def project_dashboard_panel(project_id: str) -> None:
                                 .on('click', lambda _, dn=d.name: ui.navigate.to(device_url(project_id, dn)))
                             ui.label(render_datetime(d.last_seen_at)).classes('text-caption text-grey-7')
 
+            # Extension cards
+            for render_fn in get_project_cards('dashboard'):
+                await maybe_await(render_fn(project_id))
+
     _content()
     ui.timer(10.0, _content.refresh)
     ProjectAlarmPanel(project_id)
@@ -199,6 +208,8 @@ async def general_panel(project_id: str):
             FileConfigCard(project_id)
         with ui.card().classes('w-full dense'):
             AlarmConfigCard(project_id)
+        for render_fn in get_project_cards('general'):
+            await maybe_await(render_fn(project_id))
         with ui.card().classes('w-full'):
             await danger_card(project_id)
 

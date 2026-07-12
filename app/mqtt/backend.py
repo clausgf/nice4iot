@@ -13,7 +13,7 @@ import asyncio
 import datetime
 import json
 import re
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -37,6 +37,10 @@ _client: aiomqtt.Client | None = None
 
 _file_publish_callback: Callable | None = None
 
+# Extensions (see docs/extensions.md): (topic_filter, handler) pairs,
+# independent of the project/device topic scheme below.
+_extension_topic_handlers: list[tuple[str, Callable[[str, bytes], Awaitable[None]]]] = []
+
 
 def register_file_publish_callback(callback: Callable) -> None:
     """Register a callback invoked when a device uploads a file via MQTT.
@@ -46,6 +50,31 @@ def register_file_publish_callback(callback: Callable) -> None:
     """
     global _file_publish_callback
     _file_publish_callback = callback
+
+
+def register_topic_handler(topic_filter: str, handler: Callable[[str, bytes], Awaitable[None]]) -> None:
+    """Register an extension handler for messages matching topic_filter.
+
+    topic_filter uses standard MQTT wildcards ('+' one level, '#' the
+    rest). handler(topic, payload) is awaited for every matching message
+    that no project/device route already claims. Independent of the
+    project/device topic scheme — any topic layout is fine.
+    """
+    _extension_topic_handlers.append((topic_filter, handler))
+
+
+def _topic_matches(topic: str, topic_filter: str) -> bool:
+    """Return True if *topic* matches the MQTT wildcard *topic_filter* ('+', '#')."""
+    filter_parts = topic_filter.split('/')
+    topic_parts = topic.split('/')
+    for i, part in enumerate(filter_parts):
+        if part == '#':
+            return True
+        if i >= len(topic_parts):
+            return False
+        if part != '+' and part != topic_parts[i]:
+            return False
+    return len(filter_parts) == len(topic_parts)
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +205,17 @@ async def _handle_message(topic: str, payload: bytes) -> None:
 
     route = await anyio.to_thread.run_sync(lambda: _route_topic(topic))
     if route is None:
-        logger.debug(f"MQTT: no route for topic {topic!r}")
+        matched = False
+        for topic_filter, handler in _extension_topic_handlers:
+            if _topic_matches(topic, topic_filter):
+                matched = True
+                try:
+                    await handler(topic, payload)
+                except Exception as e:
+                    logger.error(f"MQTT extension handler for {topic_filter!r} "
+                                 f"failed on {topic!r}: {e}")
+        if not matched:
+            logger.debug(f"MQTT: no route for topic {topic!r}")
         return
 
     project_name = route['project']
@@ -283,6 +322,21 @@ async def publish_file(project_name: str, device_name: str, topic_base: str,
         return False
 
 
+async def mqtt_publish(topic: str, payload: bytes, qos: int = 0, retain: bool = False) -> None:
+    """Publish an arbitrary message for extensions (see docs/extensions.md).
+
+    Logs a warning and drops the message if there is no active connection,
+    same behavior as publish_file().
+    """
+    if _client is None:
+        logger.warning(f"mqtt_publish: no active MQTT connection, dropping message for {topic!r}")
+        return
+    try:
+        await _client.publish(topic, payload=payload, qos=qos, retain=retain)
+    except Exception as e:
+        logger.error(f"mqtt_publish failed for {topic}: {e}")
+
+
 # ---------------------------------------------------------------------------
 # Main loop
 # ---------------------------------------------------------------------------
@@ -336,6 +390,11 @@ async def mqtt_main_loop() -> None:
                         sub_topic = f"{prefix}/{suffix}"
                         await client.subscribe(sub_topic)
                         logger.info(f"MQTT subscribed to {sub_topic} [{project.name!r}]")
+
+                # Subscribe to extension-registered topic filters (docs/extensions.md)
+                for topic_filter, _ in _extension_topic_handlers:
+                    await client.subscribe(topic_filter)
+                    logger.info(f"MQTT subscribed to extension filter {topic_filter!r}")
 
                 # Process incoming messages
                 async for message in client.messages:

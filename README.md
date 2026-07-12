@@ -15,6 +15,7 @@ An IoT device management platform written in Python. It provides a REST API for 
 - **Auto-generated UI** — forms and tables are derived from Pydantic models via [niceview](https://github.com/clausgf/niceview), keeping model and UI in sync without boilerplate
 - **Alarm system** — per-project alarm rules (metric thresholds + built-in device-offline rule); state-based with acknowledgment; alarm panels on project and device dashboards
 - **System health** — project dashboard shows live green/red status for MQTT, telemetry, and logging backends; external-call errors are captured without raising exceptions
+- **Extensions** — separately deployed packages can add their own REST endpoints, MQTT pub/sub, and UI cards/tabs, and get notified when a new device is provisioned; see [docs/extensions.md](docs/extensions.md)
 
 ### Management UI tabs
 
