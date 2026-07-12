@@ -331,6 +331,51 @@ Settings are read from environment variables (or a `.env` file):
 | `AUTH_LOGOUT_URL` | `null` | `proxy` provider: logout link shown in the user menu (e.g. `/oauth2/sign_out`); unset hides it |
 | `AUTH_HTPASSWD_FILE` | `data/htpasswd` | `password` provider: bcrypt htpasswd file, manage with `htpasswd -B` |
 
+### Authentication
+
+`AUTH_PROVIDER` selects how the UI authenticates users:
+
+- `none` (default): no authentication (local development, or when
+  access is already restricted at the network level).
+- `proxy`: an authenticating reverse proxy in front of the app (e.g.
+  Caddy with oauth2-proxy) handles the login; the app reads the
+  forwarded identity from request headers.
+  - `AUTH_USER_HEADERS`: JSON list of headers carrying the username
+    (defaults match oauth2-proxy: `X-Forwarded-Preferred-Username`,
+    `X-Forwarded-User`, `X-Forwarded-Email`); the first non-empty
+    value is shown in the UI.
+  - `AUTH_LOGOUT_URL`: logout link shown in the user menu, e.g.
+    `/oauth2/sign_out`; unset hides the entry.
+  - The headers are only trustworthy when the app is reachable
+    exclusively through the proxy.
+  - Deployment note (Caddy + oauth2-proxy): oauth2-proxy must be told
+    to expose the identity (`--set-xauthrequest`, and/or
+    `--pass-user-headers` when proxying through oauth2-proxy itself)
+    and Caddy's `forward_auth` block must forward it to the app, e.g.
+
+    ```
+    forward_auth oauth2-proxy:4180 {
+        uri /oauth2/auth
+        copy_headers X-Auth-Request-Preferred-Username>X-Forwarded-Preferred-Username X-Auth-Request-User>X-Forwarded-User X-Auth-Request-Email>X-Forwarded-Email
+    }
+    ```
+
+    Set `AUTH_LOGOUT_URL=/oauth2/sign_out` for a working logout entry.
+    After deploying, check once which of the configured headers
+    actually arrives and adjust `AUTH_USER_HEADERS` if needed.
+- `password`: built-in login page. Users live in an htpasswd file with
+  bcrypt hashes (`AUTH_HTPASSWD_FILE`, default `data/htpasswd`),
+  maintained with the standard Apache tool:
+
+  ```
+  htpasswd -c -B data/htpasswd alice   # create file and first user
+  htpasswd -B data/htpasswd bob        # add/update further users
+  ```
+
+  Only bcrypt entries (`-B`) are accepted; the file is re-read on each
+  login attempt, so changes apply without a restart. Set a strong
+  `NICEGUI_STORAGE_SECRET`, since it signs the session cookie.
+
 ---
 
 ## Deployment
@@ -355,7 +400,7 @@ event loop. The telemetry hot path (`_append_local_metrics`) is wrapped inside
 `write_telemetry`. This is the project-wide rule; see CLAUDE.md for details.
 
 **Pluggable UI authentication, disabled by default.**
-The REST API endpoints are protected by bearer tokens (a separate mechanism). The NiceGUI management UI has its own optional auth, selected via `AUTH_PROVIDER` (`none` by default): `proxy` reads the identity forwarded by an authenticating reverse proxy (e.g., Caddy with oauth2-proxy), `password` is a built-in login page backed by a bcrypt htpasswd file. See `app/auth/`.
+The REST API endpoints are protected by bearer tokens (a separate mechanism). The NiceGUI management UI has its own optional auth, selected via `AUTH_PROVIDER` (`none` by default) — see [Authentication](#authentication) above and `app/auth/`.
 
 **In-process caches with TTL and SIGUSR1 flush.**
 `get_devices()` (called on every Project Dashboard load) and `_get_active_backend()` (called on every telemetry push) cache their results for 60 seconds. Structural changes via the UI invalidate the device list cache immediately. Out-of-band filesystem changes (editing files directly, external scripts) are reflected after the 60 s TTL. To force an immediate flush without restarting, send `SIGUSR1`:
