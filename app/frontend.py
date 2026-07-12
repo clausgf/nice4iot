@@ -1,4 +1,5 @@
 import asyncio
+import re
 
 from nicegui import context, ui
 from fastapi.responses import RedirectResponse
@@ -112,11 +113,32 @@ def page_login():
         ui.button('Log in', on_click=try_login).classes('w-full')
 
 
+_EXTENSION_PAGE_PATTERN = re.compile(r'^/(?P<project_id>[^/]+)/ext/(?P<extension_name>[^/]+)/?$')
+
+
 @ui.page('/')
 @ui.page('/{_:path}')
 async def home_page():
     if (redirect := login_redirect()):
         return redirect
+
+    # Standalone extension pages (docs/extensions.md) get full control of
+    # the page — no header/navigation below. Matched here rather than as
+    # a separate @ui.page(...) per extension: NiceGUI/Starlette routes
+    # are matched in registration order, and this catch-all is already
+    # registered by the time extensions register themselves at startup,
+    # so a separate route would silently never be reached.
+    request = context.client.request
+    path = request.url.path if request else ''
+    if (m := _EXTENSION_PAGE_PATTERN.match(path)):
+        from app.extensions import get_project_page, is_extension_enabled, maybe_await
+        project_id, extension_name = m.group('project_id'), m.group('extension_name')
+        render_fn = get_project_page(extension_name)
+        if render_fn is not None:
+            if not is_extension_enabled(project_id, extension_name):
+                return RedirectResponse(f'/{project_id}')
+            await maybe_await(render_fn(project_id))
+            return
 
     with ui.header(elevated=True).classes('items-center gap-3'):
         ui.html(_logo).props('width=16 height=16').classes('text-white cursor-pointer shrink-0') \

@@ -197,6 +197,37 @@ expected to build the full tab content (it runs inside the page's
 `ui.tab_panel(...)`). Like cards, the tab simply doesn't appear when your
 extension is disabled for that project.
 
+## Standalone project pages
+
+Cards and tabs render *inside* nice4iot's normal project page. Sometimes
+you want the opposite — a dedicated, simplified UI at its own URL, e.g.
+for a kiosk display or wall tablet that shouldn't look like the admin
+tool at all:
+
+```python
+from app.extensions import register_project_page
+
+async def _kiosk_view(project_name: str) -> None:
+    ui.label(f'Screens for {project_name}')
+    # full control: no nice4iot header, breadcrumb, or user menu here
+
+def register(app):
+    register_project_page(_kiosk_view)
+```
+
+This serves at `/<project_name>/ext/<extension_name>` (get the URL with
+`app.routes.project_extension_url(project_name, extension_name)` — handy
+for linking to it from one of your own cards). `render_fn` owns the
+**entire** page; nice4iot renders nothing around it. There is no
+mandatory "back to nice4iot" link — add one yourself with
+`app.routes.project_url(project_name)` if you want one, e.g. as a small
+link in the corner.
+
+Login and per-project enablement are still enforced before `render_fn`
+runs, same as everywhere else — nothing to check yourself. Only one
+standalone page per extension; calling `register_project_page` twice
+raises `RuntimeError`.
+
 ## MQTT
 
 Import from `app.mqtt.backend`:
@@ -292,7 +323,7 @@ from nicegui import ui
 
 from app.extensions import (
     mount_extension_router, register_project_card, register_project_tab,
-    register_device_provisioned_callback,
+    register_project_page, register_device_provisioned_callback,
 )
 from app.mqtt.backend import register_topic_handler
 from app.paths import extension_project_dir
@@ -312,6 +343,9 @@ def _dashboard_card(project_name: str) -> None:
 async def _screens_tab(project_name: str) -> Any:
     ui.label(f'Screens for {project_name}')
 
+async def _kiosk_view(project_name: str) -> None:
+    ui.label(f'Screens for {project_name}')  # no nice4iot header/nav around this
+
 async def _on_status(project_name: str, topic: str, payload: bytes) -> None:
     logger.info(f"epaper status for {project_name}: {topic} = {payload!r}")
 
@@ -324,6 +358,7 @@ def register(app: FastAPI) -> None:
     mount_extension_router(app, router)
     register_project_card('dashboard', _dashboard_card)
     register_project_tab('E-Paper', _screens_tab)
+    register_project_page(_kiosk_view)  # /<project_name>/ext/epaper
     register_topic_handler('status', _on_status)  # ext/epaper/+/status
     register_device_provisioned_callback(_on_new_device)
 ```

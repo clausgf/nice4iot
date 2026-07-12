@@ -31,6 +31,8 @@ _device_cards: dict[CardSection, list[tuple[str, Callable[[str, str], Any]]]] = 
 _project_tabs: list[tuple[str, str, Callable[[str], Any]]] = []  # (extension_name, label, render_fn)
 _device_tabs: list[tuple[str, str, Callable[[str, str], Any]]] = []
 
+_project_pages: dict[str, Callable[[str], Any]] = {}  # extension_name -> render_fn
+
 _device_provisioned_callbacks: list[tuple[str, Callable[[Device], None]]] = []
 
 _current_extension: contextvars.ContextVar[str | None] = contextvars.ContextVar('_current_extension', default=None)
@@ -146,6 +148,32 @@ def get_device_tabs(project_name: str) -> list[tuple[str, Callable[[str, str], A
 
 
 # ---------------------------------------------------------------------------
+# Standalone project pages
+# ---------------------------------------------------------------------------
+
+def register_project_page(render_fn: Callable[[str], Any]) -> None:
+    """Register a standalone page at /<project_id>/ext/<extension_name>.
+
+    render_fn(project_name) gets full control of the page content — no
+    nice4iot header/navigation is rendered around it, and there is no
+    mandatory back-link (add your own with app.routes.project_url() if
+    you want one). Still gated by login and per-project enablement,
+    both checked before render_fn runs. Only one page per extension.
+    """
+    extension_name = _extension_name()
+    if extension_name in _project_pages:
+        raise RuntimeError(
+            f"extension {extension_name!r} already registered a project page (only one allowed)"
+        )
+    _project_pages[extension_name] = render_fn
+
+
+def get_project_page(extension_name: str) -> Callable[[str], Any] | None:
+    """Return the registered standalone-page render_fn for extension_name, or None."""
+    return _project_pages.get(extension_name)
+
+
+# ---------------------------------------------------------------------------
 # Events
 # ---------------------------------------------------------------------------
 
@@ -214,5 +242,6 @@ def _clear_registries() -> None:
         _device_cards[section].clear()
     _project_tabs.clear()
     _device_tabs.clear()
+    _project_pages.clear()
     _device_provisioned_callbacks.clear()
     _registered_extension_names.clear()

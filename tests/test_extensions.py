@@ -21,6 +21,7 @@ from app.extensions import (
     get_device_cards,
     get_device_tabs,
     get_project_cards,
+    get_project_page,
     get_project_tabs,
     get_registered_extension_names,
     is_extension_enabled,
@@ -29,6 +30,7 @@ from app.extensions import (
     register_device_provisioned_callback,
     register_device_tab,
     register_project_card,
+    register_project_page,
     register_project_tab,
     registering,
 )
@@ -140,6 +142,29 @@ def test_device_tab_only_returned_when_enabled(project):
     assert get_device_tabs(project) == []
     _enable(project, 'ext1')
     assert get_device_tabs(project) == [('Extra', fn)]
+
+
+# ---------------------------------------------------------------------------
+# Standalone project pages
+# ---------------------------------------------------------------------------
+
+def test_register_project_page_round_trip():
+    fn = lambda project_name: None
+    with registering('ext1'):
+        register_project_page(fn)
+
+    assert get_project_page('ext1') is fn
+
+
+def test_get_project_page_unregistered_returns_none():
+    assert get_project_page('does-not-exist') is None
+
+
+def test_register_project_page_twice_raises():
+    with registering('ext1'):
+        register_project_page(lambda project_name: None)
+        with pytest.raises(RuntimeError):
+            register_project_page(lambda project_name: None)
 
 
 # ---------------------------------------------------------------------------
