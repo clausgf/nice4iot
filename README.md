@@ -16,6 +16,7 @@ An IoT device management platform written in Python. It provides a REST API for 
 - **Alarm system** — per-project alarm rules (metric thresholds + built-in device-offline rule); state-based with acknowledgment; alarm panels on project and device dashboards
 - **System health** — project dashboard shows live green/red status for MQTT, telemetry, and logging backends; external-call errors are captured without raising exceptions
 - **Extensions** — separately deployed packages can add their own REST endpoints, MQTT pub/sub, and UI cards/tabs, and get notified when a new device is provisioned; see [docs/extensions.md](docs/extensions.md)
+- **Admin UI authentication** — optional, pluggable (`none`/`proxy`/`password`), disabled by default; see `app/auth/`
 
 ### Management UI tabs
 
@@ -325,6 +326,10 @@ Settings are read from environment variables (or a `.env` file):
 | `MAX_LOG_SIZE` | `8192` | Maximum log body size in bytes (8 KiB) |
 | `TIMEZONE` | `Europe/Berlin` | Server timezone (for log timestamps) |
 | `NICEGUI_STORAGE_SECRET` | `""` | Secret for NiceGUI session storage |
+| `AUTH_PROVIDER` | `none` | Admin UI auth: `none`, `proxy` (reverse-proxy-forwarded identity), or `password` (built-in login, htpasswd) |
+| `AUTH_USER_HEADERS` | see below | `proxy` provider: header names carrying the forwarded username, first non-empty wins |
+| `AUTH_LOGOUT_URL` | `null` | `proxy` provider: logout link shown in the user menu (e.g. `/oauth2/sign_out`); unset hides it |
+| `AUTH_HTPASSWD_FILE` | `data/htpasswd` | `password` provider: bcrypt htpasswd file, manage with `htpasswd -B` |
 
 ---
 
@@ -349,8 +354,8 @@ IO-heavy backend calls with `anyio.to_thread.run_sync` to avoid blocking the
 event loop. The telemetry hot path (`_append_local_metrics`) is wrapped inside
 `write_telemetry`. This is the project-wide rule; see CLAUDE.md for details.
 
-**No UI authentication.**
-The REST API endpoints are protected by bearer tokens, but the NiceGUI management UI has no login. This is only safe when the UI is placed behind an authenticating reverse proxy (e.g., Caddy with forward auth).
+**Pluggable UI authentication, disabled by default.**
+The REST API endpoints are protected by bearer tokens (a separate mechanism). The NiceGUI management UI has its own optional auth, selected via `AUTH_PROVIDER` (`none` by default): `proxy` reads the identity forwarded by an authenticating reverse proxy (e.g., Caddy with oauth2-proxy), `password` is a built-in login page backed by a bcrypt htpasswd file. See `app/auth/`.
 
 **In-process caches with TTL and SIGUSR1 flush.**
 `get_devices()` (called on every Project Dashboard load) and `_get_active_backend()` (called on every telemetry push) cache their results for 60 seconds. Structural changes via the UI invalidate the device list cache immediately. Out-of-band filesystem changes (editing files directly, external scripts) are reflected after the 60 s TTL. To force an immediate flush without restarting, send `SIGUSR1`:
@@ -403,7 +408,6 @@ MQTT authentication is currently managed by the broker. A future version will in
 
 ## Open Questions / TODO
 
-- **UI authentication** — implement a login screen or document the expectation that the UI is always behind an authenticating reverse proxy.
 - **Forwarding security** — forwarding strips the `Authorization` header but forwards all other client headers verbatim; review whether this is appropriate for all backends.
 - **Multi-user / RBAC** — all UI operators share the same access level.
 - **Backup and restore** — no tooling or documentation for backup, restore, or migration of the `data/projects/` directory.

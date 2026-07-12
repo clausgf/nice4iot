@@ -1,9 +1,13 @@
-from nicegui import ui
+import asyncio
+
+from nicegui import context, ui
+from fastapi.responses import RedirectResponse
 
 from app.core.project.ui import all_projects_subpage, project_subpage
 from app.core.device.ui import device_subpage
 from app.routes import projects_url, ROUTE_DEVICE, ROUTE_PROJECT, ROUTE_PROJECTS
 from app.config import app_config
+from app.auth import get_auth_provider, PasswordAuthProvider
 
 import logging
 log = logging.getLogger('uvicorn')
@@ -35,9 +39,38 @@ _logo = '''<?xml version="1.0" encoding="UTF-8"?>
 </svg>'''
 
 
+def login_redirect():
+    """
+    Server-side redirect to the login page for unauthenticated users, or
+    None if the page may be shown. Nice4iot routes almost everything
+    through the single home_page() catch-all below, so this is checked
+    there once rather than on every individual page.
+    """
+    provider = get_auth_provider()
+    request = context.client.request
+    if provider.login_required and provider.get_user(request) is None:
+        root_path = request.scope.get('root_path', '') if request else ''
+        return RedirectResponse(f"{root_path}/login")
+    return None
+
+
 def _user_menu() -> None:
-    with ui.button(icon='person').props('flat color=white'):
+    provider = get_auth_provider()
+    username = provider.get_user(context.client.request)
+
+    with ui.button(username or '', icon='person').props('flat color=white'):
         with ui.menu():
+            if provider.login_required:
+                if not username:
+                    ui.menu_item('Not signed in').props('disable')
+                if provider.logout_url():
+                    def do_logout():
+                        provider.logout()
+                        ui.navigate.to(provider.logout_url() or '/')
+                    with ui.menu_item(on_click=do_logout).classes('items-center gap-x-2'):
+                        ui.icon('logout').props('size=large')
+                        ui.label('Logout')
+                ui.separator()
             with ui.menu_item().classes('items-center gap-x-2'):
                 ui.icon('light_mode').props('size=large')
                 ui.label('Light Mode').on('click', lambda: ui.dark_mode().disable())
@@ -53,9 +86,38 @@ def _user_menu() -> None:
                 ui.link('Repository', 'https://github.com/clausgf/nice4iot', new_tab=True).classes('no-underline text-inherit')
 
 
+@ui.page('/login')
+def page_login():
+    provider = get_auth_provider()
+    if not isinstance(provider, PasswordAuthProvider) or provider.get_user():
+        request = context.client.request
+        root_path = request.scope.get('root_path', '') if request else ''
+        return RedirectResponse(f"{root_path}/")
+
+    with ui.card().classes('absolute-center items-stretch'):
+        ui.label('4IoT').classes('text-h6')
+        username = ui.input('Username').props('autofocus')
+        password = ui.input('Password', password=True, password_toggle_button=True)
+
+        async def try_login():
+            # bcrypt verification is CPU bound, keep it off the event loop
+            if await asyncio.to_thread(provider.verify, username.value, password.value):
+                provider.login(username.value)
+                ui.navigate.to('/')
+            else:
+                ui.notify('Wrong username or password', type='negative')
+
+        username.on('keydown.enter', try_login)
+        password.on('keydown.enter', try_login)
+        ui.button('Log in', on_click=try_login).classes('w-full')
+
+
 @ui.page('/')
 @ui.page('/{_:path}')
 async def home_page():
+    if (redirect := login_redirect()):
+        return redirect
+
     with ui.header(elevated=True).classes('items-center gap-3'):
         ui.html(_logo).props('width=16 height=16').classes('text-white cursor-pointer shrink-0') \
             .on('click', lambda: ui.navigate.to(projects_url()))
