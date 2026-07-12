@@ -111,6 +111,11 @@ class Project(BaseModel):
             Field(description='Free-form labels for grouping and filtering projects.')
         ] = []
 
+    enabled_extensions: Annotated[list[str],
+            Field(description='Names of installed extensions active for this project. '
+                               'Disabled (absent) by default; edited via the Extensions card.')
+        ] = []  # not shown in the general form; niceview.Field() intentionally omitted
+
     @field_validator('device_tokens_expire_in', mode='before')
     @classmethod
     def _parse_expire_in_legacy(cls, v: Any) -> int:

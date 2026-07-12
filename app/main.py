@@ -112,9 +112,12 @@ app.include_router(file_router, prefix='/api', tags=['file'])
 import importlib
 import pkgutil
 import extensions as _extensions_ns
+from app.extensions import registering as _registering
 for _, _ext_module_name, _ in pkgutil.iter_modules(_extensions_ns.__path__, _extensions_ns.__name__ + '.'):
     _ext_module = importlib.import_module(_ext_module_name)
-    _ext_module.register(app)
+    _ext_name = _ext_module_name.removeprefix(_extensions_ns.__name__ + '.')
+    with _registering(_ext_name):
+        _ext_module.register(app)
     _main_log.info(f"Registered extension {_ext_module_name!r}")
 
 ui.run_with(app, storage_secret=app_config.nicegui_storage_secret)

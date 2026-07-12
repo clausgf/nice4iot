@@ -6,8 +6,9 @@ and tabs on the project and device pages), and that get notified when a
 new device is provisioned.
 
 An extension is a normal `uv`/pip dependency — there is no plugin config
-file and no separate "enable this extension" setting. Installing the
-package *is* enabling it.
+file to list installed extensions. Installing the package makes it
+*available*; each project then opts in individually (see Activation below,
+disabled by default).
 
 ## Package layout
 
@@ -80,28 +81,63 @@ before it starts serving requests. This is the one place where you wire
 up everything else described below — mount routers, register UI cards and
 tabs, subscribe to MQTT topics, register event callbacks.
 
+`register(app)` only declares what your extension *can* do — it runs once
+globally, not per project. Whether any of it actually fires for a given
+project is decided by activation (next section).
+
+## Activation
+
+Every extension is **disabled by default** for every project. A project
+admin turns it on from the project's General tab → **Extensions** card,
+which lists every installed (i.e. discovered) extension with a checkbox.
+
+There is no `register()`/`deregister()` per project — that would require
+extensions to symmetrically undo everything they registered, which is
+fragile, and REST routes / MQTT subscriptions can't be cleanly unmounted
+at runtime anyway. Instead, nice4iot filters centrally at the point of
+use:
+
+- **Cards, tabs, the device-provisioned callback** already receive
+  `project_name` — nice4iot checks activation before calling your code.
+  You don't write any enablement check yourself.
+- **REST and MQTT** are mounted/subscribed globally at startup (they have
+  to be — routes and subscriptions aren't per-project resources), so
+  nice4iot instead requires your topics and routes to *contain* the
+  project name in a fixed, predictable place, so it can extract it and
+  check activation before your handler runs. See the REST and MQTT
+  sections below for the exact shape.
+
 ## REST API
 
-Extensions own their FastAPI routing directly — there is no separate REST
-registry. Build an `APIRouter` and mount it yourself:
+Build a normal `APIRouter`, but mount it with `mount_extension_router()`
+instead of `app.include_router()` directly:
 
 ```python
-from fastapi import APIRouter
+from fastapi import APIRouter, FastAPI
+from app.extensions import mount_extension_router
 
 router = APIRouter()
 
-@router.get("/screens/{screen_id}/image.png")
-async def get_image(screen_id: str):
+@router.get("/{project_name}/screens/{screen_id}/image.png")
+async def get_image(project_name: str, screen_id: str):
     ...
 
-def register(app):
-    app.include_router(router, prefix="/api/epaper")
+def register(app: FastAPI) -> None:
+    mount_extension_router(app, router)
 ```
 
-Nothing prevents you from also exposing a NiceGUI page directly on `app`
-if you need routes outside the card/tab mechanism below, but prefer the
-card/tab APIs for anything meant to appear inside the normal project/device
-navigation.
+`mount_extension_router` mounts the router under `/api/ext/<extension_name>`
+(so the route above becomes
+`/api/ext/epaper/{project_name}/screens/{screen_id}/image.png`) and adds a
+dependency that 404s the request when the extension is disabled for
+`project_name` — before your handler runs. **Every route in the router
+must declare `project_name` as a path parameter**; a route that doesn't
+raises `RuntimeError` at request time (a loud failure, not a silent
+bypass).
+
+If you genuinely need a route with no project scope (rare), mount it with
+plain `app.include_router()` instead — it then bypasses activation
+entirely, so make sure that's actually what you want.
 
 ## UI: cards and tabs
 
@@ -142,7 +178,8 @@ def register(app):
 ```
 
 `render_fn` may be a regular function or an `async def` — both are
-supported.
+supported. The card simply isn't rendered for projects where your
+extension is disabled; nothing to check yourself.
 
 ### Tabs
 
@@ -157,7 +194,8 @@ def register_device_tab(label: str, render_fn: Callable[[str, str], Any]) -> Non
 
 `render_fn` receives the same arguments as a card's `render_fn` and is
 expected to build the full tab content (it runs inside the page's
-`ui.tab_panel(...)`).
+`ui.tab_panel(...)`). Like cards, the tab simply doesn't appear when your
+extension is disabled for that project.
 
 ## MQTT
 
@@ -167,30 +205,36 @@ Import from `app.mqtt.backend`:
 from app.mqtt.backend import mqtt_publish, register_topic_handler
 ```
 
-Two primitives, deliberately independent of nice4iot's own project/device
-topic scheme — your extension can use any topic layout it likes:
-
 ```python
 async def mqtt_publish(topic: str, payload: bytes, qos: int = 0, retain: bool = False) -> None: ...
 
-def register_topic_handler(topic_filter: str,
-                            handler: Callable[[str, bytes], Awaitable[None]]) -> None: ...
+def register_topic_handler(suffix: str,
+                            handler: Callable[[str, str, bytes], Awaitable[None]]) -> None: ...
 ```
 
-`topic_filter` uses standard MQTT wildcards (`+` for one level, `#` for
-the rest), e.g. `epaper/+/status`. `handler` is awaited for every incoming
-message whose topic matches the filter, with the message's full topic and
-raw payload.
+`register_topic_handler` subscribes to
+`ext/<extension_name>/<project>/<suffix>` — nice4iot builds the
+`ext/<extension_name>/` prefix and wildcards the project segment for you;
+you only choose `suffix` (which may itself use MQTT wildcards `+`/`#` for
+its own sub-hierarchy, e.g. `screens/+/status`). `handler(project_name,
+topic, payload)` is awaited for every incoming message that matches, but
+**only when the extension is enabled for `project_name`** — nice4iot
+extracts the project from the topic and checks activation before calling
+you, same as the REST dependency does.
 
 ```python
-async def _on_status(topic: str, payload: bytes) -> None:
-    logger.info(f"epaper status: {topic} = {payload!r}")
+async def _on_status(project_name: str, topic: str, payload: bytes) -> None:
+    logger.info(f"epaper status for {project_name}: {topic} = {payload!r}")
 
 def register(app):
-    register_topic_handler('epaper/+/status', _on_status)
+    register_topic_handler('status', _on_status)  # subscribes ext/epaper/+/status
 ```
 
-If nice4iot has no active broker connection, `mqtt_publish` logs a warning
+`mqtt_publish(topic, payload, ...)` is a plain outbound primitive, not
+subject to this scheme — publish to whatever topic your device firmware
+expects (commonly the same `ext/<extension_name>/<project>/...` shape, but
+that's your choice, nice4iot doesn't enforce it for outbound messages). If
+nice4iot has no active broker connection, `mqtt_publish` logs a warning
 and drops the message rather than raising — the same behavior as the
 built-in file-publish path.
 
@@ -209,10 +253,12 @@ def register(app):
 
 The callback fires for every newly created device — auto-provisioned via
 MQTT, auto-provisioned via the HTTP provisioning API, *and* devices added
-manually through the UI. If you only care about one of those paths,
-branch on `device` fields yourself (there is no separate hook per path).
-Exceptions raised by a callback are logged and do not prevent the device
-from being created or affect other callbacks.
+manually through the UI — but only when your extension is enabled for
+`device.project_name`; nice4iot checks that before calling you. If you
+only care about one of the creation paths, branch on `device` fields
+yourself (there is no separate hook per path). Exceptions raised by a
+callback are logged and do not prevent the device from being created or
+affect other callbacks.
 
 **The callback must be synchronous.** `create_device()` is a synchronous
 backend function that commonly runs in a worker thread
@@ -220,6 +266,21 @@ backend function that commonly runs in a worker thread
 schedule async work on. If you need to do async work in response (e.g. an
 HTTP call), hand it off to your own background task/queue instead of
 awaiting it inline.
+
+## Per-project file storage
+
+If your extension needs to persist its own files within a project, use:
+
+```python
+from app.paths import extension_project_dir
+
+dir = extension_project_dir(project_name, 'epaper')  # <project>/.epaper/
+dir.mkdir(exist_ok=True)
+```
+
+Mirrors `project_dir`/`device_dir` — it only computes and validates the
+path (raising `ValueError` for an invalid project or extension name), you
+create the directory yourself.
 
 ## Worked example
 
@@ -229,15 +290,19 @@ from typing import Any
 from fastapi import APIRouter, FastAPI
 from nicegui import ui
 
-from app.extensions import register_project_card, register_project_tab, register_device_provisioned_callback
+from app.extensions import (
+    mount_extension_router, register_project_card, register_project_tab,
+    register_device_provisioned_callback,
+)
 from app.mqtt.backend import register_topic_handler
+from app.paths import extension_project_dir
 from app.core.device.models import Device
 from app.util import logger
 
 router = APIRouter()
 
-@router.get("/ping")
-async def ping():
+@router.get("/{project_name}/ping")
+async def ping(project_name: str):
     return {"status": "ok"}
 
 def _dashboard_card(project_name: str) -> None:
@@ -247,16 +312,18 @@ def _dashboard_card(project_name: str) -> None:
 async def _screens_tab(project_name: str) -> Any:
     ui.label(f'Screens for {project_name}')
 
-async def _on_status(topic: str, payload: bytes) -> None:
-    logger.info(f"epaper status: {topic} = {payload!r}")
+async def _on_status(project_name: str, topic: str, payload: bytes) -> None:
+    logger.info(f"epaper status for {project_name}: {topic} = {payload!r}")
 
 def _on_new_device(device: Device) -> None:
+    dir = extension_project_dir(device.project_name, 'epaper')
+    dir.mkdir(exist_ok=True)
     logger.info(f"epaper: new device {device.project_name}/{device.name}")
 
 def register(app: FastAPI) -> None:
-    app.include_router(router, prefix="/api/epaper")
+    mount_extension_router(app, router)
     register_project_card('dashboard', _dashboard_card)
     register_project_tab('E-Paper', _screens_tab)
-    register_topic_handler('epaper/+/status', _on_status)
+    register_topic_handler('status', _on_status)  # ext/epaper/+/status
     register_device_provisioned_callback(_on_new_device)
 ```

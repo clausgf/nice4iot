@@ -37,9 +37,10 @@ _client: aiomqtt.Client | None = None
 
 _file_publish_callback: Callable | None = None
 
-# Extensions (see docs/extensions.md): (topic_filter, handler) pairs,
-# independent of the project/device topic scheme below.
-_extension_topic_handlers: list[tuple[str, Callable[[str, bytes], Awaitable[None]]]] = []
+# Extensions (see docs/extensions.md): (extension_name, suffix, handler).
+# Actual topic is ext/<extension_name>/<project>/<suffix> — see
+# register_topic_handler() and _extension_topic_pattern() below.
+_extension_topic_handlers: list[tuple[str, str, Callable[[str, str, bytes], Awaitable[None]]]] = []
 
 
 def register_file_publish_callback(callback: Callable) -> None:
@@ -52,29 +53,52 @@ def register_file_publish_callback(callback: Callable) -> None:
     _file_publish_callback = callback
 
 
-def register_topic_handler(topic_filter: str, handler: Callable[[str, bytes], Awaitable[None]]) -> None:
-    """Register an extension handler for messages matching topic_filter.
+def register_topic_handler(suffix: str, handler: Callable[[str, str, bytes], Awaitable[None]]) -> None:
+    """Register an extension handler for messages under ext/<extension_name>/<project>/<suffix>.
 
-    topic_filter uses standard MQTT wildcards ('+' one level, '#' the
-    rest). handler(topic, payload) is awaited for every matching message
-    that no project/device route already claims. Independent of the
-    project/device topic scheme — any topic layout is fine.
+    The extension_name is taken from the current app.extensions.registering()
+    context. suffix may use MQTT wildcards ('+' one level, '#' the rest) for
+    its own sub-hierarchy. handler(project_name, topic, payload) is awaited
+    for every matching message, but only when the extension is enabled for
+    that project — nice4iot checks this centrally, the handler never has to.
     """
-    _extension_topic_handlers.append((topic_filter, handler))
+    from app.extensions import _extension_name
+    _extension_topic_handlers.append((_extension_name(), suffix, handler))
 
 
-def _topic_matches(topic: str, topic_filter: str) -> bool:
-    """Return True if *topic* matches the MQTT wildcard *topic_filter* ('+', '#')."""
-    filter_parts = topic_filter.split('/')
-    topic_parts = topic.split('/')
-    for i, part in enumerate(filter_parts):
-        if part == '#':
-            return True
-        if i >= len(topic_parts):
-            return False
-        if part != '+' and part != topic_parts[i]:
-            return False
-    return len(filter_parts) == len(topic_parts)
+def _extension_topic_pattern(extension_name: str, suffix: str) -> re.Pattern:
+    """Compile ext/<extension_name>/<project>/<suffix> into a regex with a 'project' group."""
+    suffix_pattern = re.escape(suffix).replace(r'\+', '[^/]+').replace(r'\#', '.*')
+    return re.compile(rf'^ext/{re.escape(extension_name)}/(?P<project>[^/]+)/{suffix_pattern}$')
+
+
+async def _dispatch_extension_topic(topic: str, payload: bytes) -> bool:
+    """Try registered extension handlers for *topic*.
+
+    Returns True if any handler's pattern matched (regardless of whether
+    the extension was enabled for that project), so callers can tell "no
+    extension claims this topic" apart from "claimed but disabled".
+    """
+    from app.extensions import is_extension_enabled
+
+    matched = False
+    for extension_name, suffix, handler in _extension_topic_handlers:
+        m = _extension_topic_pattern(extension_name, suffix).match(topic)
+        if not m:
+            continue
+        matched = True
+        project_name = m.group('project')
+        enabled = await anyio.to_thread.run_sync(
+            lambda: is_extension_enabled(project_name, extension_name)
+        )
+        if not enabled:
+            continue
+        try:
+            await handler(project_name, topic, payload)
+        except Exception as e:
+            logger.error(f"MQTT extension handler {extension_name!r}/{suffix!r} "
+                         f"failed on {topic!r}: {e}")
+    return matched
 
 
 # ---------------------------------------------------------------------------
@@ -205,15 +229,7 @@ async def _handle_message(topic: str, payload: bytes) -> None:
 
     route = await anyio.to_thread.run_sync(lambda: _route_topic(topic))
     if route is None:
-        matched = False
-        for topic_filter, handler in _extension_topic_handlers:
-            if _topic_matches(topic, topic_filter):
-                matched = True
-                try:
-                    await handler(topic, payload)
-                except Exception as e:
-                    logger.error(f"MQTT extension handler for {topic_filter!r} "
-                                 f"failed on {topic!r}: {e}")
+        matched = await _dispatch_extension_topic(topic, payload)
         if not matched:
             logger.debug(f"MQTT: no route for topic {topic!r}")
         return
@@ -391,10 +407,12 @@ async def mqtt_main_loop() -> None:
                         await client.subscribe(sub_topic)
                         logger.info(f"MQTT subscribed to {sub_topic} [{project.name!r}]")
 
-                # Subscribe to extension-registered topic filters (docs/extensions.md)
-                for topic_filter, _ in _extension_topic_handlers:
-                    await client.subscribe(topic_filter)
-                    logger.info(f"MQTT subscribed to extension filter {topic_filter!r}")
+                # Subscribe to extension-registered topics (docs/extensions.md):
+                # ext/<extension_name>/<project>/<suffix>, project wildcarded.
+                for extension_name, suffix, _ in _extension_topic_handlers:
+                    sub_topic = f"ext/{extension_name}/+/{suffix}"
+                    await client.subscribe(sub_topic)
+                    logger.info(f"MQTT subscribed to {sub_topic!r} [extension {extension_name!r}]")
 
                 # Process incoming messages
                 async for message in client.messages:
