@@ -240,14 +240,16 @@ from app.mqtt.backend import mqtt_publish, register_topic_handler
 async def mqtt_publish(topic: str, payload: bytes, qos: int = 0, retain: bool = False) -> None: ...
 
 def register_topic_handler(suffix: str,
-                            handler: Callable[[str, str, bytes], Awaitable[None]]) -> None: ...
+                            handler: Callable[[str, str, bytes], Awaitable[None]],
+                            qos: int = 0) -> None: ...
 ```
 
 `register_topic_handler` subscribes to
 `ext/<extension_name>/<project>/<suffix>` — nice4iot builds the
 `ext/<extension_name>/` prefix and wildcards the project segment for you;
 you only choose `suffix` (which may itself use MQTT wildcards `+`/`#` for
-its own sub-hierarchy, e.g. `screens/+/status`). `handler(project_name,
+its own sub-hierarchy, e.g. `screens/+/status`) and, optionally, the
+subscription `qos` (0, 1, or 2; default 0). `handler(project_name,
 topic, payload)` is awaited for every incoming message that matches, but
 **only when the extension is enabled for `project_name`** — nice4iot
 extracts the project from the topic and checks activation before calling

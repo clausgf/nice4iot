@@ -262,7 +262,17 @@ def test_register_topic_handler_stores_extension_and_suffix():
     with registering('ext1'):
         register_topic_handler('status', handler)
 
-    assert mqtt_backend._extension_topic_handlers == [('ext1', 'status', handler)]
+    assert mqtt_backend._extension_topic_handlers == [('ext1', 'status', handler, 0)]
+
+
+def test_register_topic_handler_stores_qos():
+    async def handler(project_name, topic, payload):
+        pass
+
+    with registering('ext1'):
+        register_topic_handler('status', handler, qos=1)
+
+    assert mqtt_backend._extension_topic_handlers == [('ext1', 'status', handler, 1)]
 
 
 # ---------------------------------------------------------------------------

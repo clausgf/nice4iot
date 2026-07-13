@@ -37,10 +37,10 @@ _client: aiomqtt.Client | None = None
 
 _file_publish_callback: Callable | None = None
 
-# Extensions (see docs/extensions.md): (extension_name, suffix, handler).
+# Extensions (see docs/extensions.md): (extension_name, suffix, handler, qos).
 # Actual topic is ext/<extension_name>/<project>/<suffix> — see
 # register_topic_handler() and _extension_topic_pattern() below.
-_extension_topic_handlers: list[tuple[str, str, Callable[[str, str, bytes], Awaitable[None]]]] = []
+_extension_topic_handlers: list[tuple[str, str, Callable[[str, str, bytes], Awaitable[None]], int]] = []
 
 
 def register_file_publish_callback(callback: Callable) -> None:
@@ -53,7 +53,8 @@ def register_file_publish_callback(callback: Callable) -> None:
     _file_publish_callback = callback
 
 
-def register_topic_handler(suffix: str, handler: Callable[[str, str, bytes], Awaitable[None]]) -> None:
+def register_topic_handler(suffix: str, handler: Callable[[str, str, bytes], Awaitable[None]],
+                            qos: int = 0) -> None:
     """Register an extension handler for messages under ext/<extension_name>/<project>/<suffix>.
 
     The extension_name is taken from the current app.extensions.registering()
@@ -61,9 +62,10 @@ def register_topic_handler(suffix: str, handler: Callable[[str, str, bytes], Awa
     its own sub-hierarchy. handler(project_name, topic, payload) is awaited
     for every matching message, but only when the extension is enabled for
     that project — nice4iot checks this centrally, the handler never has to.
+    qos is the MQTT subscription QoS (0, 1, or 2) used for this topic filter.
     """
     from app.extensions import _extension_name
-    _extension_topic_handlers.append((_extension_name(), suffix, handler))
+    _extension_topic_handlers.append((_extension_name(), suffix, handler, qos))
 
 
 def _extension_topic_pattern(extension_name: str, suffix: str) -> re.Pattern:
@@ -82,7 +84,7 @@ async def _dispatch_extension_topic(topic: str, payload: bytes) -> bool:
     from app.extensions import is_extension_enabled
 
     matched = False
-    for extension_name, suffix, handler in _extension_topic_handlers:
+    for extension_name, suffix, handler, _qos in _extension_topic_handlers:
         m = _extension_topic_pattern(extension_name, suffix).match(topic)
         if not m:
             continue
@@ -409,10 +411,10 @@ async def mqtt_main_loop() -> None:
 
                 # Subscribe to extension-registered topics (docs/extensions.md):
                 # ext/<extension_name>/<project>/<suffix>, project wildcarded.
-                for extension_name, suffix, _ in _extension_topic_handlers:
+                for extension_name, suffix, _, qos in _extension_topic_handlers:
                     sub_topic = f"ext/{extension_name}/+/{suffix}"
-                    await client.subscribe(sub_topic)
-                    logger.info(f"MQTT subscribed to {sub_topic!r} [extension {extension_name!r}]")
+                    await client.subscribe(sub_topic, qos=qos)
+                    logger.info(f"MQTT subscribed to {sub_topic!r} [extension {extension_name!r}] (qos={qos})")
 
                 # Process incoming messages
                 async for message in client.messages:
