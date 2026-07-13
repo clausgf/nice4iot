@@ -181,6 +181,31 @@ def register(app):
 supported. The card simply isn't rendered for projects where your
 extension is disabled; nothing to check yourself.
 
+### Global config card
+
+Some settings aren't per-project at all — a global API key, a shared
+broker connection, etc. (nice4iot's own MQTT broker settings are exactly
+this kind of card). For that, register a project-independent card:
+
+```python
+from app.extensions import register_global_card
+
+def _epaper_global_card() -> None:
+    with ui.card().classes('w-full'):
+        ui.label('E-Paper Global Settings')
+        ...
+
+def register(app):
+    register_global_card(_epaper_global_card)
+```
+
+`render_fn()` takes no arguments and is rendered once, on the Projects
+overview page, alongside the built-in MQTT broker card. It is **not**
+gated by per-project enablement — there is no project to check, so it
+renders as soon as your extension is installed, regardless of whether any
+project has turned it on. Like the other cards, `render_fn` may be sync
+or async and must create its own `ui.card()` (or `ui.expansion()`).
+
 ### Tabs
 
 Tabs add a whole new tab next to the built-in ones (Dashboard, General,
@@ -324,8 +349,8 @@ from fastapi import APIRouter, FastAPI
 from nicegui import ui
 
 from app.extensions import (
-    mount_extension_router, register_project_card, register_project_tab,
-    register_project_page, register_device_provisioned_callback,
+    mount_extension_router, register_project_card, register_global_card,
+    register_project_tab, register_project_page, register_device_provisioned_callback,
 )
 from app.mqtt.backend import register_topic_handler
 from app.paths import extension_project_dir
@@ -341,6 +366,10 @@ async def ping(project_name: str):
 def _dashboard_card(project_name: str) -> None:
     with ui.card().classes('w-full'):
         ui.label('E-Paper Displays')
+
+def _global_card() -> None:
+    with ui.card().classes('w-full'):
+        ui.label('E-Paper Global Settings')
 
 async def _screens_tab(project_name: str) -> Any:
     ui.label(f'Screens for {project_name}')
@@ -359,6 +388,7 @@ def _on_new_device(device: Device) -> None:
 def register(app: FastAPI) -> None:
     mount_extension_router(app, router)
     register_project_card('dashboard', _dashboard_card)
+    register_global_card(_global_card)
     register_project_tab('E-Paper', _screens_tab)
     register_project_page(_kiosk_view)  # /<project_name>/ext/epaper
     register_topic_handler('status', _on_status)  # ext/epaper/+/status

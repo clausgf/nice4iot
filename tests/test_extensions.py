@@ -20,6 +20,7 @@ from app.core.project.backend import create_project, project_adapter
 from app.extensions import (
     get_device_cards,
     get_device_tabs,
+    get_global_cards,
     get_project_cards,
     get_project_page,
     get_project_tabs,
@@ -29,6 +30,7 @@ from app.extensions import (
     register_device_card,
     register_device_provisioned_callback,
     register_device_tab,
+    register_global_card,
     register_project_card,
     register_project_page,
     register_project_tab,
@@ -118,6 +120,29 @@ def test_get_project_cards_returns_a_copy(project):
     cards = get_project_cards('dashboard', project)
     cards.append(lambda project_name: None)
     assert len(get_project_cards('dashboard', project)) == 1
+
+
+def test_global_card_returned_regardless_of_enablement(project):
+    fn = lambda: None
+    with registering('ext1'):
+        register_global_card(fn)
+
+    # not enabled for any project — still returned, since it isn't project-scoped
+    assert get_global_cards() == [fn]
+
+
+def test_register_global_card_outside_context_raises():
+    with pytest.raises(RuntimeError):
+        register_global_card(lambda: None)
+
+
+def test_get_global_cards_returns_a_copy():
+    with registering('ext1'):
+        register_global_card(lambda: None)
+
+    cards = get_global_cards()
+    cards.append(lambda: None)
+    assert len(get_global_cards()) == 1
 
 
 # ---------------------------------------------------------------------------

@@ -19,7 +19,7 @@ from app.util import is_valid_filename, render_datetime
 from app.core.project.models import Project
 from app.core.project.backend import create_project, delete_project, get_project, get_projects, project_adapter, rename_project
 from app.core.alarm.ui import AlarmConfigCard, ProjectAlarmPanel
-from app.extensions import get_project_cards, get_project_tabs, get_registered_extension_names, maybe_await
+from app.extensions import get_global_cards, get_project_cards, get_project_tabs, get_registered_extension_names, maybe_await
 from niceview.form import ModelForm
 from niceview.util import confirm_dialog, input_dialog
 
@@ -66,6 +66,9 @@ async def all_projects_subpage(args: PageArguments, nav: ui.element):
 
     with ui.card().classes('w-full q-mt-md dense'):
         MqttGlobalConfigCard()
+
+    for render_fn in get_global_cards():
+        await maybe_await(render_fn())
 
 # ***************************************************************************
 

@@ -27,6 +27,7 @@ CardSection = Literal['dashboard', 'general']
 
 _project_cards: dict[CardSection, list[tuple[str, Callable[[str], Any]]]] = {'dashboard': [], 'general': []}
 _device_cards: dict[CardSection, list[tuple[str, Callable[[str, str], Any]]]] = {'dashboard': [], 'general': []}
+_global_cards: list[Callable[[], Any]] = []
 
 _project_tabs: list[tuple[str, str, Callable[[str], Any]]] = []  # (extension_name, label, render_fn)
 _device_tabs: list[tuple[str, str, Callable[[str, str], Any]]] = []
@@ -121,6 +122,24 @@ def get_project_cards(section: CardSection, project_name: str) -> list[Callable[
 def get_device_cards(section: CardSection, project_name: str) -> list[Callable[[str, str], Any]]:
     """Return render functions for dashboard/general cards enabled for project_name."""
     return [fn for ext, fn in _device_cards[section] if is_extension_enabled(project_name, ext)]
+
+
+def register_global_card(render_fn: Callable[[], Any]) -> None:
+    """Register a project-independent global configuration card.
+
+    Rendered once on the Projects overview page, alongside the built-in
+    MQTT broker card — create your own ui.card() (or ui.expansion()) inside
+    render_fn, same convention as register_project_card(). Not gated by
+    per-project enablement: there is no project to check, so it always
+    renders once the extension is installed. May be sync or async.
+    """
+    _extension_name()
+    _global_cards.append(render_fn)
+
+
+def get_global_cards() -> list[Callable[[], Any]]:
+    """Return every registered global config card's render_fn, in registration order."""
+    return list(_global_cards)
 
 
 # ---------------------------------------------------------------------------
@@ -240,6 +259,7 @@ def _clear_registries() -> None:
         _project_cards[section].clear()
     for section in _device_cards:
         _device_cards[section].clear()
+    _global_cards.clear()
     _project_tabs.clear()
     _device_tabs.clear()
     _project_pages.clear()
