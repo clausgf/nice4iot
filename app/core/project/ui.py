@@ -259,7 +259,7 @@ def ExtensionsCard(project_id: str) -> None:
                 changed['value'] = True
                 _list.refresh()
 
-            ui.checkbox(name, value=name in enabled, on_change=_toggle)
+            ui.switch(name, value=name in enabled, on_change=_toggle)
 
         if changed['value']:
             with ui.row().classes('items-center gap-2 q-mt-sm'):
