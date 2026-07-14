@@ -15,11 +15,15 @@ from app.core.device.files_ui import project_files_panel
 from app.mqtt.ui import MqttGlobalConfigCard
 from app.core.file.ui import FileConfigCard
 from app.routes import device_url, project_url, projects_url
+from app.ui import config_expansion
 from app.util import is_valid_filename, render_datetime
 from app.core.project.models import Project
 from app.core.project.backend import create_project, delete_project, get_project, get_projects, project_adapter, rename_project
 from app.core.alarm.ui import AlarmConfigCard, ProjectAlarmPanel
-from app.extensions import get_global_cards, get_project_cards, get_project_tabs, get_registered_extension_names, maybe_await
+from app.extensions import (
+    get_global_cards, get_project_dashboard_cards, get_project_general_cards,
+    get_project_tabs, get_registered_extension_names, maybe_await,
+)
 from niceview.form import ModelForm
 from niceview.util import confirm_dialog, input_dialog
 
@@ -65,10 +69,13 @@ async def all_projects_subpage(args: PageArguments, nav: ui.element):
         ui.button('New Project', icon='add').props('color=primary').on_click(_new_project).classes('w-full')
 
     with ui.card().classes('w-full q-mt-md dense'):
-        MqttGlobalConfigCard()
+        with config_expansion('MQTT Broker'):
+            MqttGlobalConfigCard()
 
-    for render_fn in get_global_cards():
-        await maybe_await(render_fn())
+    for title, render_fn in get_global_cards():
+        with ui.card().classes('w-full q-mt-md dense'):
+            with config_expansion(title):
+                await maybe_await(render_fn())
 
 # ***************************************************************************
 
@@ -187,7 +194,7 @@ async def project_dashboard_panel(project_id: str) -> None:
                             ui.label(render_datetime(d.last_seen_at)).classes('text-caption text-grey-7')
 
             # Extension cards
-            for render_fn in get_project_cards('dashboard', project_id):
+            for render_fn in get_project_dashboard_cards(project_id):
                 await maybe_await(render_fn(project_id))
 
     await _content()
@@ -202,62 +209,67 @@ async def general_panel(project_id: str):
         with ui.card().classes('w-full'):
             project_card(project_id)
         with ui.card().classes('w-full dense'):
-            ForwardingCard(project_id)
+            with config_expansion('Forwarding'):
+                ForwardingCard(project_id)
         with ui.card().classes('w-full dense'):
-            TelemetryCard(project_id)
+            with config_expansion('Telemetry'):
+                TelemetryCard(project_id)
         with ui.card().classes('w-full dense'):
-            LoggingCard(project_id)
+            with config_expansion('Logging'):
+                LoggingCard(project_id)
         with ui.card().classes('w-full dense'):
-            FileConfigCard(project_id)
+            with config_expansion('Files'):
+                FileConfigCard(project_id)
         with ui.card().classes('w-full dense'):
-            AlarmConfigCard(project_id)
+            with config_expansion('Alarms'):
+                AlarmConfigCard(project_id)
         with ui.card().classes('w-full dense'):
-            ExtensionsCard(project_id)
-        for render_fn in get_project_cards('general', project_id):
-            await maybe_await(render_fn(project_id))
+            with config_expansion('Extensions'):
+                ExtensionsCard(project_id)
+        for title, render_fn in get_project_general_cards(project_id):
+            with ui.card().classes('w-full dense'):
+                with config_expansion(title):
+                    await maybe_await(render_fn(project_id))
         with ui.card().classes('w-full'):
             await danger_card(project_id)
 
 # ***************************************************************************
 
 def ExtensionsCard(project_id: str) -> None:
-    """Toggle which installed extensions are active for this project (default: none)."""
-    with ui.expansion('Extensions', value=False).classes('w-full q-mb-none').props(
-        'dense header-class="text-h6 font-bold"'
-    ):
-        names = get_registered_extension_names()
-        if not names:
-            ui.label('No extensions installed.').classes('text-caption text-grey-7')
-            return
+    """Content for the Extensions toggle card (caller provides the card/header)."""
+    names = get_registered_extension_names()
+    if not names:
+        ui.label('No extensions installed.').classes('text-caption text-grey-7')
+        return
 
-        adapter = project_adapter(project_id)
-        changed = {'value': False}  # mutable flag: has anything been toggled this session?
+    adapter = project_adapter(project_id)
+    changed = {'value': False}  # mutable flag: has anything been toggled this session?
 
-        @ui.refreshable
-        def _list() -> None:
-            enabled = set(adapter.read().enabled_extensions)
-            for name in names:
-                async def _toggle(_, name=name) -> None:
-                    project = adapter.read()
-                    if name in project.enabled_extensions:
-                        project.enabled_extensions.remove(name)
-                    else:
-                        project.enabled_extensions.append(name)
-                    adapter.save(project)
-                    changed['value'] = True
-                    _list.refresh()
+    @ui.refreshable
+    def _list() -> None:
+        enabled = set(adapter.read().enabled_extensions)
+        for name in names:
+            async def _toggle(_, name=name) -> None:
+                project = adapter.read()
+                if name in project.enabled_extensions:
+                    project.enabled_extensions.remove(name)
+                else:
+                    project.enabled_extensions.append(name)
+                adapter.save(project)
+                changed['value'] = True
+                _list.refresh()
 
-                ui.checkbox(name, value=name in enabled, on_change=_toggle)
+            ui.checkbox(name, value=name in enabled, on_change=_toggle)
 
-            if changed['value']:
-                with ui.row().classes('items-center gap-2 q-mt-sm'):
-                    ui.icon('info').classes('text-warning')
-                    ui.label('Extension tabs only update after a page reload.') \
-                        .classes('text-caption text-warning')
-                    ui.button('Reload page', icon='refresh', on_click=ui.navigate.reload) \
-                        .props('dense flat color=warning')
+        if changed['value']:
+            with ui.row().classes('items-center gap-2 q-mt-sm'):
+                ui.icon('info').classes('text-warning')
+                ui.label('Extension tabs only update after a page reload.') \
+                    .classes('text-caption text-warning')
+                ui.button('Reload page', icon='refresh', on_click=ui.navigate.reload) \
+                    .props('dense flat color=warning')
 
-        _list()
+    _list()
 
 # ***************************************************************************
 

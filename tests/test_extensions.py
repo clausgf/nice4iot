@@ -18,10 +18,12 @@ from app.core.device.backend import create_device
 from app.core.device.models import Device
 from app.core.project.backend import create_project, project_adapter
 from app.extensions import (
-    get_device_cards,
+    get_device_dashboard_cards,
+    get_device_general_cards,
     get_device_tabs,
     get_global_cards,
-    get_project_cards,
+    get_project_dashboard_cards,
+    get_project_general_cards,
     get_project_page,
     get_project_tabs,
     get_registered_extension_names,
@@ -91,57 +93,95 @@ def test_register_outside_context_raises():
 # Cards
 # ---------------------------------------------------------------------------
 
-def test_project_card_only_returned_when_enabled(project):
+def test_project_dashboard_card_only_returned_when_enabled(project):
     fn = lambda project_name: None
     with registering('ext1'):
         register_project_card('dashboard', fn)
 
-    assert get_project_cards('dashboard', project) == []
+    assert get_project_dashboard_cards(project) == []
     _enable(project, 'ext1')
-    assert get_project_cards('dashboard', project) == [fn]
-    assert get_project_cards('general', project) == []
+    assert get_project_dashboard_cards(project) == [fn]
+    assert get_project_general_cards(project) == []
 
 
-def test_device_card_only_returned_when_enabled(project):
+def test_project_dashboard_card_rejects_title():
+    with registering('ext1'):
+        with pytest.raises(ValueError):
+            register_project_card('dashboard', lambda project_name: None, title='Nope')
+
+
+def test_project_general_card_requires_title():
+    with registering('ext1'):
+        with pytest.raises(ValueError):
+            register_project_card('general', lambda project_name: None)
+
+
+def test_project_general_card_only_returned_when_enabled(project):
+    fn = lambda project_name: None
+    with registering('ext1'):
+        register_project_card('general', fn, title='E-Paper')
+
+    assert get_project_general_cards(project) == []
+    _enable(project, 'ext1')
+    assert get_project_general_cards(project) == [('E-Paper', fn)]
+
+
+def test_device_dashboard_card_only_returned_when_enabled(project):
     fn = lambda project_name, device_name: None
     with registering('ext1'):
-        register_device_card('general', fn)
+        register_device_card('dashboard', fn)
 
-    assert get_device_cards('general', project) == []
+    assert get_device_dashboard_cards(project) == []
     _enable(project, 'ext1')
-    assert get_device_cards('general', project) == [fn]
+    assert get_device_dashboard_cards(project) == [fn]
 
 
-def test_get_project_cards_returns_a_copy(project):
+def test_device_general_card_only_returned_when_enabled(project):
+    fn = lambda project_name, device_name: None
+    with registering('ext1'):
+        register_device_card('general', fn, title='E-Paper')
+
+    assert get_device_general_cards(project) == []
+    _enable(project, 'ext1')
+    assert get_device_general_cards(project) == [('E-Paper', fn)]
+
+
+def test_device_general_card_requires_title():
+    with registering('ext1'):
+        with pytest.raises(ValueError):
+            register_device_card('general', lambda project_name, device_name: None)
+
+
+def test_get_project_dashboard_cards_returns_a_copy(project):
     with registering('ext1'):
         register_project_card('dashboard', lambda project_name: None)
     _enable(project, 'ext1')
 
-    cards = get_project_cards('dashboard', project)
+    cards = get_project_dashboard_cards(project)
     cards.append(lambda project_name: None)
-    assert len(get_project_cards('dashboard', project)) == 1
+    assert len(get_project_dashboard_cards(project)) == 1
 
 
 def test_global_card_returned_regardless_of_enablement(project):
     fn = lambda: None
     with registering('ext1'):
-        register_global_card(fn)
+        register_global_card('E-Paper', fn)
 
     # not enabled for any project — still returned, since it isn't project-scoped
-    assert get_global_cards() == [fn]
+    assert get_global_cards() == [('E-Paper', fn)]
 
 
 def test_register_global_card_outside_context_raises():
     with pytest.raises(RuntimeError):
-        register_global_card(lambda: None)
+        register_global_card('E-Paper', lambda: None)
 
 
 def test_get_global_cards_returns_a_copy():
     with registering('ext1'):
-        register_global_card(lambda: None)
+        register_global_card('E-Paper', lambda: None)
 
     cards = get_global_cards()
-    cards.append(lambda: None)
+    cards.append(('Other', lambda: None))
     assert len(get_global_cards()) == 1
 
 

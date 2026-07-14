@@ -153,19 +153,23 @@ from app.extensions import (
 ### Cards
 
 Cards render inside the existing **Dashboard** or **General** tab of a
-project or device page, alongside the built-in cards:
+project or device page, alongside the built-in cards. The two sections
+have different conventions:
 
 ```python
 def register_project_card(section: Literal['dashboard', 'general'],
-                           render_fn: Callable[[str], None]) -> None: ...
+                           render_fn: Callable[[str], None], *,
+                           title: str | None = None) -> None: ...
 
 def register_device_card(section: Literal['dashboard', 'general'],
-                          render_fn: Callable[[str, str], None]) -> None: ...
+                          render_fn: Callable[[str, str], None], *,
+                          title: str | None = None) -> None: ...
 ```
 
-`render_fn` is called with `(project_name)` or `(project_name,
-device_name)` while nicegui is already building the surrounding
-`ui.grid()` — just create your own `ui.card()` inside it:
+**`'dashboard'`** cards are compact, always-visible summaries. `render_fn`
+is called with `(project_name)` or `(project_name, device_name)` while
+nicegui is already building the surrounding `ui.grid()` — create your own
+`ui.card()` inside it, and don't pass `title=`:
 
 ```python
 def _epaper_status_card(project_name: str) -> None:
@@ -175,6 +179,21 @@ def _epaper_status_card(project_name: str) -> None:
 
 def register(app):
     register_project_card('dashboard', _epaper_status_card)
+```
+
+**`'general'`** cards are settings sections and must look uniform with the
+built-in ones (MQTT, Forwarding, Telemetry, ...): nice4iot renders the
+card and its foldable header itself, using the required `title=` —
+`render_fn` renders only the fields, no wrapping `ui.card()`/
+`ui.expansion()`:
+
+```python
+def _epaper_settings_card(project_name: str) -> None:
+    ui.label('Some description').classes('text-caption')
+    ...
+
+def register(app):
+    register_project_card('general', _epaper_settings_card, title='E-Paper')
 ```
 
 `render_fn` may be a regular function or an `async def` — both are
@@ -191,20 +210,21 @@ this kind of card). For that, register a project-independent card:
 from app.extensions import register_global_card
 
 def _epaper_global_card() -> None:
-    with ui.card().classes('w-full'):
-        ui.label('E-Paper Global Settings')
-        ...
+    ui.label('Some description').classes('text-caption')
+    ...
 
 def register(app):
-    register_global_card(_epaper_global_card)
+    register_global_card('E-Paper', _epaper_global_card)
 ```
 
-`render_fn()` takes no arguments and is rendered once, on the Projects
-overview page, alongside the built-in MQTT broker card. It is **not**
-gated by per-project enablement — there is no project to check, so it
-renders as soon as your extension is installed, regardless of whether any
-project has turned it on. Like the other cards, `render_fn` may be sync
-or async and must create its own `ui.card()` (or `ui.expansion()`).
+Same convention as a `'general'` project/device card: nice4iot renders the
+card and foldable header for you using `title`, so `render_fn` should not
+create its own `ui.card()`/`ui.expansion()`. It's rendered once, on the
+Projects overview page, alongside the built-in MQTT broker card, and is
+**not** gated by per-project enablement — there is no project to check, so
+it renders as soon as your extension is installed, regardless of whether
+any project has turned it on. `render_fn()` takes no arguments and may be
+sync or async.
 
 ### Tabs
 
@@ -368,8 +388,7 @@ def _dashboard_card(project_name: str) -> None:
         ui.label('E-Paper Displays')
 
 def _global_card() -> None:
-    with ui.card().classes('w-full'):
-        ui.label('E-Paper Global Settings')
+    ui.label('E-Paper Global Settings').classes('text-caption')
 
 async def _screens_tab(project_name: str) -> Any:
     ui.label(f'Screens for {project_name}')
@@ -388,7 +407,7 @@ def _on_new_device(device: Device) -> None:
 def register(app: FastAPI) -> None:
     mount_extension_router(app, router)
     register_project_card('dashboard', _dashboard_card)
-    register_global_card(_global_card)
+    register_global_card('E-Paper', _global_card)
     register_project_tab('E-Paper', _screens_tab)
     register_project_page(_kiosk_view)  # /<project_name>/ext/epaper
     register_topic_handler('status', _on_status)  # ext/epaper/+/status

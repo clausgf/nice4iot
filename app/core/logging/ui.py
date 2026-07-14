@@ -7,17 +7,16 @@ from app.core.logging.models import LoggingConfig
 
 
 class LoggingCard:
-    """Card for logging backend configuration."""
+    """Content for the logging backend configuration card (caller provides the card/header)."""
 
     def __init__(self, project_name: str):
         self.adapter = get_logging_adapter(project_name)
         self.config = self.adapter.read()
 
-        with ui.expansion('Logging').classes('w-full q-mb-none').props('dense header-class="text-h6 font-bold"'):
-            ui.markdown(LoggingConfig.Meta.description).classes('text-caption q-ma-none')
+        ui.markdown(LoggingConfig.Meta.description).classes('text-caption q-ma-none')
 
-            self._render_backend('File', self.config.file)
-            self._render_backend('Loki', self.config.loki)
+        self._render_backend('File', self.config.file)
+        self._render_backend('Loki', self.config.loki)
 
     def _save(self) -> None:
         try:

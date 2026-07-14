@@ -25,9 +25,11 @@ from app.util import logger
 
 CardSection = Literal['dashboard', 'general']
 
-_project_cards: dict[CardSection, list[tuple[str, Callable[[str], Any]]]] = {'dashboard': [], 'general': []}
-_device_cards: dict[CardSection, list[tuple[str, Callable[[str, str], Any]]]] = {'dashboard': [], 'general': []}
-_global_cards: list[Callable[[], Any]] = []
+_project_dashboard_cards: list[tuple[str, Callable[[str], Any]]] = []
+_project_general_cards: list[tuple[str, str, Callable[[str], Any]]] = []  # (extension_name, title, render_fn)
+_device_dashboard_cards: list[tuple[str, Callable[[str, str], Any]]] = []
+_device_general_cards: list[tuple[str, str, Callable[[str, str], Any]]] = []
+_global_cards: list[tuple[str, Callable[[], Any]]] = []  # (title, render_fn)
 
 _project_tabs: list[tuple[str, str, Callable[[str], Any]]] = []  # (extension_name, label, render_fn)
 _device_tabs: list[tuple[str, str, Callable[[str, str], Any]]] = []
@@ -96,49 +98,88 @@ async def maybe_await(result: Any) -> None:
 # Cards
 # ---------------------------------------------------------------------------
 
-def register_project_card(section: CardSection, render_fn: Callable[[str], Any]) -> None:
+def register_project_card(section: CardSection, render_fn: Callable[[str], Any], *,
+                           title: str | None = None) -> None:
     """Register a card rendered on the project Dashboard or General tab.
 
     render_fn(project_name) is called while a surrounding ui.grid() is being
-    built; create your own ui.card() inside it. May be sync or async.
+    built. May be sync or async.
+
+    'dashboard' cards create their own ui.card() inside render_fn (a
+    compact, always-visible summary — no title= here). 'general' cards do
+    NOT create their own card/expansion: nice4iot renders a uniform
+    foldable header for you, using the required title=, matching the
+    built-in config cards on that tab.
     """
-    _project_cards[section].append((_extension_name(), render_fn))
+    extension_name = _extension_name()
+    if section == 'dashboard':
+        if title is not None:
+            raise ValueError("register_project_card('dashboard', ...) does not take title= "
+                              "— dashboard cards render their own ui.card()")
+        _project_dashboard_cards.append((extension_name, render_fn))
+    else:
+        if title is None:
+            raise ValueError("register_project_card('general', ...) requires title= "
+                              "— nice4iot renders the card chrome for you")
+        _project_general_cards.append((extension_name, title, render_fn))
 
 
-def register_device_card(section: CardSection, render_fn: Callable[[str, str], Any]) -> None:
+def register_device_card(section: CardSection, render_fn: Callable[[str, str], Any], *,
+                          title: str | None = None) -> None:
     """Register a card rendered on the device Dashboard or General tab.
 
-    render_fn(project_name, device_name), same conventions as
-    register_project_card().
+    render_fn(project_name, device_name), same conventions (and the same
+    title= rule for 'general') as register_project_card().
     """
-    _device_cards[section].append((_extension_name(), render_fn))
+    extension_name = _extension_name()
+    if section == 'dashboard':
+        if title is not None:
+            raise ValueError("register_device_card('dashboard', ...) does not take title= "
+                              "— dashboard cards render their own ui.card()")
+        _device_dashboard_cards.append((extension_name, render_fn))
+    else:
+        if title is None:
+            raise ValueError("register_device_card('general', ...) requires title= "
+                              "— nice4iot renders the card chrome for you")
+        _device_general_cards.append((extension_name, title, render_fn))
 
 
-def get_project_cards(section: CardSection, project_name: str) -> list[Callable[[str], Any]]:
-    """Return render functions for dashboard/general cards enabled for project_name."""
-    return [fn for ext, fn in _project_cards[section] if is_extension_enabled(project_name, ext)]
+def get_project_dashboard_cards(project_name: str) -> list[Callable[[str], Any]]:
+    """Return render functions for dashboard cards enabled for project_name."""
+    return [fn for ext, fn in _project_dashboard_cards if is_extension_enabled(project_name, ext)]
 
 
-def get_device_cards(section: CardSection, project_name: str) -> list[Callable[[str, str], Any]]:
-    """Return render functions for dashboard/general cards enabled for project_name."""
-    return [fn for ext, fn in _device_cards[section] if is_extension_enabled(project_name, ext)]
+def get_project_general_cards(project_name: str) -> list[tuple[str, Callable[[str], Any]]]:
+    """Return (title, render_fn) for General-tab cards enabled for project_name."""
+    return [(title, fn) for ext, title, fn in _project_general_cards if is_extension_enabled(project_name, ext)]
 
 
-def register_global_card(render_fn: Callable[[], Any]) -> None:
+def get_device_dashboard_cards(project_name: str) -> list[Callable[[str, str], Any]]:
+    """Return render functions for dashboard cards enabled for project_name."""
+    return [fn for ext, fn in _device_dashboard_cards if is_extension_enabled(project_name, ext)]
+
+
+def get_device_general_cards(project_name: str) -> list[tuple[str, Callable[[str, str], Any]]]:
+    """Return (title, render_fn) for General-tab cards enabled for project_name."""
+    return [(title, fn) for ext, title, fn in _device_general_cards if is_extension_enabled(project_name, ext)]
+
+
+def register_global_card(title: str, render_fn: Callable[[], Any]) -> None:
     """Register a project-independent global configuration card.
 
     Rendered once on the Projects overview page, alongside the built-in
-    MQTT broker card — create your own ui.card() (or ui.expansion()) inside
-    render_fn, same convention as register_project_card(). Not gated by
+    MQTT broker card. render_fn should NOT create its own ui.card()/
+    ui.expansion() — nice4iot renders a uniform foldable header for you,
+    using title, same as 'general' project/device cards. Not gated by
     per-project enablement: there is no project to check, so it always
     renders once the extension is installed. May be sync or async.
     """
     _extension_name()
-    _global_cards.append(render_fn)
+    _global_cards.append((title, render_fn))
 
 
-def get_global_cards() -> list[Callable[[], Any]]:
-    """Return every registered global config card's render_fn, in registration order."""
+def get_global_cards() -> list[tuple[str, Callable[[], Any]]]:
+    """Return (title, render_fn) for every registered global config card, in registration order."""
     return list(_global_cards)
 
 
@@ -255,10 +296,10 @@ def mount_extension_router(app: FastAPI, router: APIRouter) -> None:
 
 def _clear_registries() -> None:
     """Reset all registries. For test isolation only."""
-    for section in _project_cards:
-        _project_cards[section].clear()
-    for section in _device_cards:
-        _device_cards[section].clear()
+    _project_dashboard_cards.clear()
+    _project_general_cards.clear()
+    _device_dashboard_cards.clear()
+    _device_general_cards.clear()
     _global_cards.clear()
     _project_tabs.clear()
     _device_tabs.clear()

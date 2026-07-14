@@ -7,17 +7,16 @@ from app.core.telemetry.models import TelemetryConfig
 
 
 class TelemetryCard:
-    """Card for telemetry backend configuration."""
+    """Content for the telemetry backend configuration card (caller provides the card/header)."""
 
     def __init__(self, project_name: str):
         self.adapter = get_telemetry_adapter(project_name)
         self.config = self.adapter.read()
 
-        with ui.expansion('Telemetry').classes('w-full q-mb-none').props('dense header-class="text-h6 font-bold"'):
-            ui.markdown(TelemetryConfig.Meta.description).classes('text-caption q-ma-none')
-            backend_form = ModelForm.from_item(self.config, on_change=lambda e: self._on_backend_change())
-            backend_form.render_field('backend').props('outlined dense').classes('w-full')
-            self._render_config()
+        ui.markdown(TelemetryConfig.Meta.description).classes('text-caption q-ma-none')
+        backend_form = ModelForm.from_item(self.config, on_change=lambda e: self._on_backend_change())
+        backend_form.render_field('backend').props('outlined dense').classes('w-full')
+        self._render_config()
 
     def _save(self) -> None:
         try:

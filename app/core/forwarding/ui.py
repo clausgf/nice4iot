@@ -6,15 +6,14 @@ from app.core.forwarding.models import ForwardingConfig
 
 
 class ForwardingCard:
-    """Card for forwarding configuration."""
+    """Content for the forwarding configuration card (caller provides the card/header)."""
 
     def __init__(self, project_name: str):
         self.adapter = get_forwarding_adapter(project_name)
 
-        with ui.expansion('Forwarding').classes('w-full q-mb-none').props('dense header-class="text-h6 font-bold"'):
-            ui.markdown(ForwardingConfig.Meta.description).classes('text-caption q-ma-none')
-            self.update_rows()
-            ui.button('Add Forwarding', icon='add').props('color=primary w-full').on_click(self.add_row)
+        ui.markdown(ForwardingConfig.Meta.description).classes('text-caption q-ma-none')
+        self.update_rows()
+        ui.button('Add Forwarding', icon='add').props('color=primary w-full').on_click(self.add_row)
 
     @ui.refreshable
     def update_rows(self) -> None:

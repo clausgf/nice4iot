@@ -6,7 +6,7 @@ from app.mqtt.models import MqttGlobalConfig
 
 
 def MqttGlobalConfigCard() -> None:
-    """Expandable card for global MQTT broker settings."""
+    """Content for the global MQTT broker settings card (caller provides the card/header)."""
     adapter = _mqtt_backend.get_mqtt_adapter()
 
     @ui.refreshable
@@ -24,12 +24,11 @@ def MqttGlobalConfigCard() -> None:
             color = 'grey'
         ui.chip(status).props(f'dense color={color} text-color=white')
 
-    with ui.expansion('MQTT Broker').classes('w-full').props('dense header-class="text-h6 font-bold"'):
-        form = ModelForm.from_adapter(MqttGlobalConfig, adapter,
-                                      include=['is_enabled', 'server', 'port', 'username', 'password', 'client_id'],
-                                      autosave=True)
-        form.render_field('is_enabled')
-        _status()
-        ui.timer(5.0, _status.refresh)
-        for name in ['server', 'port', 'username', 'password', 'client_id']:
-            form.render_field(name).props('outlined dense').classes('w-full')
+    form = ModelForm.from_adapter(MqttGlobalConfig, adapter,
+                                  include=['is_enabled', 'server', 'port', 'username', 'password', 'client_id'],
+                                  autosave=True)
+    form.render_field('is_enabled')
+    _status()
+    ui.timer(5.0, _status.refresh)
+    for name in ['server', 'port', 'username', 'password', 'client_id']:
+        form.render_field(name).props('outlined dense').classes('w-full')

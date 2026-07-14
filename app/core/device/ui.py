@@ -4,6 +4,7 @@ from typing import Optional, cast
 from nicegui import PageArguments, ui
 
 from app.routes import device_url, project_url
+from app.ui import config_expansion
 from app.core.device.models import Device
 from app.core.device.backend import (
     create_device, delete_device, device_adapter, get_device, get_devices,
@@ -18,7 +19,7 @@ from app.core.token.ui import TokenListCard
 from app.util import is_valid_filename, render_datetime
 from niceview.form import ModelForm
 from niceview.util import confirm_dialog, input_dialog
-from app.extensions import get_device_cards, get_device_tabs, maybe_await
+from app.extensions import get_device_dashboard_cards, get_device_general_cards, get_device_tabs, maybe_await
 
 import logging
 log = logging.getLogger("uvicorn")
@@ -89,7 +90,7 @@ async def device_dashboard_panel(project_name: str, device_name: str) -> None:
         with ui.grid().classes('grid-cols-1 sm:grid-cols-2 gap-4 w-full'):
             _status_card(device, project_name, project.device_online_threshold_s, now)
             _provisioning_card(device)
-            for render_fn in get_device_cards('dashboard', project_name):
+            for render_fn in get_device_dashboard_cards(project_name):
                 await maybe_await(render_fn(project_name, device_name))
 
     await _content()
@@ -173,8 +174,10 @@ async def device_general_panel(project_name: str, device_name: str) -> None:
             _device_tokens_card(project_name, device_name)
         with ui.card().classes('w-full'):
             await _device_danger_card(project_name, device_name)
-        for render_fn in get_device_cards('general', project_name):
-            await maybe_await(render_fn(project_name, device_name))
+        for title, render_fn in get_device_general_cards(project_name):
+            with ui.card().classes('w-full'):
+                with config_expansion(title):
+                    await maybe_await(render_fn(project_name, device_name))
 
 
 def _device_general_card(project_name: str, device_name: str) -> None:

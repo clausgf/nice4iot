@@ -43,99 +43,96 @@ class _DeviceOfflineAdapter:
 
 
 def AlarmConfigCard(project_name: str) -> None:
-    """Configuration card for alarm rules, rendered inside Project/General."""
-    with ui.expansion('Alarms', value=False).classes('w-full').props(
-        'dense header-class="text-h6 font-bold"'
-    ):
-        adapter = get_alarm_config_adapter(project_name)
+    """Content for the alarm rules card, rendered inside Project/General (caller provides the card/header)."""
+    adapter = get_alarm_config_adapter(project_name)
 
-        # Built-in: device offline — use a sub-adapter so ModelForm never
-        # sees the nested DeviceOfflineConfig as an opaque widget value.
-        with ui.card().classes('w-full q-mb-sm'):
-            ui.label('Device Offline').classes('text-caption font-bold text-grey-7')
-            du_adapter = _DeviceOfflineAdapter(adapter)
-            form_builtin = ModelForm.from_adapter(
-                DeviceOfflineConfig,
-                du_adapter,
-                autosave=True,
-            )
-            with ui.row().classes('items-center gap-4 w-full'):
-                form_builtin.render_field('is_active')
+    # Built-in: device offline — use a sub-adapter so ModelForm never
+    # sees the nested DeviceOfflineConfig as an opaque widget value.
+    with ui.card().classes('w-full q-mb-sm'):
+        ui.label('Device Offline').classes('text-caption font-bold text-grey-7')
+        du_adapter = _DeviceOfflineAdapter(adapter)
+        form_builtin = ModelForm.from_adapter(
+            DeviceOfflineConfig,
+            du_adapter,
+            autosave=True,
+        )
+        with ui.row().classes('items-center gap-4 w-full'):
+            form_builtin.render_field('is_active')
 
-        # Metric rules list
-        ui.separator()
-        ui.label('Metric Rules').classes('text-caption font-bold text-grey-7 q-mt-sm')
+    # Metric rules list
+    ui.separator()
+    ui.label('Metric Rules').classes('text-caption font-bold text-grey-7 q-mt-sm')
 
-        @ui.refreshable
-        def _rules_list() -> None:
-            config = adapter.read()
-            for i, rule in enumerate(config.rules):
-                with ui.card().classes('w-full q-mb-xs'):
-                    with ui.row().classes('items-center gap-2 w-full'):
-                        status_color = 'green' if rule.is_active else 'grey'
-                        ui.chip('ON' if rule.is_active else 'OFF').props(
-                            f'dense color={status_color} text-color=white'
-                        )
-                        ui.label(f'{rule.name}: {rule.kind}.{rule.metric} '
-                                 f'{rule.comparison} {rule.threshold}').classes('grow text-body2')
-                        if rule.description:
-                            ui.label(rule.description).classes('text-caption text-grey-7')
+    @ui.refreshable
+    def _rules_list() -> None:
+        config = adapter.read()
+        for i, rule in enumerate(config.rules):
+            with ui.card().classes('w-full q-mb-xs'):
+                with ui.row().classes('items-center gap-2 w-full'):
+                    status_color = 'green' if rule.is_active else 'grey'
+                    ui.chip('ON' if rule.is_active else 'OFF').props(
+                        f'dense color={status_color} text-color=white'
+                    )
+                    ui.label(f'{rule.name}: {rule.kind}.{rule.metric} '
+                             f'{rule.comparison} {rule.threshold}').classes('grow text-body2')
+                    if rule.description:
+                        ui.label(rule.description).classes('text-caption text-grey-7')
 
-                        async def _toggle(idx: int = i) -> None:
-                            cfg = adapter.read()
-                            cfg.rules[idx].is_active = not cfg.rules[idx].is_active
-                            adapter.save(cfg)
-                            _rules_list.refresh()
-
-                        async def _delete(idx: int = i) -> None:
-                            cfg = adapter.read()
-                            del cfg.rules[idx]
-                            adapter.save(cfg)
-                            _rules_list.refresh()
-
-                        ui.button(icon='toggle_on' if rule.is_active else 'toggle_off') \
-                            .props('flat dense').on_click(_toggle) \
-                            .tooltip('Disable' if rule.is_active else 'Enable')
-                        ui.button(icon='delete').props('flat dense color=negative') \
-                            .on_click(_delete).tooltip('Delete rule')
-
-            # Add new rule form
-            with ui.card().classes('w-full q-mt-sm'):
-                ui.label('New Rule').classes('text-caption font-bold text-grey-7')
-                with ui.row().classes('items-center gap-2 w-full flex-wrap'):
-                    name_input = ui.input(label='Name', placeholder='e.g. low_temp') \
-                        .classes('w-28').props('dense outlined')
-                    kind_input = ui.input(label='Kind', placeholder='sensors') \
-                        .classes('w-28').props('dense outlined')
-                    metric_input = ui.input(label='Metric', placeholder='temperature') \
-                        .classes('w-28').props('dense outlined')
-                    cmp_select = ui.select(['<', '=', '>'], label='Op', value='<') \
-                        .classes('w-20').props('dense outlined')
-                    thr_input = ui.number(label='Threshold', value=0.0) \
-                        .classes('w-28').props('dense outlined')
-                    desc_input = ui.input(label='Description (optional)') \
-                        .classes('grow').props('dense outlined')
-
-                    async def _add_rule() -> None:
-                        if not name_input.value or not metric_input.value:
-                            ui.notify('Name and Metric are required', type='warning')
-                            return
+                    async def _toggle(idx: int = i) -> None:
                         cfg = adapter.read()
-                        cfg.rules.append(MetricAlarmRule(
-                            name=name_input.value.strip(),
-                            kind=kind_input.value.strip() or 'sensors',
-                            metric=metric_input.value.strip(),
-                            comparison=cmp_select.value,
-                            threshold=float(thr_input.value or 0),
-                            description=desc_input.value.strip(),
-                        ))
+                        cfg.rules[idx].is_active = not cfg.rules[idx].is_active
                         adapter.save(cfg)
                         _rules_list.refresh()
 
-                    ui.button(icon='add', on_click=_add_rule) \
-                        .props('color=primary dense').tooltip('Add rule')
+                    async def _delete(idx: int = i) -> None:
+                        cfg = adapter.read()
+                        del cfg.rules[idx]
+                        adapter.save(cfg)
+                        _rules_list.refresh()
 
-        _rules_list()
+                    ui.button(icon='toggle_on' if rule.is_active else 'toggle_off') \
+                        .props('flat dense').on_click(_toggle) \
+                        .tooltip('Disable' if rule.is_active else 'Enable')
+                    ui.button(icon='delete').props('flat dense color=negative') \
+                        .on_click(_delete).tooltip('Delete rule')
+
+        # Add new rule form
+        with ui.card().classes('w-full q-mt-sm'):
+            ui.label('New Rule').classes('text-caption font-bold text-grey-7')
+            with ui.row().classes('items-center gap-2 w-full flex-wrap'):
+                name_input = ui.input(label='Name', placeholder='e.g. low_temp') \
+                    .classes('w-28').props('dense outlined')
+                kind_input = ui.input(label='Kind', placeholder='sensors') \
+                    .classes('w-28').props('dense outlined')
+                metric_input = ui.input(label='Metric', placeholder='temperature') \
+                    .classes('w-28').props('dense outlined')
+                cmp_select = ui.select(['<', '=', '>'], label='Op', value='<') \
+                    .classes('w-20').props('dense outlined')
+                thr_input = ui.number(label='Threshold', value=0.0) \
+                    .classes('w-28').props('dense outlined')
+                desc_input = ui.input(label='Description (optional)') \
+                    .classes('grow').props('dense outlined')
+
+                async def _add_rule() -> None:
+                    if not name_input.value or not metric_input.value:
+                        ui.notify('Name and Metric are required', type='warning')
+                        return
+                    cfg = adapter.read()
+                    cfg.rules.append(MetricAlarmRule(
+                        name=name_input.value.strip(),
+                        kind=kind_input.value.strip() or 'sensors',
+                        metric=metric_input.value.strip(),
+                        comparison=cmp_select.value,
+                        threshold=float(thr_input.value or 0),
+                        description=desc_input.value.strip(),
+                    ))
+                    adapter.save(cfg)
+                    _rules_list.refresh()
+
+                ui.button(icon='add', on_click=_add_rule) \
+                    .props('color=primary dense').tooltip('Add rule')
+
+    _rules_list()
 
 
 # ---------------------------------------------------------------------------
