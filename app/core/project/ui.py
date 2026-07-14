@@ -190,7 +190,7 @@ async def project_dashboard_panel(project_id: str) -> None:
             for render_fn in get_project_cards('dashboard', project_id):
                 await maybe_await(render_fn(project_id))
 
-    _content()
+    await _content()
     ui.timer(10.0, _content.refresh)
     ProjectAlarmPanel(project_id)
 

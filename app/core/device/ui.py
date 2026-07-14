@@ -56,7 +56,7 @@ async def device_subpage(
     tab = tab or 'Dashboard'
     with ui.tab_panels(tabs, value=tab).classes('w-full'):
         with ui.tab_panel(dashboard_tab):
-            device_dashboard_panel(project_id, device_id)
+            await device_dashboard_panel(project_id, device_id)
         with ui.tab_panel(general_tab):
             await device_general_panel(project_id, device_id)
         with ui.tab_panel(files_tab):
@@ -77,7 +77,7 @@ async def device_subpage(
 # Device Dashboard Panel
 # ***************************************************************************
 
-def device_dashboard_panel(project_name: str, device_name: str) -> None:
+async def device_dashboard_panel(project_name: str, device_name: str) -> None:
     """Overview cards shown on the device Dashboard tab (auto-refreshes every 10 s)."""
     from app.core.alarm.ui import DeviceAlarmPanel
 
@@ -92,7 +92,7 @@ def device_dashboard_panel(project_name: str, device_name: str) -> None:
             for render_fn in get_device_cards('dashboard', project_name):
                 await maybe_await(render_fn(project_name, device_name))
 
-    _content()
+    await _content()
     ui.timer(10.0, _content.refresh)
     DeviceAlarmPanel(project_name, device_name)
 
