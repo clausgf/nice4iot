@@ -448,7 +448,7 @@ wheels = [
 [[package]]
 name = "epaper-nice"
 version = "0.1.0"
-source = { git = "ssh://git@gitlab.gwdg.de/epaper/epaper-nice.git#2373319223248c356b723e16b3ee0a4a016b0daa" }
+source = { git = "ssh://git@gitlab.gwdg.de/epaper/epaper-nice.git#87b12869d5094141bb036dd91e587ec046775308" }
 dependencies = [
     { name = "aiofiles" },
     { name = "aiohttp" },
