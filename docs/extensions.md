@@ -85,11 +85,17 @@ tabs, subscribe to MQTT topics, register event callbacks.
 globally, not per project. Whether any of it actually fires for a given
 project is decided by activation (next section).
 
+Errors are **fail-fast**: a missing `register()` function, an exception
+raised inside it, or an invalid `register_*()` call (wrong section, missing
+title, bad MQTT qos/suffix, ...) aborts nice4iot startup with a clear error
+naming your extension. A broken extension should be fixed or uninstalled,
+not silently skipped.
+
 ## Activation
 
 Every extension is **disabled by default** for every project. A project
 admin turns it on from the project's General tab → **Extensions** card,
-which lists every installed (i.e. discovered) extension with a checkbox.
+which lists every installed (i.e. discovered) extension with a switch.
 
 There is no `register()`/`deregister()` per project — that would require
 extensions to symmetrically undo everything they registered, which is
@@ -242,6 +248,11 @@ expected to build the full tab content (it runs inside the page's
 `ui.tab_panel(...)`). Like cards, the tab simply doesn't appear when your
 extension is disabled for that project.
 
+Because tabs are addressed by label, pick labels that don't collide with
+the built-in ones (Dashboard, General, Provisioning, Files, Devices, Data,
+Logs, Alarms) — a duplicate label would make the `?tab=` deep link
+ambiguous. nice4iot doesn't enforce this; collisions only surface visually.
+
 ## Standalone project pages
 
 Cards and tabs render *inside* nice4iot's normal project page. Sometimes
@@ -294,7 +305,9 @@ def register_topic_handler(suffix: str,
 `ext/<extension_name>/` prefix and wildcards the project segment for you;
 you only choose `suffix` (which may itself use MQTT wildcards `+`/`#` for
 its own sub-hierarchy, e.g. `screens/+/status`) and, optionally, the
-subscription `qos` (0, 1, or 2; default 0). `handler(project_name,
+subscription `qos` (0, 1, or 2; default 0). An empty suffix, a suffix
+starting with `/`, or an invalid qos raises `ValueError` at registration
+time. `handler(project_name,
 topic, payload)` is awaited for every incoming message that matches, but
 **only when the extension is enabled for `project_name`** — nice4iot
 extracts the project from the topic and checks activation before calling

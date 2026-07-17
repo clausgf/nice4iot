@@ -116,6 +116,14 @@ def test_project_general_card_requires_title():
             register_project_card('general', lambda project_name: None)
 
 
+def test_register_card_unknown_section_raises():
+    with registering('ext1'):
+        with pytest.raises(ValueError):
+            register_project_card('genral', lambda project_name: None, title='Typo')
+        with pytest.raises(ValueError):
+            register_device_card('sidebar', lambda project_name, device_name: None)
+
+
 def test_project_general_card_only_returned_when_enabled(project):
     fn = lambda project_name: None
     with registering('ext1'):
@@ -338,6 +346,23 @@ def test_register_topic_handler_stores_qos():
         register_topic_handler('status', handler, qos=1)
 
     assert mqtt_backend._extension_topic_handlers == [('ext1', 'status', handler, 1)]
+
+
+@pytest.mark.parametrize("suffix,qos", [
+    ('', 0),           # empty suffix
+    ('/status', 0),    # leading slash
+    ('status', 3),     # invalid qos
+    ('status', -1),
+])
+def test_register_topic_handler_invalid_args_raise(suffix, qos):
+    async def handler(project_name, topic, payload):
+        pass
+
+    with registering('ext1'):
+        with pytest.raises(ValueError):
+            register_topic_handler(suffix, handler, qos=qos)
+
+    assert mqtt_backend._extension_topic_handlers == []
 
 
 # ---------------------------------------------------------------------------

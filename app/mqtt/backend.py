@@ -63,8 +63,16 @@ def register_topic_handler(suffix: str, handler: Callable[[str, str, bytes], Awa
     for every matching message, but only when the extension is enabled for
     that project — nice4iot checks this centrally, the handler never has to.
     qos is the MQTT subscription QoS (0, 1, or 2) used for this topic filter.
+
+    Invalid suffix/qos values raise ValueError here, at registration time —
+    they would otherwise only surface (or silently misbehave) at broker
+    subscribe time, long after the extension author's mistake.
     """
     from app.extensions import _extension_name
+    if not suffix or suffix.startswith('/'):
+        raise ValueError(f"invalid topic suffix {suffix!r} (must be non-empty and not start with '/')")
+    if qos not in (0, 1, 2):
+        raise ValueError(f"invalid qos {qos!r} (must be 0, 1, or 2)")
     _extension_topic_handlers.append((_extension_name(), suffix, handler, qos))
 
 

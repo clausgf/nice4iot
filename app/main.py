@@ -116,6 +116,13 @@ from app.extensions import registering as _registering
 for _, _ext_module_name, _ in pkgutil.iter_modules(_extensions_ns.__path__, _extensions_ns.__name__ + '.'):
     _ext_module = importlib.import_module(_ext_module_name)
     _ext_name = _ext_module_name.removeprefix(_extensions_ns.__name__ + '.')
+    if not hasattr(_ext_module, 'register'):
+        # Deliberately fail-fast (like any other register() error): a broken
+        # extension should be fixed or uninstalled, not silently skipped.
+        raise RuntimeError(
+            f"extension module {_ext_module_name!r} has no register(app) function "
+            f"(see docs/extensions.md)"
+        )
     with _registering(_ext_name):
         _ext_module.register(app)
     _main_log.info(f"Registered extension {_ext_module_name!r}")

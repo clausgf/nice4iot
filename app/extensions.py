@@ -29,7 +29,7 @@ _project_dashboard_cards: list[tuple[str, Callable[[str], Any]]] = []
 _project_general_cards: list[tuple[str, str, Callable[[str], Any]]] = []  # (extension_name, title, render_fn)
 _device_dashboard_cards: list[tuple[str, Callable[[str, str], Any]]] = []
 _device_general_cards: list[tuple[str, str, Callable[[str, str], Any]]] = []
-_global_cards: list[tuple[str, Callable[[], Any]]] = []  # (title, render_fn)
+_global_cards: list[tuple[str, str, Callable[[], Any]]] = []  # (extension_name, title, render_fn)
 
 _project_tabs: list[tuple[str, str, Callable[[str], Any]]] = []  # (extension_name, label, render_fn)
 _device_tabs: list[tuple[str, str, Callable[[str, str], Any]]] = []
@@ -73,19 +73,26 @@ def get_registered_extension_names() -> list[str]:
     return sorted(_registered_extension_names)
 
 
-def is_extension_enabled(project_name: str, extension_name: str) -> bool:
-    """Return whether *extension_name* is enabled for *project_name*.
+def _enabled_extensions(project_name: str) -> set[str]:
+    """Extension names enabled for *project_name*, loaded with a single project read.
 
-    False if the project can't be loaded, mirroring the defensive style
+    Empty if the project can't be loaded, mirroring the defensive style
     already used for project lookups throughout app/mqtt/backend.py.
+    The get_*() functions below use this instead of one is_extension_enabled()
+    call per registered entry, which would re-read the project file each time.
     """
     from app.core.project.backend import get_project
 
     try:
         project = get_project(project_name, check_active=False)
     except Exception:
-        return False
-    return extension_name in project.enabled_extensions
+        return set()
+    return set(project.enabled_extensions)
+
+
+def is_extension_enabled(project_name: str, extension_name: str) -> bool:
+    """Return whether *extension_name* is enabled for *project_name*."""
+    return extension_name in _enabled_extensions(project_name)
 
 
 async def maybe_await(result: Any) -> None:
@@ -117,11 +124,13 @@ def register_project_card(section: CardSection, render_fn: Callable[[str], Any],
             raise ValueError("register_project_card('dashboard', ...) does not take title= "
                               "— dashboard cards render their own ui.card()")
         _project_dashboard_cards.append((extension_name, render_fn))
-    else:
+    elif section == 'general':
         if title is None:
             raise ValueError("register_project_card('general', ...) requires title= "
                               "— nice4iot renders the card chrome for you")
         _project_general_cards.append((extension_name, title, render_fn))
+    else:
+        raise ValueError(f"unknown card section {section!r} (must be 'dashboard' or 'general')")
 
 
 def register_device_card(section: CardSection, render_fn: Callable[[str, str], Any], *,
@@ -137,31 +146,37 @@ def register_device_card(section: CardSection, render_fn: Callable[[str, str], A
             raise ValueError("register_device_card('dashboard', ...) does not take title= "
                               "— dashboard cards render their own ui.card()")
         _device_dashboard_cards.append((extension_name, render_fn))
-    else:
+    elif section == 'general':
         if title is None:
             raise ValueError("register_device_card('general', ...) requires title= "
                               "— nice4iot renders the card chrome for you")
         _device_general_cards.append((extension_name, title, render_fn))
+    else:
+        raise ValueError(f"unknown card section {section!r} (must be 'dashboard' or 'general')")
 
 
 def get_project_dashboard_cards(project_name: str) -> list[Callable[[str], Any]]:
     """Return render functions for dashboard cards enabled for project_name."""
-    return [fn for ext, fn in _project_dashboard_cards if is_extension_enabled(project_name, ext)]
+    enabled = _enabled_extensions(project_name)
+    return [fn for ext, fn in _project_dashboard_cards if ext in enabled]
 
 
 def get_project_general_cards(project_name: str) -> list[tuple[str, Callable[[str], Any]]]:
     """Return (title, render_fn) for General-tab cards enabled for project_name."""
-    return [(title, fn) for ext, title, fn in _project_general_cards if is_extension_enabled(project_name, ext)]
+    enabled = _enabled_extensions(project_name)
+    return [(title, fn) for ext, title, fn in _project_general_cards if ext in enabled]
 
 
 def get_device_dashboard_cards(project_name: str) -> list[Callable[[str, str], Any]]:
     """Return render functions for dashboard cards enabled for project_name."""
-    return [fn for ext, fn in _device_dashboard_cards if is_extension_enabled(project_name, ext)]
+    enabled = _enabled_extensions(project_name)
+    return [fn for ext, fn in _device_dashboard_cards if ext in enabled]
 
 
 def get_device_general_cards(project_name: str) -> list[tuple[str, Callable[[str, str], Any]]]:
     """Return (title, render_fn) for General-tab cards enabled for project_name."""
-    return [(title, fn) for ext, title, fn in _device_general_cards if is_extension_enabled(project_name, ext)]
+    enabled = _enabled_extensions(project_name)
+    return [(title, fn) for ext, title, fn in _device_general_cards if ext in enabled]
 
 
 def register_global_card(title: str, render_fn: Callable[[], Any]) -> None:
@@ -174,13 +189,12 @@ def register_global_card(title: str, render_fn: Callable[[], Any]) -> None:
     per-project enablement: there is no project to check, so it always
     renders once the extension is installed. May be sync or async.
     """
-    _extension_name()
-    _global_cards.append((title, render_fn))
+    _global_cards.append((_extension_name(), title, render_fn))
 
 
 def get_global_cards() -> list[tuple[str, Callable[[], Any]]]:
     """Return (title, render_fn) for every registered global config card, in registration order."""
-    return list(_global_cards)
+    return [(title, fn) for _ext, title, fn in _global_cards]
 
 
 # ---------------------------------------------------------------------------
@@ -199,12 +213,14 @@ def register_device_tab(label: str, render_fn: Callable[[str, str], Any]) -> Non
 
 def get_project_tabs(project_name: str) -> list[tuple[str, Callable[[str], Any]]]:
     """Return (label, render_fn) for tabs enabled for project_name."""
-    return [(label, fn) for ext, label, fn in _project_tabs if is_extension_enabled(project_name, ext)]
+    enabled = _enabled_extensions(project_name)
+    return [(label, fn) for ext, label, fn in _project_tabs if ext in enabled]
 
 
 def get_device_tabs(project_name: str) -> list[tuple[str, Callable[[str, str], Any]]]:
     """Return (label, render_fn) for tabs enabled for project_name."""
-    return [(label, fn) for ext, label, fn in _device_tabs if is_extension_enabled(project_name, ext)]
+    enabled = _enabled_extensions(project_name)
+    return [(label, fn) for ext, label, fn in _device_tabs if ext in enabled]
 
 
 # ---------------------------------------------------------------------------
@@ -252,8 +268,9 @@ def register_device_provisioned_callback(fn: Callable[[Device], None]) -> None:
 
 def notify_device_provisioned(device: Device) -> None:
     """Call every registered, enabled device-provisioned callback, logging (not raising) on error."""
+    enabled = _enabled_extensions(device.project_name)
     for ext, fn in _device_provisioned_callbacks:
-        if not is_extension_enabled(device.project_name, ext):
+        if ext not in enabled:
             continue
         try:
             fn(device)
