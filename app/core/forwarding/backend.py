@@ -48,7 +48,7 @@ def get_forwarding(project_name: str, forwarding_name: str) -> ForwardingConfig:
 
 ###############################################################################
 
-async def forward(forwarding: ForwardingConfig, remaining_url: str, data: str, headers: dict, query_params: dict, timeout: int) -> httpx.Response:
+async def forward(forwarding: ForwardingConfig, remaining_url: str, data: bytes, headers: dict, query_params: dict, timeout: int) -> httpx.Response:
     """Forward a request to the configured upstream URL.
 
     Raises:

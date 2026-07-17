@@ -13,7 +13,7 @@ is already wrapped in `write_telemetry`.
 
 ## Domain exceptions
 Backend functions raise domain exceptions from `app.exceptions`
-(`NotFoundError`, `ForbiddenError`, `AuthError`, `ConflictError`).
+(`NotFoundError`, `ForbiddenError`, `AuthError`, `AlreadyExistsError`).
 API handlers import `domain_to_http` from `app.api.dependencies` to map
 these to `HTTPException`. Never import FastAPI or raise `HTTPException`
 inside a backend function.

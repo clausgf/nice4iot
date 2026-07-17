@@ -16,7 +16,8 @@ _health: dict[str, dict] = {}
 def set_health(key: str, ok: bool, message: str = '') -> None:
     """Record the outcome of an external service call.
 
-    *key* is a dotted identifier, e.g. ``telemetry:myproject`` or ``mqtt``.
+    *key* is ``<project>:<service>``, e.g. ``myproject:telemetry`` —
+    get_project_health() filters on the ``<project>:`` prefix.
     Failures are logged at ERROR level; callers should not log separately.
     """
     _health[key] = {

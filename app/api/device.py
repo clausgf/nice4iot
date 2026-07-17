@@ -58,6 +58,7 @@ router = APIRouter()
         },
         401: {"description": "Missing, invalid, or expired bearer token."},
         404: {"description": "Project or device not found."},
+        413: {"description": "Payload exceeds ``app_config.max_telemetry_size`` (default: 8 KiB)."},
         502: {"description": "Telemetry backend unreachable or returned an error."},
     },
 )
@@ -143,6 +144,7 @@ async def post_telemetry_with_names(
         400: {"description": "Request body could not be decoded as UTF-8 text."},
         401: {"description": "Missing, invalid, or expired bearer token."},
         404: {"description": "Project or device not found."},
+        413: {"description": "Payload exceeds ``app_config.max_log_size`` (default: 8 KiB)."},
         502: {"description": "Logging backend unreachable or returned an error."},
     },
 )
@@ -174,10 +176,6 @@ async def post_log_with_names(
     * ``project_name`` — project identifier.
     * ``device_name``  — device identifier; prepended to the log entry by the
       backend so that per-device log streams can be filtered.
-
-    **Backend**
-
-    Configured per project. Supported backends:
 
     **Body size**
 

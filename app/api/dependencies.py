@@ -46,11 +46,10 @@ async def device_auth(project_name: str, device_name: str, request: Request) -> 
     :param request: The FastAPI request object.
     :return: The authenticated device object.
     """
-    auth_header = request.headers.get("Authorization")
-    if not auth_header or not auth_header[:7].lower().startswith("bearer "):
+    scheme, _, token_value = (request.headers.get("Authorization") or '').partition(" ")
+    token_value = token_value.strip()
+    if scheme.lower() != "bearer" or not token_value:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid authentication token.")
-
-    token_value = auth_header.split(" ")[1]
     try:
         project, device = await anyio.to_thread.run_sync(
             lambda: get_auth_project_device(project_name, device_name, token_value)
