@@ -1,6 +1,7 @@
 import asyncio
 import re
 
+import anyio
 from nicegui import context, ui
 from fastapi.responses import RedirectResponse
 
@@ -135,7 +136,9 @@ async def home_page():
         project_id, extension_name = m.group('project_id'), m.group('extension_name')
         render_fn = get_project_page(extension_name)
         if render_fn is not None:
-            if not is_extension_enabled(project_id, extension_name):
+            enabled = await anyio.to_thread.run_sync(
+                lambda: is_extension_enabled(project_id, extension_name))
+            if not enabled:
                 return RedirectResponse(f'/{project_id}')
             await maybe_await(render_fn(project_id))
             return

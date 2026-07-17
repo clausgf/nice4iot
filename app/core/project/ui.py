@@ -1,6 +1,7 @@
 import datetime
 from typing import Optional, cast
 
+import anyio
 from nicegui import PageArguments, ui
 
 from app.config import app_config
@@ -92,13 +93,14 @@ async def project_subpage(args: PageArguments, nav: ui.element, project_id: str,
         ui.label(project_id).classes('text-h6 font-bold cursor-pointer text-white') \
             .on('click', lambda: ui.navigate.to(project_url(project_id)))
 
+    extension_tab_defs = await anyio.to_thread.run_sync(lambda: get_project_tabs(project_id))
     with ui.tabs().classes('w-full') as tabs:
         dashboard_tab = ui.tab('Dashboard')
         general_tab = ui.tab('General')
         provisioning_tab = ui.tab('Provisioning')
         files_tab = ui.tab('Files')
         devices_tab = ui.tab('Devices')
-        extension_tabs = [(ui.tab(label), render_fn) for label, render_fn in get_project_tabs(project_id)]
+        extension_tabs = [(ui.tab(label), render_fn) for label, render_fn in extension_tab_defs]
     tab = tab if tab else dashboard_tab.label
     with ui.tab_panels(tabs, value=tab).classes('w-full'):
         with ui.tab_panel(dashboard_tab):
@@ -194,7 +196,7 @@ async def project_dashboard_panel(project_id: str) -> None:
                             ui.label(render_datetime(d.last_seen_at)).classes('text-caption text-grey-7')
 
             # Extension cards
-            for render_fn in get_project_dashboard_cards(project_id):
+            for render_fn in await anyio.to_thread.run_sync(lambda: get_project_dashboard_cards(project_id)):
                 await maybe_await(render_fn(project_id))
 
     await _content()
@@ -226,7 +228,7 @@ async def general_panel(project_id: str):
         with ui.card().classes('w-full dense'):
             with config_expansion('Extensions'):
                 ExtensionsCard(project_id)
-        for title, render_fn in get_project_general_cards(project_id):
+        for title, render_fn in await anyio.to_thread.run_sync(lambda: get_project_general_cards(project_id)):
             with ui.card().classes('w-full dense'):
                 with config_expansion(title):
                     await maybe_await(render_fn(project_id))

@@ -1,6 +1,7 @@
 import datetime
 from typing import Optional, cast
 
+import anyio
 from nicegui import PageArguments, ui
 
 from app.routes import device_url, project_url
@@ -46,6 +47,7 @@ async def device_subpage(
         ui.label(device_id).classes('text-h6 font-bold cursor-pointer text-white') \
             .on('click', lambda: ui.navigate.to(device_url(project_id, device_id)))
 
+    extension_tab_defs = await anyio.to_thread.run_sync(lambda: get_device_tabs(project_id))
     with ui.tabs().classes('w-full') as tabs:
         dashboard_tab = ui.tab('Dashboard')
         general_tab   = ui.tab('General')
@@ -53,7 +55,7 @@ async def device_subpage(
         data_tab      = ui.tab('Data')
         logs_tab      = ui.tab('Logs')
         alarms_tab    = ui.tab('Alarms')
-        extension_tabs = [(ui.tab(label), render_fn) for label, render_fn in get_device_tabs(project_id)]
+        extension_tabs = [(ui.tab(label), render_fn) for label, render_fn in extension_tab_defs]
     tab = tab or 'Dashboard'
     with ui.tab_panels(tabs, value=tab).classes('w-full'):
         with ui.tab_panel(dashboard_tab):
@@ -90,7 +92,7 @@ async def device_dashboard_panel(project_name: str, device_name: str) -> None:
         with ui.grid().classes('grid-cols-1 sm:grid-cols-2 gap-4 w-full'):
             _status_card(device, project_name, project.device_online_threshold_s, now)
             _provisioning_card(device)
-            for render_fn in get_device_dashboard_cards(project_name):
+            for render_fn in await anyio.to_thread.run_sync(lambda: get_device_dashboard_cards(project_name)):
                 await maybe_await(render_fn(project_name, device_name))
 
     await _content()
@@ -174,7 +176,7 @@ async def device_general_panel(project_name: str, device_name: str) -> None:
             _device_tokens_card(project_name, device_name)
         with ui.card().classes('w-full'):
             await _device_danger_card(project_name, device_name)
-        for title, render_fn in get_device_general_cards(project_name):
+        for title, render_fn in await anyio.to_thread.run_sync(lambda: get_device_general_cards(project_name)):
             with ui.card().classes('w-full'):
                 with config_expansion(title):
                     await maybe_await(render_fn(project_name, device_name))

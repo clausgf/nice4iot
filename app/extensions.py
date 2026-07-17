@@ -18,6 +18,7 @@ import contextvars
 import inspect
 from typing import Any, Callable, Literal
 
+import anyio
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 
 from app.core.device.models import Device
@@ -301,7 +302,11 @@ def mount_extension_router(app: FastAPI, router: APIRouter) -> None:
                 f"'project_name' path parameter, required by mount_extension_router()"
             )
         project_name = request.path_params['project_name']
-        if not is_extension_enabled(project_name, extension_name):
+        # Async-IO rule (CLAUDE.md): this dependency runs on the event loop,
+        # but the enablement check reads the project file from disk.
+        enabled = await anyio.to_thread.run_sync(
+            lambda: is_extension_enabled(project_name, extension_name))
+        if not enabled:
             raise HTTPException(status_code=404)
 
     app.include_router(router, prefix=f"/api/ext/{extension_name}", dependencies=[Depends(_require_enabled)])

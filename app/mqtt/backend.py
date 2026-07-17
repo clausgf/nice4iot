@@ -26,7 +26,6 @@ from app.mqtt.models import MqttGlobalConfig
 from app.util import logger, is_valid_filename, is_valid_upload_filename
 
 from niceview.dataadapter import JsonAdapter
-from niceview.dataadapter import JsonAdapter
 
 # ---------------------------------------------------------------------------
 # Module-level state
