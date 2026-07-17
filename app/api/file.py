@@ -108,6 +108,7 @@ async def get_headers(file_path: Path) -> dict[str, str]:
                 "client's cached copy is still valid. No response body."
             )
         },
+        400: {"description": "Filename contains invalid characters or path traversal sequences."},
         401: {"description": "Missing, invalid, or expired bearer token."},
         404: {
             "description": (
@@ -139,7 +140,7 @@ async def head_resource(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Invalid filename: {filename!r}")
     try:
         file_path = get_file_path(project_name, device_name, filename)
-    except (FileNotFoundError, NotFoundError) as e:
+    except NotFoundError as e:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(e))
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
@@ -170,6 +171,7 @@ async def head_resource(
                 "the client last downloaded it. No response body."
             )
         },
+        400: {"description": "Filename contains invalid characters or path traversal sequences."},
         401: {"description": "Missing, invalid, or expired bearer token."},
         404: {
             "description": (
@@ -208,7 +210,7 @@ async def get_resource(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Invalid filename: {filename!r}")
     try:
         file_path = get_file_path(project_name, device_name, filename)
-    except (FileNotFoundError, NotFoundError) as e:
+    except NotFoundError as e:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(e))
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
@@ -278,8 +280,11 @@ async def put_resource(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Invalid filename: {filename!r}")
     try:
         file_path = get_file_path(project_name, device_name, filename, check_file_exists=False)
-    except (FileNotFoundError, ValueError) as e:
+    except NotFoundError as e:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(e))
+    except ValueError as e:
+        # Same mapping as GET/HEAD: an invalid name is a bad request, not a miss.
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
 
     file_config = await anyio.to_thread.run_sync(lambda: get_file_config(project_name))
     max_size = file_config.max_upload_size

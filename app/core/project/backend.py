@@ -5,7 +5,7 @@ from pathlib import Path
 from niceview.dataadapter import JsonAdapter
 
 from app.config import app_config
-from app.exceptions import AuthError, ForbiddenError, NotFoundError
+from app.exceptions import AlreadyExistsError, AuthError, ForbiddenError, NotFoundError
 from app.paths import project_dir
 from app.core.token.backend import get_provisioning_token_adapter, validate_token
 from app.core.project.models import Project
@@ -38,11 +38,11 @@ def get_project_path(project_name: str) -> Path:
 
     Raises:
         ValueError: Invalid name or path escapes the projects directory.
-        FileNotFoundError: Directory does not exist.
+        NotFoundError: Directory does not exist.
     """
     path = project_dir(project_name)
     if not path.is_dir():
-        raise FileNotFoundError(f"Project {project_name} does not exist.")
+        raise NotFoundError(f"Project {project_name} does not exist.")
     return path
 
 
@@ -55,11 +55,14 @@ def create_project(project_name: str) -> Project:
 
     Raises:
         ValueError: Invalid project name.
-        FileExistsError: Project already exists.
+        AlreadyExistsError: Project already exists.
         OSError: Directory or file could not be created.
     """
     project_path = project_dir(project_name)
-    project_path.mkdir(exist_ok=False)
+    try:
+        project_path.mkdir(exist_ok=False)
+    except FileExistsError as e:
+        raise AlreadyExistsError(f"Project {project_name} already exists.") from e
     try:
         now = datetime.datetime.now(datetime.timezone.utc)
         project = Project(name=project_name, created_at=now, updated_at=now)
@@ -75,8 +78,8 @@ def get_project(project_name: str, check_active: bool = True) -> Project:
 
     Raises:
         ValueError: Invalid project name.
-        FileNotFoundError: Project directory does not exist.
-        PermissionError: check_active is True and project is not active.
+        NotFoundError: Project directory does not exist.
+        ForbiddenError: check_active is True and project is not active.
         OSError: Project file could not be read.
     """
     project_path = get_project_path(project_name)
@@ -92,7 +95,7 @@ def get_project(project_name: str, check_active: bool = True) -> Project:
             updated_at=datetime.datetime.fromtimestamp(stat_info.st_mtime, tz=datetime.timezone.utc),
         )
     if check_active and not project.is_active:
-        raise PermissionError(f"Project {project_name} is not active.")
+        raise ForbiddenError(f"Project {project_name} is not active.")
     return project
 
 
@@ -101,14 +104,14 @@ def rename_project(old_project_name: str, new_project_name: str) -> None:
 
     Raises:
         ValueError: Invalid name.
-        FileNotFoundError: Old project does not exist.
-        FileExistsError: New project name is already taken.
+        NotFoundError: Old project does not exist.
+        AlreadyExistsError: New project name is already taken.
         OSError: Rename failed.
     """
     old_project_path = get_project_path(old_project_name)
     new_project_path = project_dir(new_project_name)
     if new_project_path.exists():
-        raise FileExistsError(f"Project {new_project_name} already exists.")
+        raise AlreadyExistsError(f"Project {new_project_name} already exists.")
     old_project_path.rename(new_project_path)
     new_json = project_filename(new_project_name)
     if new_json.is_file():
@@ -123,7 +126,7 @@ def delete_project(project_name: str) -> None:
 
     Raises:
         ValueError: Invalid project name.
-        FileNotFoundError: Project does not exist.
+        NotFoundError: Project does not exist.
         OSError: Directory could not be deleted.
     """
     project_path = get_project_path(project_name)
@@ -155,7 +158,8 @@ def get_auth_project(project_name: str, provisioning_token: str) -> Project:
     """
     try:
         project = get_project(project_name, check_active=False)
-    except (ValueError, FileNotFoundError) as e:
+    except ValueError as e:
+        # invalid name — normalized to NotFoundError; NotFoundError itself propagates
         raise NotFoundError(str(e)) from e
 
     if not project.is_active:

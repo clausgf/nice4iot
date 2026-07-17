@@ -20,6 +20,7 @@ from app.core.device.backend import (
 )
 from app.core.device.models import Device
 from app.core.project.backend import create_project
+from app.exceptions import AlreadyExistsError, NotFoundError
 from app.paths import project_dir
 from app.util import is_valid_upload_filename
 
@@ -68,7 +69,7 @@ def test_rename_device_updates_name(device, project):
 
 def test_rename_device_old_name_gone(device, project):
     rename_device(project, device.name, "dev-renamed")
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(NotFoundError):
         get_device(project, device.name)
 
 
@@ -80,7 +81,7 @@ def test_rename_device_invalid_name(device, project):
 def test_rename_device_already_exists(device, project):
     other = Device(name="other", project_name=project)
     create_device(other)
-    with pytest.raises(FileExistsError):
+    with pytest.raises(AlreadyExistsError):
         rename_device(project, device.name, "other")
 
 
@@ -110,7 +111,7 @@ def test_get_file_path_device_overrides_project(device, project):
 
 
 def test_get_file_path_raises_when_missing(device, project):
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(NotFoundError):
         get_file_path(project, device.name, 'missing.json')
 
 

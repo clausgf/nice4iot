@@ -21,6 +21,7 @@ import anyio
 import aiomqtt
 
 from app.config import app_config
+from app.exceptions import NotFoundError
 from app.paths import project_dir
 from app.mqtt.models import MqttGlobalConfig
 from app.util import logger, is_valid_filename, is_valid_upload_filename
@@ -260,7 +261,7 @@ async def _handle_message(topic: str, payload: bytes) -> None:
     device_exists = True
     try:
         await anyio.to_thread.run_sync(lambda: get_device(project_name, device_name))
-    except FileNotFoundError:
+    except NotFoundError:
         device_exists = False
 
     if not device_exists:

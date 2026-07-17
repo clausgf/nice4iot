@@ -21,6 +21,7 @@ from app.util import is_valid_filename, render_datetime
 from app.core.project.models import Project
 from app.core.project.backend import create_project, delete_project, get_project, get_projects, project_adapter, rename_project
 from app.core.alarm.ui import AlarmConfigCard, ProjectAlarmPanel
+from app.exceptions import NotFoundError
 from app.extensions import (
     get_global_cards, get_project_dashboard_cards, get_project_general_cards,
     get_project_tabs, get_registered_extension_names, maybe_await,
@@ -84,7 +85,7 @@ async def project_subpage(args: PageArguments, nav: ui.element, project_id: str,
     nav.clear()
     try:
         get_project(project_id, check_active=False)
-    except (ValueError, FileNotFoundError):
+    except (ValueError, NotFoundError):
         ui.label(f'Project "{project_id}" does not exist.').classes('text-h6 text-negative')
         return
 

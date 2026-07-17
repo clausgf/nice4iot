@@ -5,7 +5,7 @@ from pathlib import Path
 
 from niceview.dataadapter import JsonAdapter
 
-from app.exceptions import AuthError, ForbiddenError, NotFoundError
+from app.exceptions import AlreadyExistsError, AuthError, ForbiddenError, NotFoundError
 from app.paths import device_dir
 from app.core.token.backend import (
     create_token, device_token_lock, load_device_tokens,
@@ -86,12 +86,12 @@ def get_device_path(project_name: str, device_name: str, check_device_exists: bo
 
     Raises:
         ValueError: Invalid name or path escapes the project directory.
-        FileNotFoundError: Project or device does not exist.
+        NotFoundError: Project or device does not exist.
     """
     get_project_path(project_name)  # validates project name and existence
     path = device_dir(project_name, device_name)
     if check_device_exists and not path.is_dir():
-        raise FileNotFoundError(f"Device {project_name}/{device_name} does not exist.")
+        raise NotFoundError(f"Device {project_name}/{device_name} does not exist.")
     return path
 
 
@@ -100,7 +100,7 @@ def get_file_path(project_name: str, device_name: str, filename: str, check_file
 
     Raises:
         ValueError: Invalid name or path.
-        FileNotFoundError: File does not exist.
+        NotFoundError: Project, device, or file does not exist.
     """
     project_path = get_project_path(project_name)
     device_path = get_device_path(project_name, device_name)
@@ -113,7 +113,7 @@ def get_file_path(project_name: str, device_name: str, filename: str, check_file
     if check_file_exists:
         path = device_file_path if device_file_path.is_file() else project_file_path
         if not path.is_file():
-            raise FileNotFoundError(f"File not found: {project_name}/{device_name}/{filename}")
+            raise NotFoundError(f"File not found: {project_name}/{device_name}/{filename}")
     else:
         path = device_file_path
     return path
@@ -127,11 +127,14 @@ def create_device(device: Device) -> Device:
 
     Raises:
         ValueError: Invalid name.
-        FileExistsError: Device already exists.
+        AlreadyExistsError: Device already exists.
         OSError: Directory or file could not be created.
     """
     device_path = get_device_path(device.project_name, device.name, check_device_exists=False)
-    device_path.mkdir(exist_ok=False)
+    try:
+        device_path.mkdir(exist_ok=False)
+    except FileExistsError as e:
+        raise AlreadyExistsError(f"Device {device.project_name}/{device.name} already exists.") from e
     try:
         device_file = device_path / DEVICE_FILE_NAME
         now = datetime.datetime.now(datetime.timezone.utc)
@@ -156,8 +159,8 @@ def get_device(project_name: str, device_name: str, check_active: bool = False) 
 
     Raises:
         ValueError: Invalid name.
-        FileNotFoundError: Device does not exist.
-        PermissionError: check_active is True and the device is not active.
+        NotFoundError: Device does not exist.
+        ForbiddenError: check_active is True and the device is not active.
         OSError: Device file could not be read.
     """
     device_path = get_device_path(project_name, device_name)
@@ -180,7 +183,7 @@ def get_device(project_name: str, device_name: str, check_active: bool = False) 
     if fresh is not None:
         device.last_seen_at = fresh
     if check_active and not device.is_active:
-        raise PermissionError(f"Device {project_name}/{device_name} is not active.")
+        raise ForbiddenError(f"Device {project_name}/{device_name} is not active.")
     return device
 
 
@@ -189,7 +192,7 @@ def update_device(device: Device) -> Device:
 
     Raises:
         ValueError: Invalid name.
-        FileNotFoundError: Device directory does not exist.
+        NotFoundError: Device directory does not exist.
         OSError: File could not be written.
     """
     device_file = get_device_path(device.project_name, device.name) / DEVICE_FILE_NAME
@@ -205,7 +208,7 @@ def delete_device(project_name: str, device_name: str) -> None:
 
     Raises:
         ValueError: Invalid name.
-        FileNotFoundError: Device does not exist.
+        NotFoundError: Device does not exist.
         OSError: Directory could not be deleted.
     """
     device_path = get_device_path(project_name, device_name)
@@ -251,20 +254,20 @@ def get_auth_project_device(project_name: str, device_name: str, device_token: s
     """
     try:
         project = get_project(project_name)
-    except (ValueError, FileNotFoundError) as e:
+    except ValueError as e:
+        # invalid name — normalized to NotFoundError; NotFoundError and
+        # ForbiddenError (project inactive) propagate as-is
         raise NotFoundError(str(e)) from e
-    except PermissionError as e:
-        raise ForbiddenError(str(e)) from e
 
     if not project.is_http_enabled:
         raise ForbiddenError(f"HTTP API is disabled for project {project_name}.")
 
     try:
         device = get_device(project_name, device_name, check_active=True)
-    except (ValueError, FileNotFoundError) as e:
+    except ValueError as e:
         raise NotFoundError(str(e)) from e
-    except PermissionError as e:
-        raise NotFoundError(str(e)) from e  # normalized to 401 by device_auth anyway
+    except ForbiddenError as e:
+        raise NotFoundError(str(e)) from e  # device inactive; normalized to 401 by device_auth anyway
 
     with device_token_lock(project_name, device_name):
         tokens = load_device_tokens(project_name, device_name)
@@ -294,7 +297,7 @@ def device_provision(project: Project, device_name: str):
 
     try:
         device = get_device(project.name, device_name)
-    except FileNotFoundError:
+    except NotFoundError:
         if not project.is_autocreate_devices:
             raise NotFoundError(f"Device {device_name} does not exist and autocreate is disabled.")
         device = create_device(Device(
@@ -353,8 +356,8 @@ def rename_device(project_name: str, old_device_name: str, new_device_name: str)
 
     Raises:
         ValueError: Invalid new name.
-        FileNotFoundError: Old device does not exist.
-        FileExistsError: New device name is already taken.
+        NotFoundError: Old device does not exist.
+        AlreadyExistsError: New device name is already taken.
         OSError: Rename failed.
     """
     if not is_valid_filename(new_device_name):
@@ -362,7 +365,7 @@ def rename_device(project_name: str, old_device_name: str, new_device_name: str)
     old_path = get_device_path(project_name, old_device_name)
     new_path = device_dir(project_name, new_device_name)
     if new_path.exists():
-        raise FileExistsError(f"Device {new_device_name} already exists.")
+        raise AlreadyExistsError(f"Device {new_device_name} already exists.")
     old_path.rename(new_path)
     device_json = new_path / DEVICE_FILE_NAME
     if device_json.is_file():
