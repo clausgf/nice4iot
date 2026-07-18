@@ -8,6 +8,7 @@ logger = logging.getLogger('uvicorn.error')
 
 
 FILENAME_REGEX = r'^[a-zA-Z0-9_\-+]+$'
+NAME_REGEX = r'^[a-zA-Z_][a-zA-Z0-9_]*$'
 URL_REGEX = r'^(https?://)?([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(/.*)?$'
 UPLOAD_FILENAME_REGEX = r'^[a-zA-Z0-9][a-zA-Z0-9_\-.]*$'
 
@@ -16,6 +17,18 @@ def is_valid_filename(filename: str) -> bool:
     Check if the filename consists of alphanumeric characters, underscores, hyphens, and plus signs.
     """
     return re.match(FILENAME_REGEX, filename) is not None
+
+
+def is_valid_name(name: str) -> bool:
+    """Check a project or device name.
+
+    Stricter than is_valid_filename: a valid identifier
+    (``[a-zA-Z_][a-zA-Z0-9_]*``) with no ``-``, ``+`` or leading digit. This
+    guarantees the telemetry metric name ``<project>_<field>`` is always a
+    valid Prometheus metric name and that names need no backend-specific
+    escaping, avoiding problematic characters at the source.
+    """
+    return re.match(NAME_REGEX, name) is not None
 
 
 def is_valid_upload_filename(filename: str) -> bool:
@@ -48,15 +61,4 @@ def render_datetime(dt: datetime.datetime | None) -> str:
     except pytz.UnknownTimeZoneError:
         tz = pytz.utc
     return dt.astimezone(tz).strftime("%d.%m.%y %H:%M:%S")
-
-
-def flatten_dict(d, parent_key: str = "", sep: str = "_"):
-    items = []
-    for k, v in d.items():
-        new_key = parent_key + sep + k if parent_key else k
-        if isinstance(v, dict):
-            items.extend(flatten_dict(v, new_key, sep=sep).items())
-        else:
-            items.append((new_key, v))
-    return dict(items)
 

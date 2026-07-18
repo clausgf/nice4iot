@@ -4,7 +4,7 @@ from typing import Annotated, Any
 import niceview
 from pydantic import BaseModel, Field, field_validator
 
-from app.util import FILENAME_REGEX
+from app.util import NAME_REGEX
 
 NOW_FACTORY = lambda: datetime.datetime.now(datetime.timezone.utc)
 
@@ -21,9 +21,10 @@ class Project(BaseModel):
 
     name: Annotated[str,
             Field(min_length=1,
-                  pattern=FILENAME_REGEX,
-                  description='Unique project identifier. Used as the directory name on disk. '
-                              'Only letters, digits, underscore, hyphen and plus are allowed.'),
+                  pattern=NAME_REGEX,
+                  description='Unique project identifier. Used as the directory name on disk and '
+                              'as the telemetry metric-name prefix. Must be a valid identifier: '
+                              'letters, digits and underscore only, and must not start with a digit.'),
             niceview.Field(editable=False)
         ] = "project"
 

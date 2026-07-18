@@ -145,7 +145,7 @@ data/projects/
         └── <device_file>       # Device-specific files (override project defaults)
 ```
 
-Project and device names double as directory names; only `[a-zA-Z0-9_\-+]` are allowed. Path traversal is prevented by resolving and checking all paths against their expected base directory.
+Project and device names double as directory names and as the telemetry metric-name prefix, so they must be valid identifiers: `[a-zA-Z_][a-zA-Z0-9_]*` (letters, digits and underscore only, no leading digit, no `-`/`+`). This guarantees a valid Prometheus metric name `<project>_<field>` and needs no backend-specific escaping. Path traversal is prevented by resolving and checking all paths against their expected base directory.
 
 All writes use a write-to-temp-then-rename pattern to avoid partial writes.
 

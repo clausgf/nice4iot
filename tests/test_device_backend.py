@@ -62,13 +62,13 @@ def test_device_adapter_save_roundtrip(device, project):
 # ---------------------------------------------------------------------------
 
 def test_rename_device_updates_name(device, project):
-    rename_device(project, device.name, "dev-renamed")
-    d = get_device(project, "dev-renamed")
-    assert d.name == "dev-renamed"
+    rename_device(project, device.name, "dev_renamed")
+    d = get_device(project, "dev_renamed")
+    assert d.name == "dev_renamed"
 
 
 def test_rename_device_old_name_gone(device, project):
-    rename_device(project, device.name, "dev-renamed")
+    rename_device(project, device.name, "dev_renamed")
     with pytest.raises(NotFoundError):
         get_device(project, device.name)
 
@@ -76,6 +76,12 @@ def test_rename_device_old_name_gone(device, project):
 def test_rename_device_invalid_name(device, project):
     with pytest.raises(ValueError):
         rename_device(project, device.name, "bad name!")
+
+
+def test_rename_device_rejects_hyphen(device, project):
+    # Hyphens are no longer valid in device names (Prometheus identifier rule).
+    with pytest.raises(ValueError):
+        rename_device(project, device.name, "dev-renamed")
 
 
 def test_rename_device_already_exists(device, project):

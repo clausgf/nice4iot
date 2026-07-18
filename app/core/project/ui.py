@@ -17,7 +17,7 @@ from app.mqtt.ui import MqttGlobalConfigCard
 from app.core.file.ui import FileConfigCard
 from app.routes import device_url, project_url, projects_url
 from app.ui import config_expansion
-from app.util import is_valid_filename, render_datetime
+from app.util import is_valid_name, render_datetime
 from app.core.project.models import Project
 from app.core.project.backend import create_project, delete_project, get_project, get_projects, project_adapter, rename_project
 from app.core.alarm.ui import AlarmConfigCard, ProjectAlarmPanel
@@ -44,8 +44,8 @@ async def all_projects_subpage(args: PageArguments, nav: ui.element):
             'Create Project',
             label='Project Name',
             placeholder='enter a project name here',
-            validator=is_valid_filename,
-            error_message='Invalid name: use letters, digits, underscore, plus, minus only.',
+            validator=is_valid_name,
+            error_message='Invalid name: letters, digits, underscore only; must not start with a digit.',
         )
         if name is None:
             return
@@ -315,7 +315,7 @@ def project_card(project_id: str) -> None:
 # ***************************************************************************
 
 async def _rename_project(old_name: str, new_name: str) -> None:
-    if not is_valid_filename(new_name):
+    if not is_valid_name(new_name):
         ui.notify(f"Invalid project name: {new_name}", type='negative')
         return
     if old_name == new_name:
@@ -358,7 +358,7 @@ async def danger_card(project_id: str) -> None:
     with ui.expansion('Danger Zone', value=False).classes('w-full q-mb-none').props('dense header-class="text-h6 font-bold"'):
         with ui.row().classes('w-full gap-4 q-mt-none'):
             val_rules = {
-                "Invalid name: use letters, digits, underscore, plus, minus only.": lambda x: is_valid_filename(x)
+                "Invalid name: letters, digits, underscore only; must not start with a digit.": lambda x: is_valid_name(x)
             }
             name_widget = ui.input(
                 label='New Project Name', 

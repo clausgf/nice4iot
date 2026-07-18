@@ -36,11 +36,11 @@ class TestDeviceLifecycle:
     @pytest.fixture
     def setup(self, client, projects_dir):
         project, prov_token = setup_project(
-            "lifecycle-project",
+            "lifecycle_project",
             is_autocreate_devices=True,
             is_provisioning_autoapproval=True,
         )
-        return {"project": project, "prov_token": prov_token, "device": "lifecycle-device"}
+        return {"project": project, "prov_token": prov_token, "device": "lifecycle_device"}
 
     def test_provision_creates_device_token(self, client, setup):
         resp = client.post("/api/provision", json={
@@ -202,7 +202,7 @@ class TestProjectFileFallback:
 
     def test_project_file_served_as_fallback(self, client, projects_dir):
         project, prov_token = setup_project(
-            "fallback-project",
+            "fallback_project",
             is_autocreate_devices=True,
             is_provisioning_autoapproval=True,
         )
@@ -223,7 +223,7 @@ class TestProjectFileFallback:
 
     def test_device_file_overrides_project(self, client, projects_dir):
         project, prov_token = setup_project(
-            "override-project",
+            "override_project",
             is_autocreate_devices=True,
             is_provisioning_autoapproval=True,
         )

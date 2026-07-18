@@ -20,12 +20,12 @@ _INVALID_METRIC_CHARS = re.compile(r'[^a-zA-Z0-9_]')
 def metric_prefix(project_name: str) -> str:
     """Prometheus-safe metric-name prefix derived from the project name.
 
-    Prometheus metric names must match ``[a-zA-Z_][a-zA-Z0-9_]*``. The project
-    name forms the ``<prefix>_<field>`` metric name but may legally contain
-    ``-``, ``+`` or a leading digit (see ``is_valid_filename``), which are
-    invalid there. So it is sanitized to ``[a-zA-Z0-9_]`` and, if it would
-    otherwise start with a digit (or be empty), prefixed with ``_``. Applied
-    identically on write and read so the series line up.
+    Prometheus metric names must match ``[a-zA-Z_][a-zA-Z0-9_]*``. Project
+    names are already restricted to that identifier form (see
+    ``is_valid_name``), so this is defence in depth: any character outside
+    ``[a-zA-Z0-9_]`` is replaced with ``_`` and a leading digit (or empty
+    name) is prefixed with ``_``. Applied identically on write and read so
+    the series line up.
     """
     safe = _INVALID_METRIC_CHARS.sub('_', project_name)
     if not safe or safe[0].isdigit():

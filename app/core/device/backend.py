@@ -14,7 +14,7 @@ from app.core.token.backend import (
 from app.core.device.models import Device
 from app.core.project.backend import get_project, get_project_path
 from app.core.project.models import Project
-from app.util import logger, is_valid_filename
+from app.util import logger, is_valid_name
 from niceview.dataadapter import JsonAdapter, lenient_model_load
 
 ###############################################################################
@@ -233,7 +233,7 @@ def get_devices(project_name: str) -> list[Device]:
     project_path = get_project_path(project_name)
     devices = []
     for device_path in project_path.iterdir():
-        if not device_path.is_dir() or not is_valid_filename(device_path.name):
+        if not device_path.is_dir() or not is_valid_name(device_path.name):
             continue
         try:
             devices.append(get_device(project_name, device_path.name))
@@ -360,7 +360,7 @@ def rename_device(project_name: str, old_device_name: str, new_device_name: str)
         AlreadyExistsError: New device name is already taken.
         OSError: Rename failed.
     """
-    if not is_valid_filename(new_device_name):
+    if not is_valid_name(new_device_name):
         raise ValueError(f"Invalid device name: {new_device_name}")
     old_path = get_device_path(project_name, old_device_name)
     new_path = device_dir(project_name, new_device_name)

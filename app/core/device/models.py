@@ -4,7 +4,7 @@ from typing import Annotated
 import niceview
 from pydantic import BaseModel, Field
 
-from app.util import FILENAME_REGEX
+from app.util import NAME_REGEX
 
 NOW_FACTORY = lambda: datetime.datetime.now(datetime.timezone.utc)
 
@@ -21,9 +21,10 @@ class Device(BaseModel):
 
     name: str = Field(
         min_length=1,
-        pattern=FILENAME_REGEX,
+        pattern=NAME_REGEX,
         description='Unique device identifier within the project. Used as the directory name on disk. '
-                    'Only letters, digits, underscore, hyphen and plus are allowed.')
+                    'Must be a valid identifier: letters, digits and underscore only, '
+                    'and must not start with a digit.')
 
     description: Annotated[str,
             Field(description='Human-readable description of this device.'),

@@ -17,7 +17,7 @@ from app.core.device.logs_ui import device_logs_panel
 from app.core.project.backend import get_project
 from app.core.token.backend import get_device_token_adapter
 from app.core.token.ui import TokenListCard
-from app.util import is_valid_filename, render_datetime
+from app.util import is_valid_name, render_datetime
 from niceview.form import ModelForm
 from niceview.util import confirm_dialog, input_dialog
 from app.extensions import get_device_dashboard_cards, get_device_general_cards, get_device_tabs, maybe_await
@@ -220,7 +220,7 @@ async def _device_danger_card(project_name: str, device_name: str) -> None:
     with ui.expansion('Danger Zone', value=False).classes('w-full').props('dense header-class="text-subtitle1 font-bold"'):
         with ui.row().classes('w-full gap-4 q-mt-xs'):
             val_rules = {
-                "Invalid name: use letters, digits, underscore, plus, hyphen only.": is_valid_filename
+                "Invalid name: letters, digits, underscore only; must not start with a digit.": is_valid_name
             }
             name_widget = ui.input(
                 label='New Device Name',
@@ -237,7 +237,7 @@ async def _device_danger_card(project_name: str, device_name: str) -> None:
 
 
 async def _rename_device(project_name: str, old_name: str, new_name: str) -> None:
-    if not is_valid_filename(new_name):
+    if not is_valid_name(new_name):
         ui.notify(f"Invalid device name: {new_name}", type='negative')
         return
     if old_name == new_name:
@@ -322,8 +322,8 @@ class ProjectDevicesTable:
                         'Create Device',
                         label='Device Name',
                         placeholder='enter a device name here',
-                        validator=is_valid_filename,
-                        error_message='Invalid name: use letters, digits, underscore, plus, hyphen only.',
+                        validator=is_valid_name,
+                        error_message='Invalid name: letters, digits, underscore only; must not start with a digit.',
                     )
                     if name is None:
                         return

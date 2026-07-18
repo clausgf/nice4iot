@@ -9,7 +9,7 @@ from app.exceptions import AlreadyExistsError, AuthError, ForbiddenError, NotFou
 from app.paths import project_dir
 from app.core.token.backend import get_provisioning_token_adapter, validate_token
 from app.core.project.models import Project
-from app.util import logger, is_valid_filename
+from app.util import logger, is_valid_name
 from niceview.dataadapter import JsonAdapter, lenient_model_load
 
 ###############################################################################
@@ -138,7 +138,7 @@ def get_projects() -> list[Project]:
     base_path = Path(app_config.projects_dir).resolve()
     projects = []
     for project_path in base_path.iterdir():
-        if not project_path.is_dir() or not is_valid_filename(project_path.name):
+        if not project_path.is_dir() or not is_valid_name(project_path.name):
             continue
         try:
             projects.append(get_project(project_path.name, check_active=False))

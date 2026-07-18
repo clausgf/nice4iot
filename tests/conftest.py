@@ -108,7 +108,7 @@ def provisioned(project_autoapprove):
     Returns a dict with all relevant names and tokens.
     """
     project, prov_token = project_autoapprove
-    device_name = "e32-aabb1234"
+    device_name = "e32_aabb1234"
     device_token = device_provision(project, device_name).value
 
     # Activate file logging so log-related tests can verify written content.
