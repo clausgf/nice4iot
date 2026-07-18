@@ -92,6 +92,10 @@ async def post_telemetry_with_names(
 
         {"env": {"temp": 22.4, "hum": 41}, "battery": {"V": 3.71}}
 
+    Metric names are sanitized to the ``[a-zA-Z0-9_]`` character set common to
+    all backends: any other character (dots, dashes, spaces, ...) is replaced
+    with ``_`` (e.g. ``"cpu.load-1m"`` becomes ``cpu_load_1m``).
+
     Only numeric (float/int) leaf values are forwarded to the backend.
     Non-numeric fields (e.g. ``"status": "ok"``) are **silently ignored**;
     a warning is logged server-side. This allows mixed payloads without

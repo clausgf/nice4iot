@@ -1,6 +1,7 @@
 import datetime
 import json
 import numbers
+import re
 import time
 
 import anyio
@@ -143,16 +144,47 @@ def flatten_metrics(values: dict, parent_key: str = '', sep: str = '_') -> dict:
     return flat
 
 
+_INVALID_METRIC_CHARS = re.compile(r'[^a-zA-Z0-9_]')
+
+
+def sanitize_metric_name(name: str) -> str:
+    """Make a metric name compatible with every supported telemetry backend.
+
+    Prometheus metric names must match ``[a-zA-Z_][a-zA-Z0-9_]*``; InfluxDB
+    line-protocol field keys must not contain unescaped spaces, commas or
+    ``=``. The common safe set is ``[a-zA-Z0-9_]``, so every other character
+    (dots, dashes, spaces, unicode, ...) is replaced with ``_``. A name that
+    is empty (or all-invalid) collapses to a single ``_``. The Prometheus
+    backend always prefixes the project name, so a leading digit here still
+    yields a valid ``<project>_<name>`` series.
+    """
+    return _INVALID_METRIC_CHARS.sub('_', name) or '_'
+
+
+def normalize_metrics(values: dict) -> dict:
+    """Flatten nested objects and sanitize every resulting key.
+
+    ``{"a.b": {"c d": 1}}`` becomes ``{"a_b_c_d": 1}``. This is the single
+    choke point through which every telemetry payload passes so that all
+    backends, the local store, and alarm rules see identical, backend-safe
+    metric names. Distinct source keys that sanitize to the same name collide;
+    the last one wins (an accepted, documented edge case).
+    """
+    return {sanitize_metric_name(k): v for k, v in flatten_metrics(values).items()}
+
+
 async def write_telemetry(project_name: str, device_name: str, values: dict,
                           kind: str = 'default',
                           timestamp: datetime.datetime | None = None) -> None:
     """Write telemetry to the active backend and to the local JSONL store.
 
-    Nested JSON objects in *values* are flattened to underscore-joined keys
-    (``a.b`` → ``a_b``) before any backend, the local store, or alarm rules
-    see them, so metric names stay flat everywhere.
+    Metric names in *values* are normalized before any backend, the local
+    store, or alarm rules see them: nested JSON objects are flattened to
+    underscore-joined keys (``a.b`` → ``a_b``) and every character is
+    sanitized to the ``[a-zA-Z0-9_]`` set common to all backends, so metric
+    names stay flat and backend-compatible everywhere.
     """
-    values = flatten_metrics(values)
+    values = normalize_metrics(values)
     now = timestamp or datetime.datetime.now(datetime.timezone.utc)
     backend = _get_active_backend(project_name)
     if backend:

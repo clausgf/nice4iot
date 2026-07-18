@@ -15,8 +15,10 @@ from app.core.telemetry.backend import (
     LOCAL_METRICS_MAX_LINES,
     _append_local_metrics,
     flatten_metrics,
+    normalize_metrics,
     read_local_metrics,
     read_series,
+    sanitize_metric_name,
     write_telemetry,
 )
 from app.core.telemetry.models import MetricSeries
@@ -245,3 +247,39 @@ def test_write_telemetry_flattens_into_local_store(proj_dev):
     records = read_local_metrics(p, d)
     assert len(records) == 1
     assert records[0]["v"] == {"env_temp": 22.4}
+
+
+# ---------------------------------------------------------------------------
+# sanitize_metric_name — backend-compatible metric names
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("raw, expected", [
+    ("cpu.load", "cpu_load"),
+    ("cpu.load-1m", "cpu_load_1m"),
+    ("temp °C", "temp__C"),
+    ("a,b=c", "a_b_c"),
+    ("valid_name99", "valid_name99"),
+    ("", "_"),
+    ("!!!", "___"),
+    ("Ünïcode", "_n_code"),
+])
+def test_sanitize_metric_name(raw, expected):
+    assert sanitize_metric_name(raw) == expected
+
+
+def test_normalize_metrics_flattens_and_sanitizes():
+    assert normalize_metrics({"a.b": {"c d": 1}}) == {"a_b_c_d": 1}
+
+
+def test_normalize_metrics_preserves_numeric_leaves():
+    payload = {"cpu.load-1m": 0.7, "net": {"rx.bytes": 1024}}
+    assert normalize_metrics(payload) == {"cpu_load_1m": 0.7, "net_rx_bytes": 1024}
+
+
+def test_write_telemetry_sanitizes_into_local_store(proj_dev):
+    p, d = proj_dev
+    asyncio.run(write_telemetry(p, d, {"cpu.load-1m": 0.7, "env": {"temp °C": 22.4}},
+                                kind="sensors", timestamp=_NOW))
+    records = read_local_metrics(p, d)
+    assert len(records) == 1
+    assert records[0]["v"] == {"cpu_load_1m": 0.7, "env_temp__C": 22.4}
