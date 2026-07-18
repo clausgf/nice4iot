@@ -1,4 +1,3 @@
-import datetime
 from typing import Annotated
 from pydantic import BaseModel, Field
 import niceview
@@ -18,14 +17,11 @@ class PrometheusConfig(BaseModel):
         ] = "http://localhost:8081/api/v1/push"
     pull_url: Annotated[str,
             Field(description=
-                'PromQL query API base URL (used for reading back data).\n'
+                'PromQL query API base URL (used for reading back data, e.g. on the Data tab).\n'
                 'Grafana Mimir: http://mimir:9009/prometheus/api/v1/\n'
-                'VictoriaMetrics: http://victoriametrics:8428/\n'
+                'VictoriaMetrics: http://victoriametrics:8428/api/v1/\n'
                 'Prometheus: http://prometheus:9090/api/v1/')
         ] = "http://localhost:9009/prometheus/api/v1/"
-    default_pull_timeframe: Annotated[datetime.timedelta,
-            Field(description='Default time window for read queries.')
-        ] = datetime.timedelta(hours=1)
     username: Annotated[str,
             Field(description='Username for Basic Auth. Leave empty to disable auth.')
         ] = ""

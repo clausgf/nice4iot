@@ -77,8 +77,10 @@ class InfluxLineBackend:
             logger.error(f"InfluxDB backend error for {self.project_name}: {e}")
             raise
 
-    async def read(self, device_name: str, kind: str = 'default',
-                   start: datetime.datetime | None = None,
-                   end: datetime.datetime | None = None) -> list:
-        # TODO: implement via InfluxQL (1.x) or Flux API (2.x)
-        raise NotImplementedError("Read not yet implemented for InfluxDB Line Protocol backend.")
+    async def read_series(self, device_name: str,
+                          start: datetime.datetime,
+                          end: datetime.datetime) -> list:
+        # No read path: VictoriaMetrics & friends are read via the Prometheus
+        # backend; a genuine InfluxDB read would need InfluxQL (1.x) or Flux
+        # (2.x). Raising here makes read_series() fall back to the local store.
+        raise NotImplementedError("Read not implemented for the InfluxDB Line Protocol backend.")

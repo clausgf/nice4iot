@@ -8,8 +8,7 @@ from niceview.dataadapter import JsonAdapter
 
 from app.paths import project_dir, device_dir
 from app.util import logger
-from niceview.dataadapter import JsonAdapter
-from app.core.telemetry.models import TelemetryBackend, TelemetryConfig
+from app.core.telemetry.models import MetricSeries, TelemetryBackend, TelemetryConfig
 from app.core.telemetry.prometheus.backend import PrometheusBackend
 from app.core.telemetry.influxdb.backend import InfluxLineBackend
 
@@ -148,12 +147,49 @@ async def write_telemetry(project_name: str, device_name: str, values: dict,
     )
 
 
-async def read_telemetry(project_name: str, device_name: str,
-                         kind: str = 'default',
-                         start: datetime.datetime | None = None,
-                         end: datetime.datetime | None = None) -> list:
-    """Read telemetry from the active backend. Returns [] if no backend is configured."""
+_REMOTE_ALL_WINDOW = datetime.timedelta(days=30)  # 'All' cap for remote reads
+
+
+def _local_series(project_name: str, device_name: str,
+                  since: datetime.datetime | None) -> list[MetricSeries]:
+    """Group local JSONL records into MetricSeries (one per kind/metric pair)."""
+    grouped: dict[tuple[str, str], list[tuple[datetime.datetime, float]]] = {}
+    for rec in read_local_metrics(project_name, device_name, since=since):
+        ts = datetime.datetime.fromisoformat(rec['ts'])
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=datetime.timezone.utc)
+        for metric, value in rec['v'].items():
+            try:
+                grouped.setdefault((rec['kind'], metric), []).append((ts, float(value)))
+            except (TypeError, ValueError):
+                continue
+    series = [MetricSeries(kind=k, metric=m, points=sorted(pts))
+              for (k, m), pts in grouped.items()]
+    series.sort(key=lambda s: (s.kind, s.metric))
+    return series
+
+
+async def read_series(project_name: str, device_name: str,
+                      since: datetime.datetime | None) -> tuple[list[MetricSeries], str]:
+    """Read all metric series for a device, preferring the configured backend.
+
+    Returns (series, source): source is the backend name (e.g. 'prometheus')
+    or 'local' when no backend is configured or the backend read failed —
+    including backends without a read path (InfluxDB line protocol raises
+    NotImplementedError). since=None means everything locally, but is capped
+    to the last _REMOTE_ALL_WINDOW remotely (remote queries need a bounded
+    window).
+    """
     backend = _get_active_backend(project_name)
-    if backend:
-        return await backend.read(device_name, kind, start, end)
-    return []
+    if backend is not None:
+        end = datetime.datetime.now(datetime.timezone.utc)
+        start = since or (end - _REMOTE_ALL_WINDOW)
+        try:
+            series = await backend.read_series(device_name, start, end)
+            return series, type(backend).__name__.removesuffix('Backend').lower()
+        except Exception as e:
+            logger.error(f"Telemetry read from backend failed for "
+                         f"{project_name}/{device_name}, falling back to local store: {e}")
+    series = await anyio.to_thread.run_sync(
+        lambda: _local_series(project_name, device_name, since))
+    return series, 'local'

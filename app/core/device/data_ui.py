@@ -1,22 +1,24 @@
 """
-Device Data Tab — multi-trace time-series visualization of local telemetry.
+Device Data Tab — multi-trace time-series visualization of telemetry.
 
-Telemetry is stored locally in <device_dir>/.device_metrics.jsonl by
-write_telemetry() (always-on alongside any configured remote backend).
-Each line is: {"ts": "<ISO>", "kind": "<kind>", "v": {<metric>: <value>}}
+Data comes from read_series(): the project's configured telemetry backend
+(e.g. VictoriaMetrics via the Prometheus query API) when one is set up,
+falling back to the local JSONL ring buffer
+(<device_dir>/.device_metrics.jsonl, written by write_telemetry() alongside
+any remote backend). A chip next to the chart shows which source is active.
 
 The panel lets the user define multiple traces (each with a color, kind and
 metric selector), pick a time window, and renders all traces on a shared
 Plotly chart. Additional traces can be added with the "+" button; existing
 ones removed with the per-row Delete button.
 """
-import asyncio
 import datetime
 
 import plotly.graph_objects as go
 from nicegui import ui
 
-from app.core.telemetry.backend import read_local_metrics
+from app.core.telemetry.backend import read_series
+from app.core.telemetry.models import MetricSeries
 
 import logging
 log = logging.getLogger("uvicorn")
@@ -62,7 +64,8 @@ class _DataExplorer:
         self.device_name = device_name
         self.window = 'Last 24 h'
         self.traces: list[dict] = [{'color': 'Blue', 'kind': None, 'metric': None}]
-        self._records: list = []
+        self._series: list[MetricSeries] = []
+        self._source: str = 'local'
         self._auto_refresh = False
 
         with ui.row().classes('w-full items-center gap-4 q-mt-xs flex-wrap'):
@@ -83,13 +86,10 @@ class _DataExplorer:
 
     @ui.refreshable
     def _traces_ui(self) -> None:
-        kinds = sorted({r['kind'] for r in self._records}) if self._records else []
+        kinds = self._kinds()
         only_one = len(self.traces) == 1
         for i, trace in enumerate(self.traces):
-            metrics = (
-                sorted({k for r in self._records if r['kind'] == trace['kind'] for k in r['v']})
-                if trace['kind'] else []
-            )
+            metrics = self._metrics_for(trace['kind'])
             with ui.row().classes('w-full items-center gap-2 q-mt-xs flex-wrap'):
                 ui.select(_TRACE_COLORS, value=trace['color'], label='Color').props(
                     'dense outlined').classes('w-28').on_value_change(
@@ -116,10 +116,19 @@ class _DataExplorer:
         delta = _WINDOWS.get(self.window)
         return datetime.datetime.now(datetime.timezone.utc) - delta if delta else None
 
-    def _first_metric(self, kind: str | None) -> str | None:
+    def _kinds(self) -> list[str]:
+        return sorted({s.kind for s in self._series})
+
+    def _metrics_for(self, kind: str | None) -> list[str]:
         if not kind:
-            return None
-        metrics = sorted({k for r in self._records if r['kind'] == kind for k in r['v']})
+            return []
+        return sorted({s.metric for s in self._series if s.kind == kind})
+
+    def _find_series(self, kind: str | None, metric: str | None) -> MetricSeries | None:
+        return next((s for s in self._series if s.kind == kind and s.metric == metric), None)
+
+    def _first_metric(self, kind: str | None) -> str | None:
+        metrics = self._metrics_for(kind)
         return metrics[0] if metrics else None
 
     async def _auto_refresh_tick(self) -> None:
@@ -131,10 +140,10 @@ class _DataExplorer:
     # ------------------------------------------------------------------
 
     async def _refresh(self, _=None) -> None:
-        self._records = await asyncio.to_thread(
-            read_local_metrics, self.project_name, self.device_name, since=self._since()
+        self._series, self._source = await read_series(
+            self.project_name, self.device_name, since=self._since()
         )
-        kinds = sorted({r['kind'] for r in self._records}) if self._records else []
+        kinds = self._kinds()
         for trace in self.traces:
             if trace['kind'] not in kinds:
                 trace['kind'] = kinds[0] if kinds else None
@@ -169,7 +178,7 @@ class _DataExplorer:
     def _add_trace(self) -> None:
         colors_used = {t['color'] for t in self.traces}
         color = next((c for c in _TRACE_COLORS if c not in colors_used), _TRACE_COLORS[0])
-        kinds = sorted({r['kind'] for r in self._records}) if self._records else []
+        kinds = self._kinds()
         kind = kinds[0] if kinds else None
         self.traces.append({'color': color, 'kind': kind, 'metric': self._first_metric(kind)})
         self._traces_ui.refresh()
@@ -187,22 +196,20 @@ class _DataExplorer:
 
     def _draw_chart_ui(self) -> None:
         self.summary_row.clear()
+        with self.summary_row:
+            source_label = 'local buffer' if self._source == 'local' else self._source
+            ui.chip(f'Source: {source_label}').props('dense outline square').classes('text-caption')
         fig = go.Figure()
         has_data = False
 
         for trace in self.traces:
             if not trace['kind'] or not trace['metric']:
                 continue
-            xs, ys = [], []
-            for r in self._records:
-                if r['kind'] == trace['kind'] and trace['metric'] in r['v']:
-                    try:
-                        xs.append(datetime.datetime.fromisoformat(r['ts']))
-                        ys.append(float(r['v'][trace['metric']]))
-                    except (KeyError, ValueError):
-                        continue
-            if not xs:
+            series = self._find_series(trace['kind'], trace['metric'])
+            if series is None or not series.points:
                 continue
+            xs = [p[0] for p in series.points]
+            ys = [p[1] for p in series.points]
             has_data = True
             color = _TRACE_COLOR_HEX.get(trace['color'], '#1f77b4')
             label = f"{trace['kind']}/{trace['metric']}"

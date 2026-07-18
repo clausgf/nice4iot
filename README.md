@@ -8,7 +8,7 @@ An IoT device management platform written in Python. It provides a REST API for 
 
 - **Project & device management** — organise devices into projects, manage metadata and lifecycle via a web UI
 - **Token-based provisioning** — devices self-register using a project-scoped provisioning token and receive a short-lived device token in return
-- **Telemetry ingestion** — devices push measurements; nice4iot forwards them to a time-series backend (Prometheus remote write or InfluxDB line protocol) and always stores the last 2 000 readings locally for in-app charting
+- **Telemetry ingestion & charting** — devices push measurements; nice4iot forwards them to a time-series backend (Prometheus remote write or InfluxDB line protocol) and always stores the last 2 000 readings locally. The Data tab charts directly from the configured backend (long history) and falls back to the local ring buffer when none is set up. Recommended backend: [VictoriaMetrics](https://victoriametrics.com) via the Prometheus backend — `push_url: http://host:8428/api/v1/write`, `pull_url: http://host:8428/api/v1/`
 - **Log ingestion** — devices push log lines; nice4iot forwards them to a log backend (Loki or local file); the UI shows a live tail of the file log
 - **HTTP forwarding** — authenticated devices can proxy arbitrary requests through the platform to configured backend URLs
 - **File serving & upload** — devices can fetch and upload files; device-specific files take precedence over project-wide defaults (ETag caching supported)
@@ -457,6 +457,6 @@ MQTT authentication is currently managed by the broker. A future version will in
 - **Multi-user / RBAC** — all UI operators share the same access level.
 - **Backup and restore** — no tooling or documentation for backup, restore, or migration of the `data/projects/` directory.
 - **Pagination** — project and device lists load all items into memory; large deployments will need pagination.
-- **Telemetry read from remote** — the Data tab currently reads only the local JSONL store; reading from InfluxDB or Prometheus (for historical data) is not yet implemented.
+- **Telemetry read from InfluxDB** — the Data tab reads from Prometheus-compatible backends (Prometheus, VictoriaMetrics, Mimir) with local fallback; a read path for the InfluxDB line-protocol backend (InfluxQL/Flux) is not implemented.
 - **MQTT device commands** — `{base}/cmd/{name}` downlink topic for server-to-device commands is planned.
 - **MQTT authentication** — currently managed by the broker. A future version will integrate with Mosquitto's Dynamic Security Plugin for per-device credential provisioning from the UI.

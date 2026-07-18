@@ -1,16 +1,52 @@
 import base64
 import datetime
+import math
 import numbers
+import re
 import time
 import asyncio
 
 import httpx
-import pytz
 import snappy
-from app.config import app_config
+from app.core.telemetry.models import MetricSeries
 from app.core.telemetry.prometheus.models import PrometheusConfig
 from app.core.telemetry.prometheus import prom_spec_pb2, types_pb2
 from app.util import logger
+
+
+def _parse_matrix(response_json: dict, project_name: str) -> list[MetricSeries]:
+    """Convert a Prometheus/VictoriaMetrics query result into MetricSeries.
+
+    Expects the instant-query-with-range-selector shape: data.result is a
+    list of {"metric": {<labels>}, "values": [[<unix_ts>, "<value>"], ...]}.
+    Metric names are stripped of the '<project_name>_' prefix added by
+    write(); the 'kind' label defaults to 'default'; NaN samples (staleness
+    markers) are dropped.
+    """
+    prefix = f'{project_name}_'
+    series_list: list[MetricSeries] = []
+    for item in response_json.get('data', {}).get('result', []):
+        labels = item.get('metric', {})
+        name = labels.get('__name__', '')
+        metric = name.removeprefix(prefix)
+        if not metric or metric == name:
+            continue
+        points: list[tuple[datetime.datetime, float]] = []
+        for ts, val in item.get('values', []):
+            try:
+                v = float(val)
+            except (TypeError, ValueError):
+                continue
+            if math.isnan(v):
+                continue
+            points.append((datetime.datetime.fromtimestamp(float(ts), tz=datetime.timezone.utc), v))
+        if not points:
+            continue
+        points.sort(key=lambda p: p[0])
+        series_list.append(MetricSeries(kind=labels.get('kind', 'default'),
+                                        metric=metric, points=points))
+    series_list.sort(key=lambda s: (s.kind, s.metric))
+    return series_list
 
 
 class PrometheusBackend:
@@ -91,45 +127,27 @@ class PrometheusBackend:
             logger.error(f"Prometheus backend error for {self.project_name}: {e}")
             raise
 
-    async def read(self, device_name: str, kind: str = 'default',
-                   start: datetime.datetime | None = None,
-                   end: datetime.datetime | None = None,
-                   metrics: str = '.*',
-                   timeframe: datetime.timedelta | None = None,
-                   step: str = '15s') -> list:
-        tz = pytz.timezone(app_config.timezone)
-        now = datetime.datetime.now(tz)
-        query_type = 'query_range'
-        if timeframe is None:
-            timeframe = self.config.default_pull_timeframe
+    async def read_series(self, device_name: str,
+                          start: datetime.datetime,
+                          end: datetime.datetime) -> list[MetricSeries]:
+        """Read raw samples for every metric of *device_name* between start and end.
 
-        if start is not None:
-            if end is None:
-                end = min(start + timeframe, now)
-        else:
-            if end is not None:
-                start = end - timeframe
-            else:
-                query_type = 'query'
-
-        if query_type == 'query_range':
-            if start > end or end > now:
-                raise ValueError('Invalid timeframe: start must be before end and end must not be in the future')
-            start_str = start.isoformat()
-            end_str = end.isoformat()
-        else:
-            start_str = end_str = None
-
-        query = (f'{{__name__=~"{self.project_name}_{metrics}",'
-                 f'device=~"{device_name}",kind=~"{kind}"}}&step={step}')
-        if start_str and end_str:
-            query += f'&start={start_str}&end={end_str}'
-        query = query.replace('+', '%2B')
-        query_url = f'{self.config.pull_url}{query_type}?query={query}'
-
+        Uses an instant query with a range selector ({...}[<window>s]) rather
+        than query_range: it returns the actual stored samples instead of
+        step-interpolated values, matching what the local JSONL store holds.
+        Works on Prometheus, VictoriaMetrics, and Mimir. The device label is
+        matched exactly (device names may contain regex metacharacters like
+        '+'); the project prefix in __name__ is regex-escaped for the same
+        reason. Raises on HTTP errors so callers can fall back.
+        """
+        window_s = max(1, math.ceil((end - start).total_seconds()))
+        selector = (f'{{__name__=~"{re.escape(self.project_name)}_.+",'
+                    f'device="{device_name}"}}[{window_s}s]')
         async with httpx.AsyncClient() as client:
             async with asyncio.timeout(self.config.read_timeout):
-                r = await client.get(query_url, headers=self._read_headers())
-        if r.status_code == 200:
-            return r.json()['data']['result']
-        return []
+                r = await client.get(f'{self.config.pull_url}query',
+                                     params={'query': selector, 'time': str(end.timestamp())},
+                                     headers=self._read_headers())
+        if r.status_code != 200:
+            raise RuntimeError(f"Telemetry read returned HTTP {r.status_code}: {r.text[:200]}")
+        return _parse_matrix(r.json(), self.project_name)
