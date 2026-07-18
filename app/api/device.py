@@ -70,11 +70,11 @@ async def post_telemetry_with_names(
     dev: DeviceAuthInfo = Depends(device_auth),
 ) -> Response:
     """
-    Push a flat JSON object of numeric measurements to the telemetry backend.
+    Push a JSON object of numeric measurements to the telemetry backend.
 
     **Request body**
 
-    A flat JSON object whose keys are metric names and values are numbers::
+    A JSON object whose keys are metric names and values are numbers::
 
         Content-Type: application/json
 
@@ -86,7 +86,13 @@ async def post_telemetry_with_names(
           "active_ms": 823
         }
 
-    Only numeric (float/int) field values are forwarded to the backend.
+    Nested objects are flattened into underscore-joined metric names
+    (``{"env": {"temp": 22.4}}`` becomes ``env_temp``), so payloads may be
+    hierarchical::
+
+        {"env": {"temp": 22.4, "hum": 41}, "battery": {"V": 3.71}}
+
+    Only numeric (float/int) leaf values are forwarded to the backend.
     Non-numeric fields (e.g. ``"status": "ok"``) are **silently ignored**;
     a warning is logged server-side. This allows mixed payloads without
     failing the entire measurement batch.

@@ -14,8 +14,10 @@ from app.core.project.backend import create_project
 from app.core.telemetry.backend import (
     LOCAL_METRICS_MAX_LINES,
     _append_local_metrics,
+    flatten_metrics,
     read_local_metrics,
     read_series,
+    write_telemetry,
 )
 from app.core.telemetry.models import MetricSeries
 from app.core.telemetry.prometheus.backend import _parse_matrix
@@ -195,3 +197,51 @@ def test_read_series_falls_back_on_backend_error(monkeypatch, proj_dev):
 
     assert source == 'local'
     assert series[0].points[0][1] == 1.0
+
+
+# ---------------------------------------------------------------------------
+# flatten_metrics — hierarchical JSON -> underscore-joined keys
+# ---------------------------------------------------------------------------
+
+def test_flatten_metrics_nested():
+    assert flatten_metrics({"a": {"b": 1}}) == {"a_b": 1}
+
+
+def test_flatten_metrics_deep_and_mixed():
+    payload = {
+        "env": {"temp": 22.4, "hum": 41},
+        "battery": {"V": 3.71},
+        "wifi_rssi": -67,
+    }
+    assert flatten_metrics(payload) == {
+        "env_temp": 22.4,
+        "env_hum": 41,
+        "battery_V": 3.71,
+        "wifi_rssi": -67,
+    }
+
+
+def test_flatten_metrics_multi_level():
+    assert flatten_metrics({"a": {"b": {"c": 5}}}) == {"a_b_c": 5}
+
+
+def test_flatten_metrics_already_flat_unchanged():
+    assert flatten_metrics({"temp": 22.4, "count": 3}) == {"temp": 22.4, "count": 3}
+
+
+def test_flatten_metrics_empty_nested_contributes_nothing():
+    assert flatten_metrics({"a": {}, "b": 1}) == {"b": 1}
+
+
+def test_flatten_metrics_preserves_non_dict_leaves():
+    # Non-numeric leaves are kept here; the numeric filter runs downstream.
+    assert flatten_metrics({"a": {"b": "ok"}, "c": [1, 2]}) == {"a_b": "ok", "c": [1, 2]}
+
+
+def test_write_telemetry_flattens_into_local_store(proj_dev):
+    p, d = proj_dev
+    asyncio.run(write_telemetry(p, d, {"env": {"temp": 22.4}}, kind="sensors",
+                                timestamp=_NOW))
+    records = read_local_metrics(p, d)
+    assert len(records) == 1
+    assert records[0]["v"] == {"env_temp": 22.4}

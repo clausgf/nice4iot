@@ -124,10 +124,35 @@ def _evaluate_alarms(project_name: str, device_name: str, kind: str, values: dic
         logger.error(f"Alarm evaluation error for {project_name}/{device_name}: {e}")
 
 
+def flatten_metrics(values: dict, parent_key: str = '', sep: str = '_') -> dict:
+    """Flatten nested JSON objects into single-level keys joined by *sep*.
+
+    ``{"a": {"b": 1}}`` becomes ``{"a_b": 1}``; nesting of any depth is
+    supported. Leaf values are passed through unchanged — numeric filtering
+    happens downstream in each backend and the local store — so non-dict
+    leaves (numbers, strings, lists) keep their flattened key. Empty nested
+    objects contribute no keys.
+    """
+    flat: dict = {}
+    for key, value in values.items():
+        new_key = f'{parent_key}{sep}{key}' if parent_key else str(key)
+        if isinstance(value, dict):
+            flat.update(flatten_metrics(value, new_key, sep))
+        else:
+            flat[new_key] = value
+    return flat
+
+
 async def write_telemetry(project_name: str, device_name: str, values: dict,
                           kind: str = 'default',
                           timestamp: datetime.datetime | None = None) -> None:
-    """Write telemetry to the active backend and to the local JSONL store."""
+    """Write telemetry to the active backend and to the local JSONL store.
+
+    Nested JSON objects in *values* are flattened to underscore-joined keys
+    (``a.b`` → ``a_b``) before any backend, the local store, or alarm rules
+    see them, so metric names stay flat everywhere.
+    """
+    values = flatten_metrics(values)
     now = timestamp or datetime.datetime.now(datetime.timezone.utc)
     backend = _get_active_backend(project_name)
     if backend:
