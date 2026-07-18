@@ -5,12 +5,16 @@ HEAD /api/file/{project}/{device}/{filename}   — ETag-based cache check
 GET  /api/file/{project}/{device}/{filename}   — download with conditional 304
 PUT  /api/file/{project}/{device}/{filename}   — device uploads a file
 
-The device sends If-None-Match on subsequent requests and expects 304
-when the file has not changed (avoids unnecessary downloads).
+The device sends If-None-Match and/or If-Modified-Since on subsequent
+requests and expects 304 when the file has not changed (avoids unnecessary
+downloads). Per RFC 7232 §3.3, If-None-Match takes precedence when both are
+present.
 
 File lookup: device-specific path first, project-level fallback if absent.
 PUT always writes to the device-specific path.
 """
+from email.utils import formatdate
+
 import pytest
 from pathlib import Path
 
@@ -104,6 +108,113 @@ def test_head_200_when_etag_differs(client, provisioned, device_file):
     assert resp.status_code == 200
 
 
+# ---------------------------------------------------------------------------
+# HEAD — Last-Modified / If-Modified-Since caching
+# ---------------------------------------------------------------------------
+
+def test_head_returns_last_modified(client, provisioned, device_file):
+    resp = client.head(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/config.txt",
+        headers={"Authorization": f"bearer {provisioned['device_token']}"},
+    )
+    assert resp.status_code == 200
+    assert resp.headers.get("last-modified")
+
+
+def test_head_304_when_not_modified_since(client, provisioned, device_file):
+    """Second request with If-Modified-Since == Last-Modified must return 304."""
+    resp1 = client.head(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/config.txt",
+        headers={"Authorization": f"bearer {provisioned['device_token']}"},
+    )
+    last_modified = resp1.headers["last-modified"]
+
+    resp2 = client.head(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/config.txt",
+        headers={
+            "Authorization": f"bearer {provisioned['device_token']}",
+            "If-Modified-Since": last_modified,
+        },
+    )
+    assert resp2.status_code == 304
+
+
+def test_head_200_when_modified_since(client, provisioned, device_file):
+    """If-Modified-Since older than the file's mtime must return 200."""
+    resp = client.head(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/config.txt",
+        headers={
+            "Authorization": f"bearer {provisioned['device_token']}",
+            "If-Modified-Since": "Sat, 01 Jan 2000 00:00:00 GMT",
+        },
+    )
+    assert resp.status_code == 200
+
+
+def test_head_if_none_match_takes_precedence_over_if_modified_since(client, provisioned, device_file):
+    """A stale ETag combined with a matching If-Modified-Since must still return
+    200 — RFC 7232 §3.3 says If-None-Match alone decides when both are sent."""
+    resp1 = client.head(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/config.txt",
+        headers={"Authorization": f"bearer {provisioned['device_token']}"},
+    )
+    last_modified = resp1.headers["last-modified"]
+
+    resp2 = client.head(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/config.txt",
+        headers={
+            "Authorization": f"bearer {provisioned['device_token']}",
+            "If-None-Match": "stale-etag-value",
+            "If-Modified-Since": last_modified,
+        },
+    )
+    assert resp2.status_code == 200
+
+
+def test_head_304_when_etag_and_if_modified_since_both_match(client, provisioned, device_file):
+    """A matching ETag combined with a matching If-Modified-Since returns 304."""
+    resp1 = client.head(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/config.txt",
+        headers={"Authorization": f"bearer {provisioned['device_token']}"},
+    )
+    etag = resp1.headers["etag"]
+    last_modified = resp1.headers["last-modified"]
+
+    resp2 = client.head(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/config.txt",
+        headers={
+            "Authorization": f"bearer {provisioned['device_token']}",
+            "If-None-Match": etag,
+            "If-Modified-Since": last_modified,
+        },
+    )
+    assert resp2.status_code == 304
+
+
+def test_head_200_when_invalid_if_modified_since(client, provisioned, device_file):
+    """A malformed If-Modified-Since header must not raise — treated as no match."""
+    resp = client.head(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/config.txt",
+        headers={
+            "Authorization": f"bearer {provisioned['device_token']}",
+            "If-Modified-Since": "not-a-date",
+        },
+    )
+    assert resp.status_code == 200
+
+
+def test_head_mtime_goes_into_last_modified_not_date(client, provisioned, device_file):
+    """Regression: get_headers() used to leak the file's mtime into Date
+    instead of Last-Modified."""
+    resp = client.head(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/config.txt",
+        headers={"Authorization": f"bearer {provisioned['device_token']}"},
+    )
+    mtime_date = formatdate(device_file.stat().st_mtime, usegmt=True)
+    assert resp.headers["last-modified"] == mtime_date
+    assert resp.headers.get("date") != mtime_date
+
+
 def test_head_404_when_file_missing(client, provisioned, projects_dir):
     resp = client.head(
         f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/nonexistent.bin",
@@ -137,6 +248,74 @@ def test_get_304_when_etag_matches(client, provisioned, device_file):
         headers={
             "Authorization": f"bearer {provisioned['device_token']}",
             "If-None-Match": etag,
+        },
+    )
+    assert resp2.status_code == 304
+
+
+def test_get_304_when_not_modified_since(client, provisioned, device_file):
+    resp1 = client.get(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/config.txt",
+        headers={"Authorization": f"bearer {provisioned['device_token']}"},
+    )
+    last_modified = resp1.headers["last-modified"]
+
+    resp2 = client.get(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/config.txt",
+        headers={
+            "Authorization": f"bearer {provisioned['device_token']}",
+            "If-Modified-Since": last_modified,
+        },
+    )
+    assert resp2.status_code == 304
+
+
+def test_get_200_when_modified_since(client, provisioned, device_file):
+    resp = client.get(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/config.txt",
+        headers={
+            "Authorization": f"bearer {provisioned['device_token']}",
+            "If-Modified-Since": "Sat, 01 Jan 2000 00:00:00 GMT",
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.text == FILE_CONTENT
+
+
+def test_get_if_none_match_takes_precedence_over_if_modified_since(client, provisioned, device_file):
+    """A stale ETag combined with a matching If-Modified-Since must still return
+    200 — RFC 7232 §3.3 says If-None-Match alone decides when both are sent."""
+    resp1 = client.get(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/config.txt",
+        headers={"Authorization": f"bearer {provisioned['device_token']}"},
+    )
+    last_modified = resp1.headers["last-modified"]
+
+    resp2 = client.get(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/config.txt",
+        headers={
+            "Authorization": f"bearer {provisioned['device_token']}",
+            "If-None-Match": "stale-etag-value",
+            "If-Modified-Since": last_modified,
+        },
+    )
+    assert resp2.status_code == 200
+
+
+def test_get_304_when_etag_and_if_modified_since_both_match(client, provisioned, device_file):
+    resp1 = client.get(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/config.txt",
+        headers={"Authorization": f"bearer {provisioned['device_token']}"},
+    )
+    etag = resp1.headers["etag"]
+    last_modified = resp1.headers["last-modified"]
+
+    resp2 = client.get(
+        f"/api/file/{provisioned['project_name']}/{provisioned['device_name']}/config.txt",
+        headers={
+            "Authorization": f"bearer {provisioned['device_token']}",
+            "If-None-Match": etag,
+            "If-Modified-Since": last_modified,
         },
     )
     assert resp2.status_code == 304

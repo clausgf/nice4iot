@@ -21,12 +21,17 @@ The device-specific file takes priority. If neither exists, 404 is returned.
 
 PUT always writes to the device-specific path.
 
-Cache-validation (ETag / If-None-Match)
----------------------------------------
-All responses include an ``ETag`` header (MD5 of ``mtime + file_size``).
-Clients should cache the ETag and send it as ``If-None-Match`` on subsequent
-requests. When the ETag matches, the server returns 304 and the client reuses
-its cached copy — this minimises download traffic for firmware that has not changed.
+Cache-validation (ETag / If-None-Match / Last-Modified / If-Modified-Since)
+----------------------------------------------------------------------------
+All responses include an ``ETag`` header (MD5 of ``mtime + file_size``) and a
+``Last-Modified`` header (the file's mtime). Clients can use either validator:
+send the cached ETag as ``If-None-Match``, or the cached ``Last-Modified``
+value as ``If-Modified-Since``, on subsequent requests. When the file has not
+changed, the server returns 304 and the client reuses its cached copy — this
+minimises download traffic for firmware that has not changed.
+
+Per RFC 7232 §3.3, if a request carries both headers, ``If-None-Match`` is
+authoritative and ``If-Modified-Since`` is ignored.
 
 Authentication
 --------------
@@ -34,7 +39,7 @@ All endpoints require a valid device bearer token (see ``POST /api/provision``).
 Send it as ``Authorization: Bearer <accessToken>``.
 """
 
-from email.utils import formatdate
+from email.utils import formatdate, parsedate_to_datetime
 import hashlib
 from pathlib import Path
 import anyio
@@ -61,8 +66,11 @@ async def get_headers(file_path: Path) -> dict[str, str]:
     """
     Compute and return caching headers for the given file path.
 
-    Returns a dict with: ``Cache-Control``, ``Content-Location``, ``Date``,
-    and ``ETag``. The ETag is an MD5 hex digest of ``"<mtime>-<size>"``.
+    Returns a dict with: ``Cache-Control``, ``Content-Location``,
+    ``Last-Modified``, and ``ETag``. The ETag is an MD5 hex digest of
+    ``"<mtime>-<size>"``. ``Last-Modified`` is the file's mtime (the actual
+    ``Date`` response header — when the response was generated — is added
+    automatically by the ASGI server and must not be set here).
 
     :raises HTTPException 404: File does not exist.
     :raises RuntimeError: Path exists but is not a regular file.
@@ -83,9 +91,29 @@ async def get_headers(file_path: Path) -> dict[str, str]:
     return {
         "Cache-Control": "no-cache",
         "Content-Location": str(file_path),
-        "Date": last_modified,
+        "Last-Modified": last_modified,
         "ETag": etag,
     }
+
+
+def _is_not_modified(headers: dict[str, str], if_none_match: str | None,
+                      if_modified_since: str | None) -> bool:
+    """
+    Evaluate conditional-GET/HEAD headers against the file's current cache headers.
+
+    Per RFC 7232 §3.3, ``If-Modified-Since`` is only evaluated when
+    ``If-None-Match`` is absent from the request.
+    """
+    if if_none_match is not None:
+        return if_none_match == headers["ETag"]
+    if if_modified_since is not None:
+        try:
+            since = parsedate_to_datetime(if_modified_since)
+            last_modified = parsedate_to_datetime(headers["Last-Modified"])
+        except (TypeError, ValueError):
+            return False
+        return last_modified <= since
+    return False
 
 
 ###############################################################################
@@ -99,13 +127,13 @@ async def get_headers(file_path: Path) -> dict[str, str]:
         200: {
             "description": (
                 "File found. Response headers include ``ETag``, ``Cache-Control``, "
-                "``Date``, and ``Content-Location``. No response body."
+                "``Last-Modified``, and ``Content-Location``. No response body."
             )
         },
         304: {
             "description": (
-                "File found but ETag matches ``If-None-Match`` — "
-                "client's cached copy is still valid. No response body."
+                "File found but ``If-None-Match`` or ``If-Modified-Since`` indicates "
+                "the client's cached copy is still valid. No response body."
             )
         },
         400: {"description": "Filename contains invalid characters or path traversal sequences."},
@@ -122,19 +150,23 @@ async def head_resource(
     device_name: str,
     filename: str,
     if_none_match: str | None = Header(default=None),
+    if_modified_since: str | None = Header(default=None),
     dev: DeviceAuthInfo = Depends(device_auth),
 ) -> Response:
     """
     Return cache headers for a file without transferring its contents.
 
     Useful for checking whether a new firmware or config file is available
-    before deciding to download it. The ETag can be compared locally without
-    issuing a full GET.
+    before deciding to download it. The ETag/Last-Modified can be compared
+    locally without issuing a full GET.
 
     **File lookup**: device-specific path first, project-wide fallback if not found.
 
-    **If-None-Match**: if the request includes ``If-None-Match: <etag>`` and the
-    ETag matches the current file, responds with **304 Not Modified**.
+    **If-None-Match** / **If-Modified-Since**: if the request includes
+    ``If-None-Match: <etag>`` and the ETag matches the current file, or
+    ``If-Modified-Since: <date>`` and the file has not changed since that
+    date, responds with **304 Not Modified**. If both are present,
+    ``If-None-Match`` alone decides (RFC 7232 §3.3).
     """
     if not is_valid_upload_filename(filename):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Invalid filename: {filename!r}")
@@ -146,7 +178,7 @@ async def head_resource(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
     headers = await get_headers(file_path)
 
-    if if_none_match == headers['ETag']:
+    if _is_not_modified(headers, if_none_match, if_modified_since):
         return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers=headers)
     return Response(status_code=status.HTTP_200_OK, headers=headers)
 
@@ -162,13 +194,13 @@ async def head_resource(
         200: {
             "description": (
                 "File contents. Response includes ``ETag``, ``Cache-Control``, "
-                "``Date``, and ``Content-Location`` headers."
+                "``Last-Modified``, and ``Content-Location`` headers."
             )
         },
         304: {
             "description": (
-                "ETag matches ``If-None-Match`` — file has not changed since "
-                "the client last downloaded it. No response body."
+                "``If-None-Match`` or ``If-Modified-Since`` indicates the file has not "
+                "changed since the client last downloaded it. No response body."
             )
         },
         400: {"description": "Filename contains invalid characters or path traversal sequences."},
@@ -185,6 +217,7 @@ async def get_resource(
     device_name: str,
     filename: str,
     if_none_match: str | None = Header(default=None),
+    if_modified_since: str | None = Header(default=None),
     dev: DeviceAuthInfo = Depends(device_auth),
 ) -> Response:
     """
@@ -197,14 +230,16 @@ async def get_resource(
 
     If neither exists, returns **404**.
 
-    **ETag caching**
+    **ETag / Last-Modified caching**
 
-    The response always includes an ``ETag`` header. On subsequent requests,
-    send the received ETag as ``If-None-Match: <etag>``; the server returns
-    **304 Not Modified** without a body if the file has not changed.
-    This is the recommended pattern for firmware OTA: the device checks with
-    HEAD or GET + If-None-Match on every boot and skips the download when the
-    ETag matches its locally stored value.
+    The response always includes ``ETag`` and ``Last-Modified`` headers. On
+    subsequent requests, send the received ETag as ``If-None-Match: <etag>``,
+    or the received ``Last-Modified`` value as ``If-Modified-Since: <date>``;
+    the server returns **304 Not Modified** without a body if the file has
+    not changed. If both conditional headers are sent, ``If-None-Match``
+    alone decides (RFC 7232 §3.3). This is the recommended pattern for
+    firmware OTA: the device checks with HEAD or GET + a conditional header
+    on every boot and skips the download when the file is unchanged.
     """
     if not is_valid_upload_filename(filename):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Invalid filename: {filename!r}")
@@ -216,7 +251,7 @@ async def get_resource(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
     headers = await get_headers(file_path)
 
-    if if_none_match == headers['ETag']:
+    if _is_not_modified(headers, if_none_match, if_modified_since):
         return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers=headers)
     return FileResponse(file_path, headers=headers)
 

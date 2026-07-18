@@ -171,7 +171,7 @@ Provisioning request (provisioning token)
 
 ### File Serving with Fallback
 
-`GET /api/file/{project}/{device}/{filename}` looks for a device-specific file first, then falls back to a project-wide default. This lets you distribute common firmware / config to all devices while allowing per-device overrides. ETag-based caching (`If-None-Match` / `304 Not Modified`) is fully supported.
+`GET /api/file/{project}/{device}/{filename}` looks for a device-specific file first, then falls back to a project-wide default. This lets you distribute common firmware / config to all devices while allowing per-device overrides. Conditional caching is fully supported via both `If-None-Match` (ETag) and `If-Modified-Since` (`Last-Modified`) — either results in `304 Not Modified` when unchanged; per RFC 7232 §3.3, `If-None-Match` takes precedence when a request sends both.
 
 `PUT /api/file/{project}/{device}/{filename}` writes to the device-specific path atomically (via a temp file). The filename must contain only `[a-zA-Z0-9_\-.]` and must not contain `..`.
 
