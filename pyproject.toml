@@ -22,12 +22,17 @@ dependencies = [
     "niceview",
     "aiomqtt>=2.5.1",
     "bcrypt>=5.0.0",
-    "epaper-nice",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest",
+]
+# Optional extensions — not installed by default. The epaper-nice repository
+# is private (git+ssh), so CI and plain `uv sync` must not depend on it.
+# Enable with: uv sync --extra epaper
+epaper = [
+    "epaper-nice",
 ]
 
 [dependency-groups]

@@ -1014,7 +1014,6 @@ dependencies = [
     { name = "aiomqtt" },
     { name = "anyio" },
     { name = "bcrypt" },
-    { name = "epaper-nice" },
     { name = "nicegui" },
     { name = "niceview" },
     { name = "plotly" },
@@ -1028,6 +1027,9 @@ dependencies = [
 [package.optional-dependencies]
 dev = [
     { name = "pytest" },
+]
+epaper = [
+    { name = "epaper-nice" },
 ]
 
 [package.dev-dependencies]
@@ -1043,7 +1045,7 @@ requires-dist = [
     { name = "aiomqtt", specifier = ">=2.5.1" },
     { name = "anyio" },
     { name = "bcrypt", specifier = ">=5.0.0" },
-    { name = "epaper-nice", git = "ssh://git@gitlab.gwdg.de/epaper/epaper-nice.git" },
+    { name = "epaper-nice", marker = "extra == 'epaper'", git = "ssh://git@gitlab.gwdg.de/epaper/epaper-nice.git" },
     { name = "nicegui" },
     { name = "niceview", git = "https://github.com/clausgf/niceview.git" },
     { name = "plotly" },
@@ -1054,7 +1056,7 @@ requires-dist = [
     { name = "pytz" },
     { name = "uvicorn" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["dev", "epaper"]
 
 [package.metadata.requires-dev]
 dev = [

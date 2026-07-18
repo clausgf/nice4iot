@@ -297,6 +297,14 @@ State (device token + ETag cache) is persisted in `.<device>.state.json` between
 uv sync
 ```
 
+Optional extensions are packaged as extras and are not installed by default.
+To enable the [epaper-nice](https://gitlab.gwdg.de/epaper/epaper-nice)
+extension (requires access to its repository):
+
+```bash
+uv sync --extra epaper
+```
+
 ### Run
 
 ```bash
