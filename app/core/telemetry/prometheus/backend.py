@@ -14,16 +14,35 @@ from app.core.telemetry.prometheus import prom_spec_pb2, types_pb2
 from app.util import logger
 
 
+_INVALID_METRIC_CHARS = re.compile(r'[^a-zA-Z0-9_]')
+
+
+def metric_prefix(project_name: str) -> str:
+    """Prometheus-safe metric-name prefix derived from the project name.
+
+    Prometheus metric names must match ``[a-zA-Z_][a-zA-Z0-9_]*``. The project
+    name forms the ``<prefix>_<field>`` metric name but may legally contain
+    ``-``, ``+`` or a leading digit (see ``is_valid_filename``), which are
+    invalid there. So it is sanitized to ``[a-zA-Z0-9_]`` and, if it would
+    otherwise start with a digit (or be empty), prefixed with ``_``. Applied
+    identically on write and read so the series line up.
+    """
+    safe = _INVALID_METRIC_CHARS.sub('_', project_name)
+    if not safe or safe[0].isdigit():
+        safe = '_' + safe
+    return safe
+
+
 def _parse_matrix(response_json: dict, project_name: str) -> list[MetricSeries]:
     """Convert a Prometheus/VictoriaMetrics query result into MetricSeries.
 
     Expects the instant-query-with-range-selector shape: data.result is a
     list of {"metric": {<labels>}, "values": [[<unix_ts>, "<value>"], ...]}.
-    Metric names are stripped of the '<project_name>_' prefix added by
-    write(); the 'kind' label defaults to 'default'; NaN samples (staleness
-    markers) are dropped.
+    Metric names are stripped of the sanitized '<project>_' prefix added by
+    write() (see metric_prefix()); the 'kind' label defaults to 'default';
+    NaN samples (staleness markers) are dropped.
     """
-    prefix = f'{project_name}_'
+    prefix = f'{metric_prefix(project_name)}_'
     series_list: list[MetricSeries] = []
     for item in response_json.get('data', {}).get('result', []):
         labels = item.get('metric', {})
@@ -54,7 +73,7 @@ class PrometheusBackend:
     Prometheus Remote Write telemetry backend (Protobuf + Snappy).
     Compatible with Grafana Mimir, VictoriaMetrics, Thanos, and Prometheus 2.x.
 
-    Metric names: {project_name}_{field_key}
+    Metric names: {sanitized_project}_{field_key} (see metric_prefix())
     Labels: device, kind
     Fields ending in _total are written as COUNTER type; all others as GAUGE.
     """
@@ -92,6 +111,7 @@ class PrometheusBackend:
         device_label = types_pb2.Label(name='device', value=device_name)
         kind_label = types_pb2.Label(name='kind', value=kind)
         ts_ms = round(timestamp.timestamp() * 1000) if timestamp else round(time.time() * 1000)
+        prefix = metric_prefix(self.project_name)
 
         for k, v in values.items():
             if not isinstance(v, numbers.Number):
@@ -101,7 +121,7 @@ class PrometheusBackend:
             is_counter = k.endswith('_total')
             metric_type = (types_pb2.MetricMetadata.MetricType.COUNTER if is_counter
                            else types_pb2.MetricMetadata.MetricType.GAUGE)
-            metric_name = f'{self.project_name}_{k}'
+            metric_name = f'{prefix}_{k}'
 
             metadata = types_pb2.MetricMetadata()
             metadata.type = metric_type
@@ -141,7 +161,7 @@ class PrometheusBackend:
         reason. Raises on HTTP errors so callers can fall back.
         """
         window_s = max(1, math.ceil((end - start).total_seconds()))
-        selector = (f'{{__name__=~"{re.escape(self.project_name)}_.+",'
+        selector = (f'{{__name__=~"{re.escape(metric_prefix(self.project_name))}_.+",'
                     f'device="{device_name}"}}[{window_s}s]')
         async with httpx.AsyncClient() as client:
             async with asyncio.timeout(self.config.read_timeout):

@@ -9,6 +9,21 @@ from app.core.telemetry.influxdb.models import InfluxLineConfig
 from app.util import logger
 
 
+def _escape_measurement(value: str) -> str:
+    """Escape a line-protocol measurement name (commas and spaces)."""
+    return value.replace(',', r'\,').replace(' ', r'\ ')
+
+
+def _escape_tag(value: str) -> str:
+    """Escape a line-protocol tag key/value or field key (comma, equals, space).
+
+    Applies to project/device names and field keys so that names containing
+    line-protocol delimiters cannot break out of their token. Current name
+    validation forbids these characters, so this is defence in depth.
+    """
+    return value.replace(',', r'\,').replace('=', r'\=').replace(' ', r'\ ')
+
+
 class InfluxLineBackend:
     """
     InfluxDB Line Protocol telemetry backend.
@@ -46,18 +61,19 @@ class InfluxLineBackend:
     def _build_line(self, device_name: str, values: dict, kind: str, timestamp_ns: int) -> str | None:
         fields = []
         for k, v in values.items():
+            ek = _escape_tag(k)
             if isinstance(v, bool):
-                fields.append(f'{k}={str(v).lower()}')
+                fields.append(f'{ek}={str(v).lower()}')
             elif isinstance(v, int):
-                fields.append(f'{k}={v}i')
+                fields.append(f'{ek}={v}i')
             elif isinstance(v, float):
-                fields.append(f'{k}={v}')
+                fields.append(f'{ek}={v}')
             else:
                 logger.debug(f"Skipping non-numeric telemetry field '{k}' from {device_name}: {v!r}")
         if not fields:
             return None
-        measurement = f'{self.project_name}_{kind}'
-        tags = f'project={self.project_name},device={device_name}'
+        measurement = _escape_measurement(f'{self.project_name}_{kind}')
+        tags = f'project={_escape_tag(self.project_name)},device={_escape_tag(device_name)}'
         return f'{measurement},{tags} {",".join(fields)} {timestamp_ns}'
 
     async def write(self, device_name: str, values: dict, kind: str = 'default',

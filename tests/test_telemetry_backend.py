@@ -22,7 +22,13 @@ from app.core.telemetry.backend import (
     write_telemetry,
 )
 from app.core.telemetry.models import MetricSeries
-from app.core.telemetry.prometheus.backend import _parse_matrix
+from app.core.telemetry.influxdb.backend import (
+    InfluxLineBackend,
+    _escape_measurement,
+    _escape_tag,
+)
+from app.core.telemetry.influxdb.models import InfluxLineConfig
+from app.core.telemetry.prometheus.backend import _parse_matrix, metric_prefix
 
 _NOW = datetime.datetime(2025, 1, 1, 12, 0, 0, tzinfo=datetime.timezone.utc)
 
@@ -283,3 +289,63 @@ def test_write_telemetry_sanitizes_into_local_store(proj_dev):
     records = read_local_metrics(p, d)
     assert len(records) == 1
     assert records[0]["v"] == {"cpu_load_1m": 0.7, "env_temp__C": 22.4}
+
+
+# ---------------------------------------------------------------------------
+# metric_prefix — Prometheus-safe project prefix (write/read consistency)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("project, expected", [
+    ("myproj", "myproj"),
+    ("my-proj", "my_proj"),      # hyphen invalid in Prometheus metric names
+    ("my+proj", "my_proj"),      # plus invalid
+    ("123proj", "_123proj"),     # must not start with a digit
+    ("", "_"),                   # empty -> valid single underscore
+    ("valid_9", "valid_9"),
+])
+def test_metric_prefix(project, expected):
+    assert metric_prefix(project) == expected
+
+
+def test_parse_matrix_strips_sanitized_prefix():
+    """A project with a hyphen stores metrics under the sanitized prefix; the
+    parser must strip that same sanitized prefix on read."""
+    payload = {'data': {'result': [
+        {'metric': {'__name__': 'my_proj_temp', 'device': 'dev', 'kind': 'sensors'},
+         'values': [[1735732800, "22.4"]]},
+    ]}}
+    series = _parse_matrix(payload, 'my-proj')
+    assert [(s.kind, s.metric) for s in series] == [('sensors', 'temp')]
+
+
+# ---------------------------------------------------------------------------
+# InfluxDB line protocol — escaping of names/keys (defence in depth)
+# ---------------------------------------------------------------------------
+
+def test_escape_measurement():
+    assert _escape_measurement("a b,c") == r"a\ b\,c"
+
+
+def test_escape_tag():
+    assert _escape_tag("a b,c=d") == r"a\ b\,c\=d"
+
+
+def test_build_line_escapes_project_device_and_field_keys():
+    backend = InfluxLineBackend("pro j", InfluxLineConfig())
+    line = backend._build_line("dev,1", {"a b": 1.0}, "kind", 42)
+    # measurement escapes space+comma (not '='); tag values escape
+    # space/comma/equals; field keys escape space.
+    assert line == r"pro\ j_kind,project=pro\ j,device=dev\,1 a\ b=1.0 42"
+
+
+def test_build_line_measurement_does_not_escape_equals():
+    """'=' is not special inside a line-protocol measurement name."""
+    backend = InfluxLineBackend("proj", InfluxLineConfig())
+    line = backend._build_line("dev", {"temp": 1.0}, "ki=nd", 42)
+    assert line.startswith("proj_ki=nd,")
+
+
+def test_build_line_plain_names_unchanged():
+    backend = InfluxLineBackend("proj", InfluxLineConfig())
+    line = backend._build_line("dev", {"temp": 22.4}, "sensors", 42)
+    assert line == "proj_sensors,project=proj,device=dev temp=22.4 42"
