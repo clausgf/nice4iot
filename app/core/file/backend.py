@@ -19,11 +19,9 @@ import anyio
 
 from niceview.dataadapter import JsonAdapter
 
-from app.config import app_config
 from app.paths import project_dir as get_project_dir, device_dir as get_device_dir
 from app.core.file.models import FileConfig
 from app.util import logger, is_valid_upload_filename
-from niceview.dataadapter import JsonAdapter
 
 # ---------------------------------------------------------------------------
 # Constants

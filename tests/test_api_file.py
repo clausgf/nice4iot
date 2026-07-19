@@ -16,7 +16,6 @@ PUT always writes to the device-specific path.
 from email.utils import formatdate
 
 import pytest
-from pathlib import Path
 
 from app.core.device.backend import get_file_path
 from app.paths import project_dir

@@ -1,4 +1,3 @@
-import datetime
 from typing import Optional, cast
 
 import anyio
@@ -132,7 +131,6 @@ async def project_dashboard_panel(project_id: str) -> None:
         pending_approval = [d for d in active if not d.is_provisioning_approved]
         online = [d for d in active if is_device_online(d, project.device_online_threshold_s)]
         seen = sorted([d for d in devices if d.last_seen_at], key=lambda d: d.last_seen_at, reverse=True)
-        now = datetime.datetime.now(datetime.timezone.utc)
 
         with ui.grid().classes('grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 w-full'):
             # Overview card

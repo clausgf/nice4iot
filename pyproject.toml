@@ -41,7 +41,20 @@ dev = [
     "httpx2>=2.5.0",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
+    "ruff>=0.6",
 ]
+
+[tool.ruff]
+line-length = 140
+target-version = "py312"
+# Skip generated protobuf modules — their descriptor magic trips static analysis.
+extend-exclude = ["*_pb2.py"]
+
+[tool.ruff.lint]
+# Conservative set: pyflakes (real bugs: unused imports, undefined names,
+# f-strings without placeholders) plus syntax errors. Style rules are left off
+# to avoid churn on the existing, deliberately-formatted code base.
+select = ["E9", "F"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

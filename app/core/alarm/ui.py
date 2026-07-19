@@ -18,7 +18,7 @@ from app.core.alarm.backend import (
     acknowledge_alarm,
     acknowledge_all_alarms,
 )
-from app.core.alarm.models import AlarmConfig, MetricAlarmRule, DeviceOfflineConfig
+from app.core.alarm.models import MetricAlarmRule, DeviceOfflineConfig
 from app.core.telemetry.backend import observed_metrics
 from niceview import ModelForm
 

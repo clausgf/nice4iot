@@ -5,12 +5,12 @@ from pathlib import Path
 from niceview.dataadapter import JsonAdapter
 
 from app.config import app_config
-from app.exceptions import AlreadyExistsError, AuthError, ForbiddenError, NotFoundError
+from app.exceptions import AlreadyExistsError, ForbiddenError, NotFoundError
 from app.paths import project_dir
 from app.core.token.backend import get_provisioning_token_adapter, validate_token
 from app.core.project.models import Project
 from app.util import logger, is_valid_name
-from niceview.dataadapter import JsonAdapter, lenient_model_load
+from niceview.dataadapter import lenient_model_load
 
 ###############################################################################
 

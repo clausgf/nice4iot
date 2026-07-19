@@ -1,5 +1,4 @@
 import datetime
-import json
 from collections.abc import Callable
 
 from nicegui import ui

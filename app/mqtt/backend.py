@@ -15,14 +15,12 @@ import json
 import re
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import anyio
 import aiomqtt
 
 from app.config import app_config
 from app.exceptions import NotFoundError
-from app.paths import project_dir
 from app.mqtt.models import MqttGlobalConfig
 from app.util import logger, is_valid_filename, is_valid_upload_filename
 

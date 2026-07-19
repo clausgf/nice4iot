@@ -4,7 +4,6 @@ app/config.py's auth_provider setting). Unrelated to tests/test_auth.py,
 which covers the device REST API's separate bearer-token auth.
 """
 import bcrypt
-import pytest
 
 from app.config import AppConfig, app_config
 from app.auth import get_auth_provider

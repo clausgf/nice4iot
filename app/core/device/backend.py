@@ -2,10 +2,14 @@ import datetime
 import shutil
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from niceview.dataadapter import JsonAdapter
 
-from app.exceptions import AlreadyExistsError, AuthError, ForbiddenError, NotFoundError
+if TYPE_CHECKING:
+    from app.core.token.models import AuthToken
+
+from app.exceptions import AlreadyExistsError, ForbiddenError, NotFoundError
 from app.paths import device_dir
 from app.core.token.backend import (
     create_token, device_token_lock, load_device_tokens,
@@ -15,7 +19,7 @@ from app.core.device.models import Device
 from app.core.project.backend import get_project, get_project_path
 from app.core.project.models import Project
 from app.util import logger, is_valid_name
-from niceview.dataadapter import JsonAdapter, lenient_model_load
+from niceview.dataadapter import lenient_model_load
 
 ###############################################################################
 

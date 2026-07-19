@@ -6,7 +6,6 @@ POST /api/provision
   Response: {"tokenType": "bearer", "accessToken": "...", "expiresAt": "...", "expiresIn": ...}
 """
 import datetime
-import pytest
 
 from app.core.token.backend import (
     create_token,
@@ -14,9 +13,7 @@ from app.core.token.backend import (
     load_device_tokens,
     save_device_tokens,
 )
-from app.core.token.models import AuthToken
-from app.core.device.backend import get_device, update_device
-from tests.conftest import make_provisioning_token, setup_project
+from tests.conftest import setup_project
 
 
 # ---------------------------------------------------------------------------

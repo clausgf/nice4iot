@@ -17,12 +17,11 @@ from app.config import app_config
 from app.core.project.backend import create_project
 from app.core.device.backend import create_device, get_device, update_device
 from app.core.device.models import Device
-from app.core.alarm.models import AlarmConfig, AlarmEvent, MetricAlarmRule, DeviceOfflineConfig
+from app.core.alarm.models import MetricAlarmRule, DeviceOfflineConfig
 from app.core.device.backend import flush_device_list_cache
 from app.core.alarm.backend import (
     get_alarm_config_adapter,
     load_alarm_events,
-    save_alarm_events,
     evaluate_metric_rules,
     evaluate_device_offline,
     acknowledge_alarm,

@@ -433,7 +433,7 @@ def _file_row(path: Path, refresh_fn=None,
                     if refresh_fn:
                         refresh_fn()
                 else:
-                    ui.notify(f'MQTT publish failed (not connected?)', type='warning')
+                    ui.notify('MQTT publish failed (not connected?)', type='warning')
             ui.button(icon='cloud_upload').props('flat dense size=sm').tooltip(
                 'Force publish to device via MQTT'
             ).on_click(_force_publish)

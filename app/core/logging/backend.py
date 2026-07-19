@@ -4,7 +4,6 @@ from app.paths import project_dir
 from app.core.logging.models import LoggingBackend, LoggingConfig
 from app.core.logging.loki.backend import LokiBackend
 from app.core.logging.file.backend import FileLogBackend
-from niceview.dataadapter import JsonAdapter
 
 LOG_FILE = '.logging.json'
 

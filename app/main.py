@@ -12,7 +12,7 @@ from app.api.provisioning import router as provisioning_router
 from app.api.device import router as device_router
 from app.api.file import router as file_router
 
-import app.frontend as frontend
+import app.frontend as frontend  # noqa: F401  (side-effect import: registers @ui.page routes)
 
 _main_log = logging.getLogger("uvicorn")
 

@@ -9,8 +9,7 @@ Validates that all entry points tolerate hand-edited JSON files:
 """
 import json
 import pytest
-from pathlib import Path
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from niceview.dataadapter import JsonAdapter, lenient_model_load, lenient_list_load
 

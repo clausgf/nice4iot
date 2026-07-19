@@ -9,7 +9,6 @@ import pytest
 from app.core.device.backend import (
     DEVICE_FILE_NAME,
     create_device,
-    delete_device,
     device_adapter,
     get_device,
     get_device_path,

@@ -335,6 +335,18 @@ API docs: `http://localhost:8000/docs`
 uv run pytest
 ```
 
+### Lint
+
+```bash
+uv run ruff check          # report
+uv run ruff check --fix    # auto-fix
+```
+
+Ruff runs a deliberately conservative rule set (`E9`, `F` — syntax errors and
+pyflakes: unused imports, undefined names, broken f-strings); style rules are
+off to avoid churn. Generated protobuf modules (`*_pb2.py`) are excluded. CI
+runs `ruff check` alongside the test suite.
+
 ### Configuration
 
 Settings are read from environment variables (or a `.env` file):

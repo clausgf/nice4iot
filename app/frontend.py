@@ -8,7 +8,6 @@ from fastapi.responses import RedirectResponse
 from app.core.project.ui import all_projects_subpage, project_subpage
 from app.core.device.ui import device_subpage
 from app.routes import projects_url, ROUTE_DEVICE, ROUTE_PROJECT, ROUTE_PROJECTS
-from app.config import app_config
 from app.auth import get_auth_provider, PasswordAuthProvider
 
 import logging

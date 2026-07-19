@@ -53,7 +53,6 @@ from app.core.device.backend import get_file_path
 from app.core.file.backend import get_file_config
 from app.exceptions import NotFoundError
 from app.util import logger, is_valid_upload_filename
-from app.config import app_config
 
 ###############################################################################
 

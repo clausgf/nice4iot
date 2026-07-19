@@ -27,7 +27,6 @@ import anyio
 from fastapi import APIRouter, Body, HTTPException, status
 from pydantic import BaseModel
 
-from app.api.dependencies import domain_to_http
 from app.core.device.backend import device_provision
 from app.core.project.backend import get_auth_project
 from app.exceptions import AuthError, ForbiddenError, NotFoundError

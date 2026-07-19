@@ -11,7 +11,6 @@ import datetime
 import pytest
 
 from tests.conftest import setup_project
-from app.core.device.backend import device_provision
 from app.core.telemetry.backend import read_local_metrics
 
 
