@@ -2,6 +2,20 @@
 
 An IoT device management platform written in Python. It provides a REST API for devices and a web-based management UI, both served from a single process.
 
+## Contents
+
+- [Features](#features)
+- [Tech Stack](#tech-stack)
+- [Architecture](#architecture)
+- [Core Concepts](#core-concepts)
+- [Device API Reference](#device-api-reference)
+- [Device Client / Test Tool](#device-client--test-tool)
+- [Development](#development)
+- [Deployment](#deployment)
+- [Design Decisions](#design-decisions)
+- [MQTT Support](#mqtt-support)
+- [Open Questions / TODO](#open-questions--todo)
+
 ---
 
 ## Features
@@ -146,6 +160,8 @@ data/projects/
 ```
 
 Project and device names double as directory names and as the telemetry metric-name prefix, so they must be valid identifiers: `[a-zA-Z_][a-zA-Z0-9_]*` (letters, digits and underscore only, no leading digit, no `-`/`+`). This guarantees a valid Prometheus metric name `<project>_<field>` and needs no backend-specific escaping. Path traversal is prevented by resolving and checking all paths against their expected base directory.
+
+> **Upgrading:** earlier versions allowed `-` and `+` in names. A project or device directory whose name violates the rule above is no longer listed or accessible — rename it on disk (e.g. `my-proj` → `my_proj`) before upgrading.
 
 All writes use a write-to-temp-then-rename pattern to avoid partial writes.
 

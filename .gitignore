@@ -175,6 +175,8 @@ cython_debug/
 
 
 .nicegui
-data/projects/**
+# All of data/ is runtime state: project/device data under data/projects/ and
+# per-instance config files directly under data/ (.mqtt.json, extension config).
+data/
 
 .claude/worktrees/
