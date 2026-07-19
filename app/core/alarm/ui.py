@@ -19,6 +19,7 @@ from app.core.alarm.backend import (
     acknowledge_all_alarms,
 )
 from app.core.alarm.models import AlarmConfig, MetricAlarmRule, DeviceOfflineConfig
+from app.core.telemetry.backend import observed_metrics
 from niceview import ModelForm
 
 
@@ -42,9 +43,13 @@ class _DeviceOfflineAdapter:
         return item
 
 
-def AlarmConfigCard(project_name: str) -> None:
+async def AlarmConfigCard(project_name: str) -> None:
     """Content for the alarm rules card, rendered inside Project/General (caller provides the card/header)."""
     adapter = get_alarm_config_adapter(project_name)
+    # Observed (kind -> metric names) from the local store, to seed the rule
+    # editor's comboboxes with the actual normalized names. Blocking IO, so
+    # wrapped per the async-IO rule.
+    observed = await anyio.to_thread.run_sync(lambda: observed_metrics(project_name))
 
     # Built-in: device offline — use a sub-adapter so ModelForm never
     # sees the nested DeviceOfflineConfig as an opaque widget value.
@@ -96,16 +101,30 @@ def AlarmConfigCard(project_name: str) -> None:
                     ui.button(icon='delete').props('flat dense color=negative') \
                         .on_click(_delete).tooltip('Delete rule')
 
-        # Add new rule form
+        # Add new rule form. Kind/Metric are comboboxes seeded from the
+        # observed telemetry (with_input + add-unique lets the user type a
+        # brand-new name too); the Metric options track the selected Kind.
         with ui.card().classes('w-full q-mt-sm'):
             ui.label('New Rule').classes('text-caption font-bold text-grey-7')
             with ui.row().classes('items-center gap-2 w-full flex-wrap'):
+                kinds = list(observed.keys())
                 name_input = ui.input(label='Name', placeholder='e.g. low_temp') \
                     .classes('w-28').props('dense outlined')
-                kind_input = ui.input(label='Kind', placeholder='sensors') \
-                    .classes('w-28').props('dense outlined')
-                metric_input = ui.input(label='Metric', placeholder='temperature') \
-                    .classes('w-28').props('dense outlined')
+                kind_select = ui.select(
+                    kinds, label='Kind', value=(kinds[0] if kinds else None),
+                    with_input=True, new_value_mode='add-unique',
+                ).classes('w-32').props('dense outlined')
+                metric_select = ui.select(
+                    observed.get(kind_select.value, []), label='Metric',
+                    with_input=True, new_value_mode='add-unique',
+                ).classes('w-40').props('dense outlined')
+
+                def _on_kind_change(e) -> None:
+                    metric_select.options = observed.get(e.value, [])
+                    metric_select.value = None
+                    metric_select.update()
+                kind_select.on_value_change(_on_kind_change)
+
                 cmp_select = ui.select(['<', '=', '>'], label='Op', value='<') \
                     .classes('w-20').props('dense outlined')
                 thr_input = ui.number(label='Threshold', value=0.0) \
@@ -114,14 +133,14 @@ def AlarmConfigCard(project_name: str) -> None:
                     .classes('grow').props('dense outlined')
 
                 async def _add_rule() -> None:
-                    if not name_input.value or not metric_input.value:
+                    if not name_input.value or not metric_select.value:
                         ui.notify('Name and Metric are required', type='warning')
                         return
                     cfg = adapter.read()
                     cfg.rules.append(MetricAlarmRule(
                         name=name_input.value.strip(),
-                        kind=kind_input.value.strip() or 'sensors',
-                        metric=metric_input.value.strip(),
+                        kind=(kind_select.value or 'sensors').strip() or 'sensors',
+                        metric=metric_select.value.strip(),
                         comparison=cmp_select.value,
                         threshold=float(thr_input.value or 0),
                         description=desc_input.value.strip(),

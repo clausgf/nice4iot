@@ -225,7 +225,7 @@ async def general_panel(project_id: str):
                 FileConfigCard(project_id)
         with ui.card().classes('w-full dense'):
             with config_expansion('Alarms'):
-                AlarmConfigCard(project_id)
+                await AlarmConfigCard(project_id)
         with ui.card().classes('w-full dense'):
             with config_expansion('Extensions'):
                 ExtensionsCard(project_id)

@@ -16,6 +16,7 @@ from app.core.telemetry.backend import (
     _append_local_metrics,
     flatten_metrics,
     normalize_metrics,
+    observed_metrics,
     read_local_metrics,
     read_series,
     sanitize_metric_name,
@@ -253,6 +254,35 @@ def test_write_telemetry_flattens_into_local_store(proj_dev):
     records = read_local_metrics(p, d)
     assert len(records) == 1
     assert records[0]["v"] == {"env_temp": 22.4}
+
+
+# ---------------------------------------------------------------------------
+# observed_metrics — kind -> metric names across a project's devices
+# ---------------------------------------------------------------------------
+
+def test_observed_metrics_empty_when_no_data(proj_dev):
+    p, _ = proj_dev
+    assert observed_metrics(p) == {}
+
+
+def test_observed_metrics_groups_by_kind(proj_dev):
+    p, d = proj_dev
+    _append_local_metrics(p, d, "sensors", {"temp": 1.0, "hum": 2.0}, _NOW)
+    _append_local_metrics(p, d, "system", {"batt": 3.0}, _NOW)
+    assert observed_metrics(p) == {"sensors": ["hum", "temp"], "system": ["batt"]}
+
+
+def test_observed_metrics_aggregates_across_devices(projects_dir):
+    create_project("multi")
+    create_device(Device(name="dev1", project_name="multi"))
+    create_device(Device(name="dev2", project_name="multi"))
+    _append_local_metrics("multi", "dev1", "sensors", {"temp": 1.0}, _NOW)
+    _append_local_metrics("multi", "dev2", "sensors", {"hum": 2.0}, _NOW)
+    assert observed_metrics("multi") == {"sensors": ["hum", "temp"]}
+
+
+def test_observed_metrics_unknown_project():
+    assert observed_metrics("does_not_exist") == {}
 
 
 # ---------------------------------------------------------------------------

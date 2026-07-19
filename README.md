@@ -227,7 +227,7 @@ Exceptions are never raised for recoverable errors; each field is treated indepe
 
 Each project can define alarm rules that are evaluated whenever telemetry arrives or (for the built-in device-offline rule) by a background loop every 60 seconds.
 
-**Metric rules** — configured under *Project → General → Alarms*. Each rule specifies a telemetry kind, metric name, comparison operator (`<`, `=`, `>`), and threshold. When the condition is met the first time an `AlarmEvent` is created with `is_active=True`. When the condition clears the event is resolved (`is_active=False`). Condition re-fires re-open a resolved event rather than creating a duplicate.
+**Metric rules** — configured under *Project → General → Alarms*. Each rule specifies a telemetry kind, metric name, comparison operator (`<`, `=`, `>`), and threshold. The *Kind* and *Metric* fields are comboboxes seeded from the names actually seen in the local telemetry store (the *Metric* list follows the selected *Kind*); a not-yet-observed name can still be typed in. When the condition is met the first time an `AlarmEvent` is created with `is_active=True`. When the condition clears the event is resolved (`is_active=False`). Condition re-fires re-open a resolved event rather than creating a duplicate.
 
 **Device offline rule** — built-in rule that fires when a device's `last_seen_at` is older than the project's online threshold (configured under *Project → General*). Enabled/disabled under *Project → General → Alarms*.
 

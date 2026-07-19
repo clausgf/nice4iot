@@ -8,7 +8,7 @@ import anyio
 from niceview.dataadapter import JsonAdapter
 
 from app.paths import project_dir, device_dir
-from app.util import logger
+from app.util import logger, is_valid_name
 from app.core.telemetry.models import MetricSeries, TelemetryBackend, TelemetryConfig
 from app.core.telemetry.prometheus.backend import PrometheusBackend
 from app.core.telemetry.influxdb.backend import InfluxLineBackend
@@ -114,6 +114,28 @@ def read_local_metrics(project_name: str, device_name: str,
                 continue
         records.append(rec)
     return records
+
+
+def observed_metrics(project_name: str) -> dict[str, list[str]]:
+    """Collect the metric names seen in the local store, grouped by kind.
+
+    Returns {kind: sorted metric names} aggregated across every device of the
+    project, so alarm-rule editors can offer the actual (normalized) metric
+    names. Blocking file IO — callers in an async context must wrap this with
+    ``anyio.to_thread.run_sync`` per the async-IO rule.
+    """
+    base = project_dir(project_name)
+    if not base.is_dir():
+        return {}
+    grouped: dict[str, set[str]] = {}
+    for device_path in base.iterdir():
+        if not device_path.is_dir() or not is_valid_name(device_path.name):
+            continue
+        for rec in read_local_metrics(project_name, device_path.name):
+            kind = rec.get('kind')
+            if kind:
+                grouped.setdefault(kind, set()).update(rec.get('v', {}).keys())
+    return {k: sorted(v) for k, v in sorted(grouped.items())}
 
 
 def _evaluate_alarms(project_name: str, device_name: str, kind: str, values: dict) -> None:
