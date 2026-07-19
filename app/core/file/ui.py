@@ -1,4 +1,4 @@
-from niceview.form import ModelForm
+from niceview import ModelForm
 
 from app.core.file.backend import get_file_adapter
 from app.core.file.models import FileConfig

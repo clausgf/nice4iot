@@ -39,7 +39,7 @@ class TelemetryConfig(BaseModel):
         ] = None
     backend: Annotated[
         Literal['none', 'prometheus', 'influxdb'],
-        niceview.Field(select_options={
+        niceview.Field(options={
             'none': 'Disabled',
             'prometheus': 'Prometheus / Mimir / VictoriaMetrics',
             'influxdb': 'InfluxDB Line Protocol',

@@ -1106,10 +1106,11 @@ wheels = [
 [[package]]
 name = "niceview"
 version = "0.1.0"
-source = { git = "https://github.com/clausgf/niceview.git#70178f3a695c70c199bb4df221105726fc21611d" }
+source = { git = "https://github.com/clausgf/niceview.git#6baa9b20c249ad8b20b8d63a084965656ca4a355" }
 dependencies = [
     { name = "annotated-types" },
     { name = "nicegui" },
+    { name = "pydantic" },
     { name = "typing-extensions" },
 ]
 

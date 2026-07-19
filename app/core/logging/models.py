@@ -36,7 +36,7 @@ class FileLogConfig(BaseModel):
         ] = False
     rotation_interval: Annotated[
             Literal['daily', 'weekly', 'monthly'],
-            niceview.Field(select_options={'daily': 'Daily (00:00)', 'weekly': 'Weekly (Sun)', 'monthly': 'Monthly (01.)'})
+            niceview.Field(options={'daily': 'Daily (00:00)', 'weekly': 'Weekly (Sun)', 'monthly': 'Monthly (01.)'})
         ] = 'daily'
     backup_count: Annotated[int, 
             Field(description='Number of backup files to keep.')

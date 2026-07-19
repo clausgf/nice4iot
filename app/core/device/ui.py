@@ -18,7 +18,7 @@ from app.core.project.backend import get_project
 from app.core.token.backend import get_device_token_adapter
 from app.core.token.ui import TokenListCard
 from app.util import is_valid_name, render_datetime
-from niceview.form import ModelForm
+from niceview import ModelForm
 from niceview.util import confirm_dialog, input_dialog
 from app.extensions import get_device_dashboard_cards, get_device_general_cards, get_device_tabs, maybe_await
 

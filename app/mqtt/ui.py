@@ -1,5 +1,5 @@
 from nicegui import ui
-from niceview.form import ModelForm
+from niceview import ModelForm
 
 import app.mqtt.backend as _mqtt_backend
 from app.mqtt.models import MqttGlobalConfig

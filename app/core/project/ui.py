@@ -26,7 +26,7 @@ from app.extensions import (
     get_global_cards, get_project_dashboard_cards, get_project_general_cards,
     get_project_tabs, get_registered_extension_names, maybe_await,
 )
-from niceview.form import ModelForm
+from niceview import ModelForm
 from niceview.util import confirm_dialog, input_dialog
 
 import logging

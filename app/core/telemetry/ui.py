@@ -1,6 +1,6 @@
 from nicegui import ui
 from niceview import ConflictError, StorageError
-from niceview.form import ModelForm
+from niceview import ModelForm
 
 from app.core.telemetry.backend import get_telemetry_adapter
 from app.core.telemetry.models import TelemetryConfig

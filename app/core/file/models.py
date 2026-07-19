@@ -25,7 +25,7 @@ class FileConfig(BaseModel):
         Literal[0, 1, 2],
         niceview.Field(
             label="Download QoS",
-            select_options={0: "QoS 0 – fire and forget", 1: "QoS 1 – at least once", 2: "QoS 2 – exactly once"},
+            options={0: "QoS 0 – fire and forget", 1: "QoS 1 – at least once", 2: "QoS 2 – exactly once"},
         )
     ] = 1
     mqtt_retain: bool = Field(

@@ -1,5 +1,5 @@
 from nicegui import ui
-from niceview.form import ModelForm
+from niceview import ModelForm
 
 from app.core.forwarding.backend import get_forwarding_adapter
 from app.core.forwarding.models import ForwardingConfig

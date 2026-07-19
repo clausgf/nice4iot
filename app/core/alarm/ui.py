@@ -19,7 +19,7 @@ from app.core.alarm.backend import (
     acknowledge_all_alarms,
 )
 from app.core.alarm.models import AlarmConfig, MetricAlarmRule, DeviceOfflineConfig
-from niceview.form import ModelForm
+from niceview import ModelForm
 
 
 # ---------------------------------------------------------------------------

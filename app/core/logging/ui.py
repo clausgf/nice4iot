@@ -1,6 +1,6 @@
 from nicegui import ui
 from niceview import ConflictError, StorageError
-from niceview.form import ModelForm
+from niceview import ModelForm
 
 from app.core.logging.backend import get_logging_adapter
 from app.core.logging.models import LoggingConfig
