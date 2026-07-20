@@ -1,10 +1,21 @@
 import datetime
 import logging
 import re
+from importlib.metadata import PackageNotFoundError, version
 
 import pytz
 
 logger = logging.getLogger('uvicorn.error')
+
+
+def app_version() -> str:
+    """nice4iot's version from its installed package metadata (single source of
+    truth: pyproject.toml). Falls back when the project isn't installed (e.g. a
+    container built with `uv sync --no-install-project`)."""
+    try:
+        return version("nice4iot")
+    except PackageNotFoundError:
+        return "0.0.0+source"
 
 
 FILENAME_REGEX = r'^[a-zA-Z0-9_\-+]+$'

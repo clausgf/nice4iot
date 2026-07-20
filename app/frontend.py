@@ -9,6 +9,7 @@ from app.core.project.ui import all_projects_subpage, project_subpage
 from app.core.device.ui import device_subpage
 from app.routes import projects_url, ROUTE_DEVICE, ROUTE_PROJECT, ROUTE_PROJECTS
 from app.auth import get_auth_provider, PasswordAuthProvider
+from app.util import app_version
 
 import logging
 log = logging.getLogger('uvicorn')
@@ -82,9 +83,15 @@ def _user_menu() -> None:
             with ui.menu_item().classes('items-center gap-x-2'):
                 ui.icon('api').props('size=large')
                 ui.link('API Docs', '/docs', new_tab=True).classes('no-underline text-inherit')
+            # The repository link is also what AGPL-3.0 section 13 asks for:
+            # users interacting with this application over a network must be
+            # able to get its source.
             with ui.menu_item().classes('items-center gap-x-2'):
                 ui.icon('code').props('size=large')
                 ui.link('Repository', 'https://github.com/clausgf/nice4iot', new_tab=True).classes('no-underline text-inherit')
+            ui.separator()
+            with ui.menu_item().classes('items-center gap-x-2'):
+                ui.label(f'nice4iot {app_version()} · AGPL-3.0').classes('text-xs opacity-60')
 
 
 @ui.page('/login')

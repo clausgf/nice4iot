@@ -1,7 +1,9 @@
 # Scenario 1 — standalone, no reverse proxy.
 #
-# nice4iot is reachable directly at http://<host>:8080/ (served at the root
-# path). Good for a quick trial or an internal network.
+# nice4iot is reachable at http://127.0.0.1:8080/ (served at the root path).
+# Good for a quick trial. The port is deliberately bound to localhost because
+# the admin UI ships unauthenticated; see the security note in deploy/README.md
+# before opening it up.
 #
 #   docker compose up -d --build
 services:
@@ -13,7 +15,10 @@ services:
         PUID: "1000"   # set to the uid that owns ./data on the host
         PGID: "1000"
     ports:
-      - "8080:8080"
+      # Bound to localhost only. The admin UI is UNAUTHENTICATED by default
+      # (AUTH_PROVIDER=none), so do not expose this port to a network without
+      # first setting up authentication — see deploy/README.md.
+      - "127.0.0.1:8080:8080"
     volumes:
       - ./data:/home/iot/data
     environment:

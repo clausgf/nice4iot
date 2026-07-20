@@ -15,6 +15,8 @@ An IoT device management platform written in Python. It provides a REST API for 
 - [Design Decisions](#design-decisions)
 - [MQTT Support](#mqtt-support)
 - [Open Questions / TODO](#open-questions--todo)
+- [Contributing](#contributing)
+- [Licence](#licence)
 
 ---
 
@@ -510,3 +512,17 @@ MQTT authentication is currently managed by the broker. A future version will in
 - **Telemetry read from InfluxDB** — the Data tab reads from Prometheus-compatible backends (Prometheus, VictoriaMetrics, Mimir) with local fallback; a read path for the InfluxDB line-protocol backend (InfluxQL/Flux) is not implemented.
 - **MQTT device commands** — `{base}/cmd/{name}` downlink topic for server-to-device commands is planned.
 - **MQTT authentication** — currently managed by the broker. A future version will integrate with Mosquitto's Dynamic Security Plugin for per-device credential provisioning from the UI.
+
+---
+
+## Contributing
+
+Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup and the project rules enforced in review. For security issues please use [private reporting](SECURITY.md) rather than a public issue.
+
+---
+
+## Licence
+
+nice4iot is licensed under the **GNU Affero General Public License v3.0 or later** (AGPL-3.0-or-later). The full text is in [LICENSE](LICENSE).
+
+In short: you may use, modify, and redistribute it, provided derivative works stay under the same licence. The AGPL additionally covers network use — **if you run a modified version as a service that others interact with over a network, you must offer them its source code.** Running an unmodified nice4iot for your own devices carries no such obligation; the UI links to this repository from the user menu.

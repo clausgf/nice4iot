@@ -5,6 +5,21 @@ are run from this `deploy/` directory. The image build context is the repository
 root (the compose files set `context: ..`), so the same `Dockerfile` builds from
 `pyproject.toml` / `uv.lock` / `app/`.
 
+## Security note — read before exposing this
+
+The management UI is **unauthenticated by default** (`AUTH_PROVIDER=none`), and
+anyone who reaches it has full control over projects, devices, and tokens. The
+standalone example therefore binds to `127.0.0.1` only.
+
+Before putting nice4iot on a network:
+
+- Set `AUTH_PROVIDER` to `password` (built-in login) or `proxy` (identity from a
+  reverse proxy) — see the Authentication section of the top-level README.
+- Set `NICEGUI_STORAGE_SECRET` to a long random value. The placeholder in these
+  files is not a secret; with it, session cookies are forgeable.
+- Terminate TLS at the proxy. Device tokens travel in `Authorization` headers
+  and are bearer credentials.
+
 ## Scenarios
 
 | File | Setup | Reached at |

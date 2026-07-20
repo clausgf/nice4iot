@@ -2,13 +2,13 @@ import asyncio
 import signal
 import logging
 from contextlib import asynccontextmanager
-from importlib.metadata import PackageNotFoundError, version
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from nicegui import ui
 
 from app.config import app_config
+from app.util import app_version
 from app.api.provisioning import router as provisioning_router
 from app.api.device import router as device_router
 from app.api.file import router as file_router
@@ -82,17 +82,7 @@ async def lifespan(app: FastAPI):
             pass
 
 
-def _app_version() -> str:
-    """nice4iot's version from its installed package metadata (single source of
-    truth: pyproject.toml). Falls back when the project isn't installed (e.g. a
-    container built with `uv sync --no-install-project`)."""
-    try:
-        return version("nice4iot")
-    except PackageNotFoundError:
-        return "0.0.0+source"
-
-
-app = FastAPI(lifespan=lifespan, title="nice4iot", version=_app_version())
+app = FastAPI(lifespan=lifespan, title="nice4iot", version=app_version())
 
 app.add_middleware(
     CORSMiddleware,

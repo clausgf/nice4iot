@@ -9,7 +9,20 @@ packages = ["app"]
 name = "nice4iot"
 version = "0.9.0"
 description = "IoT management platform built with NiceGUI and FastAPI"
+readme = "README.md"
 requires-python = ">=3.12"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [
+    { name = "clausgf" },
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: FastAPI",
+    "Intended Audience :: System Administrators",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Monitoring",
+]
 dependencies = [
     "nicegui",
     "uvicorn",
@@ -23,6 +36,11 @@ dependencies = [
     "aiomqtt>=2.5.1",
     "bcrypt>=5.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/clausgf/nice4iot"
+Repository = "https://github.com/clausgf/nice4iot"
+Issues = "https://github.com/clausgf/nice4iot/issues"
 
 [project.optional-dependencies]
 dev = [
