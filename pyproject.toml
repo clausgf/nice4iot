@@ -7,7 +7,7 @@ packages = ["app"]
 
 [project]
 name = "nice4iot"
-version = "0.1.0"
+version = "0.9.0"
 description = "IoT management platform built with NiceGUI and FastAPI"
 requires-python = ">=3.12"
 dependencies = [
@@ -28,11 +28,12 @@ dependencies = [
 dev = [
     "pytest",
 ]
-# Optional extensions — not installed by default. The epaper-nice repository
-# is private (git+ssh), so CI and plain `uv sync` must not depend on it.
-# Enable with: uv sync --extra epaper
+# Optional extensions — not installed by default, so CI and plain `uv sync`
+# stay independent of them. Enable with: uv sync --extra epaper
+# (the extra is named after the extension module it provides,
+# extensions.epaper, not after the distribution shipping it, nicepaper.)
 epaper = [
-    "epaper-nice",
+    "nicepaper",
 ]
 
 [dependency-groups]
@@ -74,4 +75,4 @@ exclude_lines = [
 
 [tool.uv.sources]
 niceview = { git = "https://github.com/clausgf/niceview.git" }
-epaper-nice = { git = "ssh://git@gitlab.gwdg.de/epaper/epaper-nice.git" }
+nicepaper = { git = "https://github.com/clausgf/nicepaper.git" }

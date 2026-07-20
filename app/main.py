@@ -2,6 +2,7 @@ import asyncio
 import signal
 import logging
 from contextlib import asynccontextmanager
+from importlib.metadata import PackageNotFoundError, version
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -81,7 +82,17 @@ async def lifespan(app: FastAPI):
             pass
 
 
-app = FastAPI(lifespan=lifespan)
+def _app_version() -> str:
+    """nice4iot's version from its installed package metadata (single source of
+    truth: pyproject.toml). Falls back when the project isn't installed (e.g. a
+    container built with `uv sync --no-install-project`)."""
+    try:
+        return version("nice4iot")
+    except PackageNotFoundError:
+        return "0.0.0+source"
+
+
+app = FastAPI(lifespan=lifespan, title="nice4iot", version=_app_version())
 
 app.add_middleware(
     CORSMiddleware,
@@ -111,9 +122,17 @@ app.include_router(file_router, prefix='/api', tags=['file'])
 # own extensions/<name>/ submodule, found here by walking the namespace.
 import importlib
 import pkgutil
-import extensions as _extensions_ns
 from app.extensions import registering as _registering
-for _, _ext_module_name, _ in pkgutil.iter_modules(_extensions_ns.__path__, _extensions_ns.__name__ + '.'):
+try:
+    import extensions as _extensions_ns
+    _ext_paths = _extensions_ns.__path__
+    _ext_prefix = _extensions_ns.__name__ + '.'
+except ModuleNotFoundError:
+    # No extension installed and no extensions/ directory on the path: a
+    # namespace package with no members simply does not exist. That is the
+    # normal case for a plain install, not an error.
+    _ext_paths, _ext_prefix = [], 'extensions.'
+for _, _ext_module_name, _ in pkgutil.iter_modules(_ext_paths, _ext_prefix):
     _ext_module = importlib.import_module(_ext_module_name)
     _ext_name = _ext_module_name.removeprefix(_extensions_ns.__name__ + '.')
     if not hasattr(_ext_module, 'register'):

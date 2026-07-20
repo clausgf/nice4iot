@@ -314,8 +314,8 @@ uv sync
 ```
 
 Optional extensions are packaged as extras and are not installed by default.
-To enable the [epaper-nice](https://gitlab.gwdg.de/epaper/epaper-nice)
-extension (requires access to its repository):
+To enable the [nicepaper](https://github.com/clausgf/nicepaper)
+extension (`extensions.epaper`):
 
 ```bash
 uv sync --extra epaper
@@ -416,11 +416,25 @@ Settings are read from environment variables (or a `.env` file):
 
 ## Deployment
 
+Container image and ready-made Docker Compose examples live in
+[`deploy/`](deploy/) — see [deploy/README.md](deploy/README.md) for the details.
+
 ```bash
-docker compose up --build
+cd deploy
+mkdir -p data                              # must exist and be owned by your user
+
+docker compose up -d --build                                      # standalone, http://<host>:8080/
+docker compose -f docker-compose.caddy.yml up -d --build          # behind Caddy at /iot
+docker compose -f docker-compose.caddy-epaper.yml up -d --build   # Caddy + epaper extension
 ```
 
-Adjust `PUID`/`PGID` in `docker-compose.yml` to match your host user so volume-mounted files are owned correctly. The container expects external `loki` and `caddy_network` Docker networks to already exist.
+| Scenario | Setup | Reached at |
+|---|---|---|
+| `docker-compose.yml` | Standalone, no proxy | `http://<host>:8080/` |
+| `docker-compose.caddy.yml` | Behind Caddy, sub-path `/iot` | `http://<host>/iot/` |
+| `docker-compose.caddy-epaper.yml` | Caddy + `/iot` + epaper extension | `http://<host>/iot/` |
+
+Adjust the `PUID`/`PGID` build args to match the host user owning `deploy/data`, and set `NICEGUI_STORAGE_SECRET` to a long random value so UI sessions survive restarts. Serving under a sub-path requires both halves to agree: Caddy strips the prefix (`handle_path /iot/*`) while nice4iot is told its public prefix (`--root-path /iot`).
 
 ---
 

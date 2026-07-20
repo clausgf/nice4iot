@@ -1,0 +1,17 @@
+# Keep the build context small — the image only needs pyproject.toml, uv.lock,
+# app/ and deploy/entrypoint.sh.
+.venv/
+.git/
+data/
+deploy/*
+!deploy/entrypoint.sh
+tests/
+docs/
+tools/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+htmlcov/
+coverage.xml
+.claude/

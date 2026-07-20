@@ -1,0 +1,22 @@
+# Scenario 1 — standalone, no reverse proxy.
+#
+# nice4iot is reachable directly at http://<host>:8080/ (served at the root
+# path). Good for a quick trial or an internal network.
+#
+#   docker compose up -d --build
+services:
+  nice4iot:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        PUID: "1000"   # set to the uid that owns ./data on the host
+        PGID: "1000"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/home/iot/data
+    environment:
+      # Persist UI sessions across restarts — set a long random value.
+      NICEGUI_STORAGE_SECRET: "change-this-to-a-long-random-secret"
+    restart: unless-stopped

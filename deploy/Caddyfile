@@ -1,0 +1,17 @@
+# Caddy config for the /iot sub-path scenarios (docker-compose.caddy*.yml).
+#
+# handle_path strips the /iot prefix before proxying; nice4iot runs with
+# `--root-path /iot`, so the prefix is re-added to the URLs it generates
+# (assets, the NiceGUI WebSocket, redirects). reverse_proxy upgrades
+# WebSocket connections automatically.
+#
+# This listens on plain :80. For a public host, replace `:80` with your
+# domain (e.g. `iot.example.com`) and Caddy will provision HTTPS automatically.
+:80 {
+	# Send the bare /iot to /iot/ so relative asset URLs resolve.
+	redir /iot /iot/
+
+	handle_path /iot/* {
+		reverse_proxy nice4iot:8080
+	}
+}
