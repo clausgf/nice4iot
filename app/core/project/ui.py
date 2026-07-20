@@ -407,9 +407,16 @@ def _system_health_card(project_id: str) -> None:
         ui.label('System Health').classes('text-subtitle1 font-bold')
         ui.separator()
         with ui.column().classes('gap-1 q-mt-xs w-full'):
-            # MQTT
-            mqtt_ok = mqtt_status == 'connected'
-            _health_row('MQTT', mqtt_ok, mqtt_status if not mqtt_ok else '')
+            # MQTT — 'connected' is healthy; 'disabled' is a neutral off state
+            # (grey, like a backend with no data yet), not a failure; anything
+            # else ('disconnected', 'error: ...') is a real failure (red).
+            if mqtt_status == 'connected':
+                mqtt_ok: bool | None = True
+            elif mqtt_status == 'disabled':
+                mqtt_ok = None
+            else:
+                mqtt_ok = False
+            _health_row('MQTT', mqtt_ok, '' if mqtt_ok is True else mqtt_status)
 
             # Telemetry backend
             tel = health.get(f'{project_id}:telemetry')

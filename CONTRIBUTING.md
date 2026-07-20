@@ -5,7 +5,7 @@ Thanks for your interest in nice4iot. Issues and pull requests are welcome.
 ## Before you start
 
 For anything larger than a bug fix, please open an issue first. nice4iot has a
-fairly opinionated structure (see [Design Decisions](README.md#design-decisions)),
+fairly opinionated structure (see [Design Decisions](docs/architecture.md#design-decisions)),
 and a short discussion up front saves rework.
 
 ## Development setup
@@ -16,7 +16,7 @@ mkdir -p data/projects            # required: the app validates that it exists
 uv run uvicorn app.main:app --reload
 ```
 
-See [Development](README.md#development) in the README for the full picture.
+See [docs/development.md](docs/development.md) for the full picture.
 
 ## Project rules
 

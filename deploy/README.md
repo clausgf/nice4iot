@@ -14,7 +14,7 @@ standalone example therefore binds to `127.0.0.1` only.
 Before putting nice4iot on a network:
 
 - Set `AUTH_PROVIDER` to `password` (built-in login) or `proxy` (identity from a
-  reverse proxy) — see the Authentication section of the top-level README.
+  reverse proxy) — see [docs/configuration.md](../docs/configuration.md#authentication).
 - Set `NICEGUI_STORAGE_SECRET` to a long random value. The placeholder in these
   files is not a secret; with it, session cookies are forgeable.
 - Terminate TLS at the proxy. Device tokens travel in `Authorization` headers
@@ -53,7 +53,7 @@ docker compose -f docker-compose.caddy-epaper.yml up -d --build
 - **`./data`** — bind-mounted to `/home/iot/data`; holds all project/device
   state. The entrypoint creates `data/projects` on first start (required, since
   `projects_dir` is validated to exist). Other settings come from environment
-  variables — see the Configuration table in the top-level README.
+  variables — see [docs/configuration.md](../docs/configuration.md).
 
 ## The `/iot` sub-path
 

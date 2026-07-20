@@ -1,19 +1,19 @@
 # nice4iot
 
-An IoT device management platform written in Python. It provides a REST API for devices and a web-based management UI, both served from a single process.
+An IoT device management platform written in Python. It provides a REST API for devices and a web-based management UI, both served from a single process — no database, no message queue, no external services required to get started.
+
+<p align="center">
+  <img src="docs/img/project-dashboard.png" alt="Project dashboard showing device health, system health, recent activity and active alarms" width="900">
+</p>
 
 ## Contents
 
 - [Features](#features)
+- [Quick Start](#quick-start)
+- [Screenshots](#screenshots)
 - [Tech Stack](#tech-stack)
-- [Architecture](#architecture)
-- [Core Concepts](#core-concepts)
-- [Device API Reference](#device-api-reference)
-- [Device Client / Test Tool](#device-client--test-tool)
-- [Development](#development)
+- [Documentation](#documentation)
 - [Deployment](#deployment)
-- [Design Decisions](#design-decisions)
-- [MQTT Support](#mqtt-support)
 - [Open Questions / TODO](#open-questions--todo)
 - [Contributing](#contributing)
 - [Licence](#licence)
@@ -32,7 +32,7 @@ An IoT device management platform written in Python. It provides a REST API for 
 - **Alarm system** — per-project alarm rules (metric thresholds + built-in device-offline rule); state-based with acknowledgment; alarm panels on project and device dashboards
 - **System health** — project dashboard shows live green/red status for MQTT, telemetry, and logging backends; external-call errors are captured without raising exceptions
 - **Extensions** — separately deployed packages can add their own REST endpoints, MQTT pub/sub, and UI cards/tabs, and get notified when a new device is provisioned; see [docs/extensions.md](docs/extensions.md)
-- **Admin UI authentication** — optional, pluggable (`none`/`proxy`/`password`), disabled by default; see `app/auth/`
+- **Admin UI authentication** — optional, pluggable (`none`/`proxy`/`password`), disabled by default
 
 ### Management UI tabs
 
@@ -41,6 +41,53 @@ An IoT device management platform written in Python. It provides a REST API for 
 | Projects list | — card grid |
 | Project | Dashboard · General · Provisioning · Files · Devices |
 | Device | Dashboard · General · Files · Data · Logs · Alarms |
+
+---
+
+## Quick Start
+
+Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/).
+
+```bash
+git clone https://github.com/clausgf/nice4iot.git
+cd nice4iot
+uv sync
+mkdir -p data/projects
+uv run uvicorn app.main:app --reload --port 8000
+```
+
+Open <http://localhost:8000> for the management UI, or <http://localhost:8000/docs> for the interactive API documentation. Create a project, generate a provisioning token under **Provisioning**, then simulate a device without any hardware:
+
+```bash
+uv run python tools/device_client.py cycle \
+    --url http://localhost:8000 --project myproject --device mydevice \
+    --token <provisioning_token> \
+    --sensors '{"temperature": 22.4, "humidity": 60}' --log "Device started"
+```
+
+For running it as a service, see [Deployment](#deployment). For development details, see [docs/development.md](docs/development.md).
+
+---
+
+## Screenshots
+
+**Telemetry Explorer** — the device Data tab charts directly from the configured backend, falling back to the local ring buffer (shown here) when none is set up.
+
+<p align="center">
+  <img src="docs/img/device-data.png" alt="Device Data tab charting a battery-voltage time series with a source indicator and min/max/avg summary" width="900">
+</p>
+
+**Device table** — every device in a project with its live status, location, last-seen time, and active-alarm count.
+
+<p align="center">
+  <img src="docs/img/devices-table.png" alt="Devices table listing six sensors with alarm counts, active state, location and last-seen columns" width="900">
+</p>
+
+**Alarm rules** — per-project metric thresholds and the built-in device-offline rule; forms are generated from the Pydantic models via niceview.
+
+<p align="center">
+  <img src="docs/img/project-alarms.png" alt="Alarm configuration panel with a device-offline toggle, two metric rules, and a new-rule form" width="900">
+</p>
 
 ---
 
@@ -59,447 +106,50 @@ An IoT device management platform written in Python. It provides a REST API for 
 | Runtime | [uvicorn](https://www.uvicorn.org) |
 | Deployment | Docker / Docker Compose |
 
----
-
-## Architecture
-
-```
-app/
-├── main.py                 # FastAPI + NiceGUI entry point; lifespan starts MQTT + file watcher
-├── config.py               # pydantic-settings (env vars / .env)
-├── exceptions.py           # domain exceptions: NotFoundError, ForbiddenError, AuthError, …
-├── paths.py                # project_dir(), device_dir() helpers
-├── util.py                 # filename validation, render_datetime (configured timezone), …
-├── frontend.py             # NiceGUI page, header, sub-page routing, user menu
-├── api/
-│   ├── provisioning.py     # POST /api/provision
-│   ├── device.py           # POST /api/telemetry, /api/log, GET /api/forward
-│   ├── file.py             # GET · PUT · HEAD /api/file
-│   └── dependencies.py     # device_auth FastAPI dependency + domain_to_http()
-├── mqtt/
-│   ├── backend.py          # persistent MQTT client, topic routing, publish_file()
-│   ├── models.py           # MqttGlobalConfig (server, port, credentials, client_id)
-│   └── ui.py               # MqttGlobalConfigCard (live connection status)
-└── core/
-    ├── device/
-    │   ├── backend.py      # Device CRUD, device_adapter(), last_seen helpers
-    │   ├── models.py       # Device Pydantic model
-    │   ├── ui.py           # device_subpage, Dashboard + General panel, DevicesTable
-    │   ├── files_ui.py     # Files tab (browse, upload, download, edit, MQTT force-publish)
-    │   ├── data_ui.py      # Data tab (multi-trace Plotly time-series explorer)
-    │   └── logs_ui.py      # Logs tab (live tail, archive download)
-    ├── file/
-    │   ├── backend.py      # file state tracking (.mqtt_file_state.json), watcher loop
-    │   ├── models.py       # FileConfig (max_upload_size, check_interval, QoS, retain)
-    │   └── ui.py           # FileConfigCard (project settings)
-    ├── project/
-    │   ├── backend.py      # Project CRUD, project_adapter()
-    │   ├── models.py       # Project Pydantic model
-    │   └── ui.py           # all_projects_subpage, project_subpage, dashboard cards
-    ├── token/
-    │   ├── backend.py      # Token create / validate / persist / lock
-    │   ├── models.py       # AuthToken Pydantic model
-    │   └── ui.py           # TokenListCard
-    ├── telemetry/
-    │   ├── backend.py      # write_telemetry() + local JSONL store + read_local_metrics()
-    │   ├── models.py       # TelemetryConfig
-    │   ├── ui.py           # TelemetryCard (project settings)
-    │   ├── prometheus/     # Prometheus remote write backend
-    │   └── influxdb/       # InfluxDB line protocol backend
-    ├── logging/
-    │   ├── backend.py      # write_log()
-    │   ├── models.py       # LoggingConfig
-    │   ├── ui.py           # LoggingCard (project settings)
-    │   ├── file/           # rotating file backend
-    │   └── loki/           # Grafana Loki backend
-    └── forwarding/
-        ├── backend.py      # forward(), get_forwarding()
-        ├── models.py       # ForwardingConfig
-        └── ui.py           # ForwardingCard (project settings)
-
-tests/
-├── conftest.py                  # fixtures: projects_dir, client, provisioned, ...
-├── test_acceptance.py           # end-to-end lifecycle (mark: acceptance)
-├── test_api_device.py           # REST API for telemetry, log, forward
-├── test_api_file.py             # REST file upload/download/head
-├── test_api_provisioning.py     # provisioning flow, token lifecycle
-├── test_auth.py                 # token generation, validation, purge (unit)
-├── test_device_backend.py       # device_adapter, rename_device, file path fallback
-└── test_telemetry_backend.py    # local JSONL store (_append_local_metrics, read_local_metrics)
-
-tools/
-└── device_client.py        # arduino4iot-compatible Python device simulator
-```
-
 FastAPI and NiceGUI share a single uvicorn process via `ui.run_with(app, ...)`. The REST API is reachable at `/api/*`; the NiceGUI UI occupies all other paths via `ui.sub_pages`.
 
 ---
 
-## Core Concepts
+## Documentation
 
-### Data Storage
+Full documentation lives in [docs/](docs/README.md):
 
-All state is stored on the filesystem under `data/projects/` (configurable via `PROJECTS_DIR` env var):
-
-```
-data/projects/
-└── <project_name>/
-    ├── .project.json           # Project settings (autosave)
-    ├── .provisioning.json      # Provisioning token list
-    ├── .telemetry.json         # Telemetry backend config
-    ├── .logging.json           # Logging backend config
-    ├── .forwards.json          # Named HTTP forwarding rules
-    ├── <shared_file>           # Project-wide fallback files served to devices
-    └── <device_name>/
-        ├── .device.json        # Device settings (autosave, optimistic-locked)
-        ├── .last_seen          # last_seen_at timestamp — written on every API auth,
-        │                       # kept separate so device.json is only written on
-        │                       # explicit user/provisioning actions (avoids lock conflict)
-        ├── .tokens.json        # Device bearer token list (file-locked on write)
-        ├── .device.log         # File logging backend output (rotated)
-        ├── .device_metrics.jsonl  # Local telemetry ring buffer (max 2 000 lines)
-        └── <device_file>       # Device-specific files (override project defaults)
-```
-
-Project and device names double as directory names and as the telemetry metric-name prefix, so they must be valid identifiers: `[a-zA-Z_][a-zA-Z0-9_]*` (letters, digits and underscore only, no leading digit, no `-`/`+`). This guarantees a valid Prometheus metric name `<project>_<field>` and needs no backend-specific escaping. Path traversal is prevented by resolving and checking all paths against their expected base directory.
-
-> **Upgrading:** earlier versions allowed `-` and `+` in names. A project or device directory whose name violates the rule above is no longer listed or accessible — rename it on disk (e.g. `my-proj` → `my_proj`) before upgrading.
-
-All writes use a write-to-temp-then-rename pattern to avoid partial writes.
-
-### Two-Tier Token Model
-
-1. **Provisioning tokens** — long-lived (default: 1 year), scoped to a project. Created in the UI and flashed into device firmware.
-2. **Device tokens** — short-lived (default: 7 days), scoped to a device. Issued by `POST /api/provision` in exchange for a valid provisioning token.
-
-On provisioning, the platform can optionally auto-create the device record (`is_autocreate_devices`) and auto-approve it (`is_provisioning_autoapproval`), or require explicit operator approval first.
-
-Each device may hold at most **32 active tokens** simultaneously. When the cap is reached, the token with the oldest `last_use_at` is evicted before the new one is stored.
-
-### Device Lifecycle
-
-```
-Provisioning request (provisioning token)
-  → device created (if autocreate) or looked up
-  → approval checked
-  → device token issued (old expired tokens purged, cap enforced)
-  → device uses device token for telemetry / log / file / forward endpoints
-  → each authenticated request updates last_seen_at and token.last_use_at
-```
-
-### File Serving with Fallback
-
-`GET /api/file/{project}/{device}/{filename}` looks for a device-specific file first, then falls back to a project-wide default. This lets you distribute common firmware / config to all devices while allowing per-device overrides. Conditional caching is fully supported via both `If-None-Match` (ETag) and `If-Modified-Since` (`Last-Modified`) — either results in `304 Not Modified` when unchanged; per RFC 7232 §3.3, `If-None-Match` takes precedence when a request sends both.
-
-`PUT /api/file/{project}/{device}/{filename}` writes to the device-specific path atomically (via a temp file). The filename must contain only `[a-zA-Z0-9_\-.]` and must not contain `..`.
-
-### Size Limits
-
-| Resource | Limit | Config key |
-|---|---|---|
-| File upload | 10 MiB | `MAX_FILE_UPLOAD_SIZE` |
-| Telemetry body | 8 KiB | `MAX_TELEMETRY_SIZE` |
-| Log body | 8 KiB | `MAX_LOG_SIZE` |
-
-Requests exceeding the limit are rejected with **413 Content Too Large**.
-
-### Local Telemetry Store
-
-Every call to `POST /api/telemetry` also appends a line to `<device>/.device_metrics.jsonl` (in addition to forwarding to any configured remote backend). The file is capped at 2 000 lines (oldest removed first). The **Device → Data** tab reads this file and renders an interactive Plotly chart with configurable time window and metric selector.
-
-### UI Generation via niceview
-
-Forms and tables are not coded by hand. [niceview](https://github.com/clausgf/niceview) inspects Pydantic models and generates NiceGUI widgets. Field metadata (labels, editability, widget type) is expressed via `niceview.Field(...)` annotations on the model. `ModelForm.from_adapter(..., autosave=True)` binds the form to a `JsonAdapter` and saves on every change, removing the need for explicit Save buttons.
-
-### Lenient JSON loading
-
-All config and data files (`.project.json`, `.device.json`, `.alarm_config.json`, `.tokens.json`, etc.) are read via `JsonAdapter` / `lenient_model_load` / `lenient_list_load` from [niceview](https://github.com/clausgf/niceview). The loaders tolerate hand-edited files:
-
-| Situation | Behaviour |
+| Document | Contents |
 |---|---|
-| Malformed JSON | `log.error`, return model defaults |
-| Unknown field | `log.error`, ignore the field |
-| Bad field value | `log.error`, use model default for that field only |
-| Missing required field (no default) | `log.error`, raise (last resort) |
-| Bad item in a list | `log.error`, skip that item, keep the rest |
-
-Exceptions are never raised for recoverable errors; each field is treated independently so a single corrupt value never blocks the rest of the document.
-
-### Alarm System
-
-Each project can define alarm rules that are evaluated whenever telemetry arrives or (for the built-in device-offline rule) by a background loop every 60 seconds.
-
-**Metric rules** — configured under *Project → General → Alarms*. Each rule specifies a telemetry kind, metric name, comparison operator (`<`, `=`, `>`), and threshold. The *Kind* and *Metric* fields are comboboxes seeded from the names actually seen in the local telemetry store (the *Metric* list follows the selected *Kind*); a not-yet-observed name can still be typed in. When the condition is met the first time an `AlarmEvent` is created with `is_active=True`. When the condition clears the event is resolved (`is_active=False`). Condition re-fires re-open a resolved event rather than creating a duplicate.
-
-**Device offline rule** — built-in rule that fires when a device's `last_seen_at` is older than the project's online threshold (configured under *Project → General*). Enabled/disabled under *Project → General → Alarms*.
-
-**Acknowledgment** — operators acknowledge individual events or all events at once. An acknowledged and resolved event is automatically pruned from storage on the next save. The **Device → Alarms** tab shows all events for one device; the **Project Dashboard** alarm panel shows project-wide events.
-
-**Device alarm badge** — the project Devices table shows an *Alarms* column with the count of active unacknowledged alarms per device.
-
-Storage: `<project>/.alarm_config.json` (rules) and `<project>/.alarm_events.json` (events), both written atomically.
-
-### System Health
-
-The *Project Dashboard* includes a **System Health** card showing the last known status of each external backend. Services tracked:
-
-| Indicator | Source |
-|---|---|
-| MQTT | `connection_status` from `app/mqtt/backend.py` |
-| Telemetry | Last write attempt to the configured remote backend (Prometheus / InfluxDB) |
-| Logging | Last write attempt to the configured log backend (Loki / file) |
-
-External-call errors are caught and recorded via `app/health.py` (`set_health(key, ok, message)`) instead of propagating exceptions. The dashboard card shows a green check or red error icon with the last error message.
-
----
-
-## Device API Reference
-
-All device endpoints require `Authorization: Bearer <device_token>`.
-
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/api/provision` | Obtain a device token |
-| `POST` | `/api/telemetry/{project}/{device}/{kind}` | Push numeric measurements (JSON) |
-| `POST` | `/api/log/{project}/{device}` | Push log lines (plain text) |
-| `GET` | `/api/file/{project}/{device}/{filename}` | Download a file |
-| `HEAD` | `/api/file/{project}/{device}/{filename}` | Check file ETag (OTA) |
-| `PUT` | `/api/file/{project}/{device}/{filename}` | Upload a file |
-| `GET` | `/api/forward/{project}/{device}/{name}/{path}` | Proxy request to configured upstream |
-
-Interactive API docs: `http://localhost:8000/docs`
-
----
-
-## Device Client / Test Tool
-
-`tools/device_client.py` is a Python simulation of an [arduino4iot](https://github.com/clausgf/arduino4iot) device. It implements the same HTTP flow as the C++ library and is useful for integration testing, demos, and load testing without needing real hardware.
-
-```bash
-# Full wake-up cycle (provision → config → OTA check → telemetry → log):
-uv run python tools/device_client.py cycle \
-    --url http://localhost:8000 \
-    --project myproject \
-    --device mydevice \
-    --token <provisioning_token> \
-    --sensors '{"temperature": 22.4, "humidity": 60}' \
-    --log "Device started"
-
-# Simulate periodic wake-ups every 30 s:
-uv run python tools/device_client.py loop --interval 30 \
-    --url http://localhost:8000 \
-    --project myproject --device mydevice --token <token>
-
-# Push telemetry only:
-uv run python tools/device_client.py telemetry sensors \
-    '{"temperature": 22.4}' ...
-
-# Upload a config file:
-uv run python tools/device_client.py upload myconfig.json ...
-```
-
-State (device token + ETag cache) is persisted in `.<device>.state.json` between invocations, mirroring NV-RAM on hardware.
-
----
-
-## Development
-
-### Prerequisites
-
-- Python 3.12+
-- [uv](https://docs.astral.sh/uv/)
-
-### Setup
-
-```bash
-uv sync
-```
-
-Optional extensions are packaged as extras and are not installed by default.
-To enable the [nicepaper](https://github.com/clausgf/nicepaper)
-extension (`extensions.epaper`):
-
-```bash
-uv sync --extra epaper
-```
-
-### Run
-
-```bash
-uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-API docs: `http://localhost:8000/docs`
-
-### Test
-
-```bash
-uv run pytest
-```
-
-### Lint
-
-```bash
-uv run ruff check          # report
-uv run ruff check --fix    # auto-fix
-```
-
-Ruff runs a deliberately conservative rule set (`E9`, `F` — syntax errors and
-pyflakes: unused imports, undefined names, broken f-strings); style rules are
-off to avoid churn. Generated protobuf modules (`*_pb2.py`) are excluded. CI
-runs `ruff check` alongside the test suite.
-
-### Configuration
-
-Settings are read from environment variables (or a `.env` file):
-
-| Variable | Default | Description |
-|---|---|---|
-| `PROJECTS_DIR` | `data/projects` | Root directory for all project and device data |
-| `PROVISIONING_TOKEN_LENGTH` | `64` | Length of generated provisioning tokens |
-| `PROVISIONING_TOKEN_EXPIRES_IN` | `365d` | Lifetime of provisioning tokens |
-| `DEVICE_TOKEN_LENGTH` | `32` | Length of generated device tokens |
-| `MAX_FILE_UPLOAD_SIZE` | `10485760` | Maximum file upload size in bytes (10 MiB) |
-| `MAX_TELEMETRY_SIZE` | `8192` | Maximum telemetry body size in bytes (8 KiB) |
-| `MAX_LOG_SIZE` | `8192` | Maximum log body size in bytes (8 KiB) |
-| `TIMEZONE` | `Europe/Berlin` | Server timezone (for log timestamps) |
-| `NICEGUI_STORAGE_SECRET` | `""` | Secret for NiceGUI session storage |
-| `AUTH_PROVIDER` | `none` | Admin UI auth: `none`, `proxy` (reverse-proxy-forwarded identity), or `password` (built-in login, htpasswd) |
-| `AUTH_USER_HEADERS` | see below | `proxy` provider: header names carrying the forwarded username, first non-empty wins |
-| `AUTH_LOGOUT_URL` | `null` | `proxy` provider: logout link shown in the user menu (e.g. `/oauth2/sign_out`); unset hides it |
-| `AUTH_HTPASSWD_FILE` | `data/htpasswd` | `password` provider: bcrypt htpasswd file, manage with `htpasswd -B` |
-
-### Authentication
-
-`AUTH_PROVIDER` selects how the UI authenticates users:
-
-- `none` (default): no authentication (local development, or when
-  access is already restricted at the network level).
-- `proxy`: an authenticating reverse proxy in front of the app (e.g.
-  Caddy with oauth2-proxy) handles the login; the app reads the
-  forwarded identity from request headers.
-  - `AUTH_USER_HEADERS`: JSON list of headers carrying the username
-    (defaults match oauth2-proxy: `X-Forwarded-Preferred-Username`,
-    `X-Forwarded-User`, `X-Forwarded-Email`); the first non-empty
-    value is shown in the UI.
-  - `AUTH_LOGOUT_URL`: logout link shown in the user menu, e.g.
-    `/oauth2/sign_out`; unset hides the entry.
-  - The headers are only trustworthy when the app is reachable
-    exclusively through the proxy.
-  - Deployment note (Caddy + oauth2-proxy): oauth2-proxy must be told
-    to expose the identity (`--set-xauthrequest`, and/or
-    `--pass-user-headers` when proxying through oauth2-proxy itself)
-    and Caddy's `forward_auth` block must forward it to the app, e.g.
-
-    ```
-    forward_auth oauth2-proxy:4180 {
-        uri /oauth2/auth
-        copy_headers X-Auth-Request-Preferred-Username>X-Forwarded-Preferred-Username X-Auth-Request-User>X-Forwarded-User X-Auth-Request-Email>X-Forwarded-Email
-    }
-    ```
-
-    Set `AUTH_LOGOUT_URL=/oauth2/sign_out` for a working logout entry.
-    After deploying, check once which of the configured headers
-    actually arrives and adjust `AUTH_USER_HEADERS` if needed.
-- `password`: built-in login page. Users live in an htpasswd file with
-  bcrypt hashes (`AUTH_HTPASSWD_FILE`, default `data/htpasswd`),
-  maintained with the standard Apache tool:
-
-  ```
-  htpasswd -c -B data/htpasswd alice   # create file and first user
-  htpasswd -B data/htpasswd bob        # add/update further users
-  ```
-
-  Only bcrypt entries (`-B`) are accepted; the file is re-read on each
-  login attempt, so changes apply without a restart. Set a strong
-  `NICEGUI_STORAGE_SECRET`, since it signs the session cookie.
+| [What is an IoT manager?](docs/what-is-an-iot-manager.md) | The problem nice4iot solves, for readers new to the category |
+| [Core Concepts](docs/concepts.md) | Data storage, token model, device lifecycle, alarms, system health |
+| [Device API Reference](docs/device-api.md) | The REST contract devices depend on, plus the device simulator |
+| [Configuration](docs/configuration.md) | Environment variables and UI authentication |
+| [MQTT Support](docs/mqtt.md) | Topic layout, file delivery, broker settings |
+| [Architecture](docs/architecture.md) | Module layout and the design decisions behind it |
+| [Extensions](docs/extensions.md) | Adding endpoints, MQTT handlers, and UI from a separate package |
+| [Development](docs/development.md) | Setup, running from source, tests, linting |
+| [Deployment](deploy/README.md) | Container image and Docker Compose examples |
 
 ---
 
 ## Deployment
 
 Container image and ready-made Docker Compose examples live in
-[`deploy/`](deploy/) — see [deploy/README.md](deploy/README.md) for the details.
+[`deploy/`](deploy/) — see [deploy/README.md](deploy/README.md) for the details,
+**including the security note to read before exposing nice4iot to a network.**
 
 ```bash
 cd deploy
 mkdir -p data                              # must exist and be owned by your user
 
-docker compose up -d --build                                      # standalone, http://<host>:8080/
+docker compose up -d --build                                      # standalone, http://127.0.0.1:8080/
 docker compose -f docker-compose.caddy.yml up -d --build          # behind Caddy at /iot
 docker compose -f docker-compose.caddy-epaper.yml up -d --build   # Caddy + epaper extension
 ```
 
 | Scenario | Setup | Reached at |
 |---|---|---|
-| `docker-compose.yml` | Standalone, no proxy | `http://<host>:8080/` |
+| `docker-compose.yml` | Standalone, no proxy | `http://127.0.0.1:8080/` |
 | `docker-compose.caddy.yml` | Behind Caddy, sub-path `/iot` | `http://<host>/iot/` |
 | `docker-compose.caddy-epaper.yml` | Caddy + `/iot` + epaper extension | `http://<host>/iot/` |
 
 Adjust the `PUID`/`PGID` build args to match the host user owning `deploy/data`, and set `NICEGUI_STORAGE_SECRET` to a long random value so UI sessions survive restarts. Serving under a sub-path requires both halves to agree: Caddy strips the prefix (`handle_path /iot/*`) while nice4iot is told its public prefix (`--root-path /iot`).
-
----
-
-## Design Decisions
-
-**Filesystem instead of a database.**
-JSON files keep the deployment dependency-free, make backup trivial (`rsync`), and make state directly inspectable. The tradeoff is no transactions, no foreign keys, and no efficient querying.
-
-**Synchronous file I/O inside an async application.**
-Backend functions are synchronous. Callers at the API or UI boundary wrap
-IO-heavy backend calls with `anyio.to_thread.run_sync` to avoid blocking the
-event loop. The telemetry hot path (`_append_local_metrics`) is wrapped inside
-`write_telemetry`. This is the project-wide rule; see CLAUDE.md for details.
-
-**Pluggable UI authentication, disabled by default.**
-The REST API endpoints are protected by bearer tokens (a separate mechanism). The NiceGUI management UI has its own optional auth, selected via `AUTH_PROVIDER` (`none` by default) — see [Authentication](#authentication) above and `app/auth/`.
-
-**In-process caches with TTL and SIGUSR1 flush.**
-`get_devices()` (called on every Project Dashboard load) and `_get_active_backend()` (called on every telemetry push) cache their results for 60 seconds. Structural changes via the UI invalidate the device list cache immediately. Out-of-band filesystem changes (editing files directly, external scripts) are reflected after the 60 s TTL. To force an immediate flush without restarting, send `SIGUSR1`:
-
-```bash
-kill -USR1 <pid>
-```
-
----
-
-## MQTT Support
-
-nice4iot maintains a **single persistent MQTT connection** shared across all projects. MQTT is enabled per-project via the `is_mqtt_enabled` flag.
-
-### Topic structure
-
-The topic base is configured per project (default: `/nice4iot/{project}/{device}`). Leading slashes and double slashes are normalised automatically. Substituting the project and device names gives topics like `nice4iot/myproject/sensor1/...`. The supported suffixes are:
-
-| Suffix | Direction | Description |
-|---|---|---|
-| `telemetry/{kind}` | device → server | JSON payload with numeric measurements |
-| `log` | device → server | UTF-8 plain-text log message |
-| `upload/{filename}` | device → server | Raw file bytes |
-| `download/{filename}` | server → device | File contents (published by nice4iot) |
-
-`{base}/cmd/{name}` for server-to-device commands is planned but not yet implemented.
-
-### File delivery
-
-When a project has MQTT enabled, nice4iot publishes files to devices via the `download/{filename}` topic:
-
-- **Periodic check** — every `mqtt_check_interval_s` seconds (default: 60 s) the watcher loop compares file mtimes against a per-device state file (`.mqtt_file_state.json`) and republishes any file that has changed.
-- **Immediate publish** — files edited or uploaded via the UI are published immediately. The **Files** tab shows the last publication timestamp and offers a **force publish** button per file.
-- **QoS and retain** — configurable per project. QoS 1 with a persistent device session is recommended. Retained messages allow devices that reconnect while the server is running to receive the latest file immediately.
-- **Mosquitto message size** — the broker's own `message_size_limit` (mosquitto.conf) applies independently of nice4iot's `max_upload_size`. The Mosquitto default is 256 MB.
-
-### Configuration
-
-Global MQTT broker settings (server, port, credentials, client ID) are shared across all projects and can be changed in the **Projects** list page below the project grid. Per-project MQTT settings (topic base, QoS, retain, check interval) are in the project's **General** tab under _Files_.
-
-### LoRaWAN / The Things Network
-
-nice4iot's MQTT integration connects to an external MQTT broker using the server/port/credentials configured in the global MQTT settings. To receive TTN messages, point `server` at `<tenant>.cloud.thethings.network`. Note that TTN uses a different topic format and JSON payload structure — a payload adapter would be required to bridge TTN messages to nice4iot's expected format.
-
-### Authentication TODO
-
-MQTT authentication is currently managed by the broker. A future version will integrate with Mosquitto's Dynamic Security Plugin to provision per-device credentials automatically from the nice4iot UI.
 
 ---
 
