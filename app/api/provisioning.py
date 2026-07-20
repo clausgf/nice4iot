@@ -80,8 +80,9 @@ class ProvisioningResponse(BaseModel):
         },
         400: {
             "description": (
-                "Invalid project or device name "
-                "(must contain only letters, digits, ``_``, ``-``, ``+``)."
+                "Invalid project or device name (must match "
+                "``[a-zA-Z_][a-zA-Z0-9_]*``: letters, digits and underscore "
+                "only, no leading digit)."
             )
         },
         401: {
