@@ -9,8 +9,13 @@ Run only acceptance tests: pytest tests/test_acceptance.py -v
 """
 import datetime
 import pytest
+from fastapi import APIRouter
+from fastapi.testclient import TestClient
 
-from tests.conftest import setup_project
+import app.extensions as extensions
+from app.extensions import mount_extension_router, registering
+from tests.conftest import make_api_app, setup_project
+from app.core.project.backend import project_adapter
 from app.core.telemetry.backend import read_local_metrics
 
 
@@ -241,3 +246,87 @@ class TestProjectFileFallback:
         resp = client.get(f"/api/file/{project.name}/dev1/cfg.json", headers=headers)
         assert resp.status_code == 200
         assert b'"device"' in resp.content
+
+
+class TestExtensionDeviceAuthEndToEnd:
+    """An extension REST endpoint mounted with require_device_auth=True is
+    reachable end-to-end with a real device bearer token, and rejects every
+    request that lacks a valid one — the same contract the built-in device
+    endpoints follow (see docs/extensions.md)."""
+
+    @pytest.fixture
+    def secure_ext_client(self, provisioned):
+        """Full API app plus a device-authenticated extension route.
+
+        Uses the real provisioning/token store from the `provisioned` fixture,
+        so device_auth validates against genuinely issued tokens.
+        """
+        router = APIRouter()
+
+        @router.get("/{project_name}/{device_name}/secret")
+        async def secret(project_name: str, device_name: str):
+            return {"project": project_name, "device": device_name}
+
+        app = make_api_app()
+        try:
+            with registering("secure_ext"):
+                mount_extension_router(app, router, require_device_auth=True)
+            # Enable the extension for the provisioned device's project.
+            adapter = project_adapter(provisioned["project_name"])
+            project = adapter.read()
+            project.enabled_extensions.append("secure_ext")
+            adapter.save(project)
+            yield TestClient(app), provisioned
+        finally:
+            extensions._clear_registries()
+
+    def _url(self, ctx: dict) -> str:
+        return f"/api/ext/secure_ext/{ctx['project_name']}/{ctx['device_name']}/secret"
+
+    def test_valid_device_token_accepted(self, secure_ext_client):
+        client, ctx = secure_ext_client
+        resp = client.get(self._url(ctx),
+                          headers={"Authorization": f"Bearer {ctx['device_token']}"})
+        assert resp.status_code == 200
+        assert resp.json() == {"project": ctx["project_name"],
+                               "device": ctx["device_name"]}
+
+    def test_missing_token_rejected_401(self, secure_ext_client):
+        client, ctx = secure_ext_client
+        resp = client.get(self._url(ctx))
+        assert resp.status_code == 401
+
+    def test_invalid_token_rejected_401(self, secure_ext_client):
+        client, ctx = secure_ext_client
+        resp = client.get(self._url(ctx),
+                          headers={"Authorization": "Bearer not-a-real-token"})
+        assert resp.status_code == 401
+
+    def test_disabled_extension_still_404(self, secure_ext_client):
+        """The enablement gate runs regardless of auth: a valid token on a
+        disabled extension is 404, not 200."""
+        client, ctx = secure_ext_client
+        adapter = project_adapter(ctx["project_name"])
+        project = adapter.read()
+        project.enabled_extensions.remove("secure_ext")
+        adapter.save(project)
+        resp = client.get(self._url(ctx),
+                          headers={"Authorization": f"Bearer {ctx['device_token']}"})
+        assert resp.status_code == 404
+
+    def test_route_without_device_name_raises_at_mount(self, projects_dir):
+        """require_device_auth needs device_name in the path; a route missing it
+        is a loud failure at mount time, not a silent open endpoint."""
+        router = APIRouter()
+
+        @router.get("/{project_name}/oops")
+        async def oops(project_name: str):
+            return {}
+
+        app = make_api_app()
+        try:
+            with registering("bad_ext"):
+                with pytest.raises(RuntimeError, match="device_name"):
+                    mount_extension_router(app, router, require_device_auth=True)
+        finally:
+            extensions._clear_registries()

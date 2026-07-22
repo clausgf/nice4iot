@@ -65,8 +65,18 @@ def create_project(project_name: str) -> Project:
         raise AlreadyExistsError(f"Project {project_name} already exists.") from e
     try:
         now = datetime.datetime.now(datetime.timezone.utc)
-        project = Project(name=project_name, created_at=now, updated_at=now)
+        # Seed device-token fields from env (editable per project afterwards).
+        project = Project(name=project_name, created_at=now, updated_at=now,
+                          device_token_length=app_config.device_token_length,
+                          device_tokens_expire_in=app_config.device_token_expires_in)
         JsonAdapter(Project, project_filename(project_name), create_if_not_exist=False).save(project)
+        # Seed telemetry and logging config from the DEFAULT_* env vars, so a new
+        # project starts on the shared backend without hand-configuring each one.
+        # Local imports avoid an import cycle (those backends import paths/util).
+        from app.core.telemetry.backend import get_telemetry_adapter, default_telemetry_config
+        from app.core.logging.backend import get_logging_adapter, default_logging_config
+        get_telemetry_adapter(project_name).save(default_telemetry_config())
+        get_logging_adapter(project_name).save(default_logging_config())
     except Exception:
         shutil.rmtree(project_path, ignore_errors=True)
         raise

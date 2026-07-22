@@ -141,6 +141,39 @@ must declare `project_name` as a path parameter**; a route that doesn't
 raises `RuntimeError` at request time (a loud failure, not a silent
 bypass).
 
+### Authenticating the caller
+
+By itself, `mount_extension_router` only gates on *enablement* — it checks
+that the extension is switched on for the project, **not who is calling.**
+The example above is therefore open to anyone who can reach the URL. Decide
+who the caller is and secure it accordingly:
+
+- **Called by a device** (the common case — e.g. a display fetching its
+  image): pass `require_device_auth=True`. Every request must then carry a
+  valid device bearer token (`Authorization: Bearer <token>`), validated by
+  the same `device_auth` dependency the built-in device endpoints use;
+  missing / invalid / expired tokens get 401. This requires every route to
+  also carry a `device_name` path parameter (the token is checked against
+  `project_name`/`device_name`), enforced at mount time:
+
+  ```python
+  @router.get("/{project_name}/{device_name}/screens/{screen_id}/image.png")
+  async def get_image(project_name: str, device_name: str, screen_id: str):
+      ...
+
+  def register(app: FastAPI) -> None:
+      mount_extension_router(app, router, require_device_auth=True)
+  ```
+
+- **Called by the logged-in operator's browser** (e.g. an extension tab's own
+  `fetch`): that request rides the UI session, not a device token, so
+  `require_device_auth` is the wrong tool — leave it off. The UI auth
+  (`AUTH_PROVIDER`) already guards who reaches the app, and the enablement
+  gate covers the rest.
+
+- **Custom scheme**: add your own FastAPI dependency to the router or its
+  routes as usual.
+
 If you genuinely need a route with no project scope (rare), mount it with
 plain `app.include_router()` instead — it then bypasses activation
 entirely, so make sure that's actually what you want.

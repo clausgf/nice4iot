@@ -16,9 +16,9 @@
 
 ## Deploying
 
-- **[Deployment](../deploy/README.md)** — container image and Docker Compose
-  examples (standalone, behind Caddy, with the epaper extension), including the
-  security note to read before exposing nice4iot to a network.
+- **[Deployment](../deploy/README.md)** — container image and a Docker Compose
+  example (behind a reverse proxy, epaper built in), including the security note
+  to read before exposing nice4iot to a network, and serving under a sub-path.
 - **[Security policy](../SECURITY.md)** — the intended security boundaries and
   how to report a vulnerability.
 

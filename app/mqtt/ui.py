@@ -1,14 +1,16 @@
 from nicegui import ui
-from niceview import ModelForm
 
 import app.mqtt.backend as _mqtt_backend
-from app.mqtt.models import MqttGlobalConfig
+from app.config import app_config
 
 
-def MqttGlobalConfigCard() -> None:
-    """Content for the global MQTT broker settings card (caller provides the card/header)."""
-    adapter = _mqtt_backend.get_mqtt_adapter()
+def MqttStatusCard() -> None:
+    """Read-only global MQTT broker status.
 
+    The broker connection is configured via environment variables (MQTT_ENABLED,
+    MQTT_SERVER, …); see docs/configuration.md. This card only shows the live
+    connection status — there is nothing to edit here.
+    """
     @ui.refreshable
     def _status() -> None:
         # Read the live module attribute — a module-level import would bind the
@@ -16,19 +18,19 @@ def MqttGlobalConfigCard() -> None:
         status = _mqtt_backend.connection_status
         if status == 'connected':
             color = 'green'
-        elif status == 'disabled':
-            color = 'grey'
         elif status.startswith('error'):
             color = 'orange'
         else:
             color = 'grey'
-        ui.chip(status).props(f'dense color={color} text-color=white')
+        with ui.row().classes('items-center gap-2 w-full'):
+            if app_config.mqtt_enabled:
+                ui.label(f'{app_config.mqtt_server}:{app_config.mqtt_port}').classes('text-body2')
+            else:
+                ui.label('Disabled (set MQTT_ENABLED to enable)').classes('text-body2 text-grey-7')
+            ui.space()
+            ui.chip(status).props(f'dense color={color} text-color=white')
 
-    form = ModelForm.from_adapter(MqttGlobalConfig, adapter,
-                                  include=['is_enabled', 'server', 'port', 'username', 'password', 'client_id'],
-                                  autosave=True)
-    form.render_field('is_enabled')
     _status()
     ui.timer(5.0, _status.refresh)
-    for name in ['server', 'port', 'username', 'password', 'client_id']:
-        form.render_field(name).props('outlined dense').classes('w-full')
+    ui.label('Configured via environment variables (MQTT_*); see the docs.') \
+        .classes('text-caption text-grey-7')

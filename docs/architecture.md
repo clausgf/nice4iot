@@ -6,8 +6,6 @@ How nice4iot is put together, and why it is put together that way.
 
 ---
 
-# Architecture
-
 ```
 app/
 ├── main.py                 # FastAPI + NiceGUI entry point; lifespan starts MQTT + file watcher
@@ -80,7 +78,7 @@ FastAPI and NiceGUI share a single uvicorn process via `ui.run_with(app, ...)`. 
 
 ---
 
-# Design Decisions
+## Design Decisions
 
 **Filesystem instead of a database.**
 JSON files keep the deployment dependency-free, make backup trivial (`rsync`), and make state directly inspectable. The tradeoff is no transactions, no foreign keys, and no efficient querying.

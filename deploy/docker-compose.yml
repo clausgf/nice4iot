@@ -1,27 +1,55 @@
-# Scenario 1 — standalone, no reverse proxy.
+# nice4iot behind an external reverse proxy (e.g. Caddy) on a shared `proxy`
+# Docker network. nice4iot itself is never published — the proxy is the only
+# public entry point.
 #
-# nice4iot is reachable at http://127.0.0.1:8080/ (served at the root path).
-# Good for a quick trial. The port is deliberately bound to localhost because
-# the admin UI ships unauthenticated; see the security note in deploy/README.md
-# before opening it up.
+# The admin UI is UNAUTHENTICATED by default (AUTH_PROVIDER=none), so make sure
+# the proxy enforces auth (or restricts access) before exposing it. See the
+# security note in deploy/README.md.
 #
+#   mkdir -p data          # once, owned by your uid (PUID/PGID below)
 #   docker compose up -d --build
+
+networks:
+  proxy:
+    external: true
+
 services:
   nice4iot:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
       args:
-        PUID: "1000"   # set to the uid that owns ./data on the host
+        PUID: "1000"   # set to the uid/gid that owns ./data on the host
         PGID: "1000"
-    ports:
-      # Bound to localhost only. The admin UI is UNAUTHENTICATED by default
-      # (AUTH_PROVIDER=none), so do not expose this port to a network without
-      # first setting up authentication — see deploy/README.md.
-      - "127.0.0.1:8080:8080"
+        # The epaper extension is installed by default. Comment this line out to
+        # build without it (nicepaper is a public dependency — no credentials).
+        INSTALL_EXTRAS: "--extra epaper"
+    # Served at the domain root by default. To serve under a sub-path (e.g.
+    # /iot), comment the first command out and use the second, and strip the
+    # prefix at the proxy (Caddy: `handle_path /iot/*`). See deploy/README.md.
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+    #command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--root-path", "/iot"]
     volumes:
       - ./data:/home/iot/data
     environment:
       # Persist UI sessions across restarts — set a long random value.
       NICEGUI_STORAGE_SECRET: "change-this-to-a-long-random-secret"
+      # MQTT is off by default. To use a broker, uncomment and adjust; prefer a
+      # Docker secret for MQTT_PASSWORD over an inline value. See docs/configuration.md.
+      #MQTT_ENABLED: "true"
+      #MQTT_SERVER: "mosquitto"
+      #MQTT_PORT: "1883"
+      #MQTT_USERNAME: ""
+      #MQTT_PASSWORD: ""
+      # Defaults for NEW projects (editable per project afterwards). Handy when
+      # most projects share one backend. Unset = today's behaviour. See docs.
+      #DEFAULT_TELEMETRY_BACKEND: "prometheus"
+      #DEFAULT_TELEMETRY_PROMETHEUS_PUSH_URL: "http://victoriametrics:8428/api/v1/write"
+      #DEFAULT_TELEMETRY_PROMETHEUS_PULL_URL: "http://victoriametrics:8428/api/v1/"
+      #DEFAULT_LOGGING_LOKI_ENABLED: "true"
+      #DEFAULT_LOGGING_LOKI_URL: "http://loki:3100/loki/api/v1/push"
+    expose:
+      - "8080"          # internal only; the reverse proxy is the public entrypoint
+    networks:
+      - proxy
     restart: unless-stopped

@@ -6,8 +6,6 @@ Setting up a working copy, running the app from source, and the checks CI enforc
 
 ---
 
-# Development
-
 ## Prerequisites
 
 - Python 3.12+

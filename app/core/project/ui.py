@@ -12,7 +12,7 @@ from app.core.logging.ui import LoggingCard
 from app.core.telemetry.ui import TelemetryCard
 from app.core.forwarding.ui import ForwardingCard
 from app.core.device.files_ui import project_files_panel
-from app.mqtt.ui import MqttGlobalConfigCard
+from app.mqtt.ui import MqttStatusCard
 from app.core.file.ui import FileConfigCard
 from app.routes import device_url, project_url, projects_url
 from app.ui import config_expansion
@@ -71,7 +71,7 @@ async def all_projects_subpage(args: PageArguments, nav: ui.element):
 
     with ui.card().classes('w-full q-mt-md dense'):
         with config_expansion('MQTT Broker'):
-            MqttGlobalConfigCard()
+            MqttStatusCard()
 
     for title, render_fn in get_global_cards():
         with ui.card().classes('w-full q-mt-md dense'):
@@ -293,12 +293,10 @@ def project_card(project_id: str) -> None:
         with ui.row().classes('w-full gap-4 q-mt-none'):
             form.render_field('is_http_enabled')
             form.render_field('is_mqtt_enabled')
-        project = project_adapter(project_id).read()
-        from app.mqtt.backend import get_mqtt_adapter as _get_mqtt_adapter
-        if project.is_mqtt_enabled and not _get_mqtt_adapter().read().is_enabled:
+        if form.item.is_mqtt_enabled and not app_config.mqtt_enabled:
             with ui.row().classes('items-center gap-1'):
                 ui.icon('warning').classes('text-warning text-sm')
-                ui.label('Globaler MQTT-Broker deaktiviert (Projekte → MQTT Broker)') \
+                ui.label('Global MQTT broker disabled (set MQTT_ENABLED)') \
                     .classes('text-caption text-warning')
         form.render_field('mqtt_topic_base').props('outlined dense').classes('w-full')
         form.render_field('device_tokens_expire_in').props('outlined dense').classes('w-full')

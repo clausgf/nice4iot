@@ -7,7 +7,7 @@
 #     docker build -f deploy/Dockerfile -t nice4iot ..
 #
 # To include the epaper extension, build with INSTALL_EXTRAS="--extra epaper"
-# (see the docker-compose.caddy-epaper.yml example and deploy/README.md).
+# (the docker-compose.yml here sets this by default; see deploy/README.md).
 FROM zauberzeug/nicegui:latest
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
@@ -53,7 +53,7 @@ USER iot
 EXPOSE 8080
 
 # entrypoint.sh creates the projects directory (required at startup) then execs
-# the command. Root-path is unset here (served at /); the Caddy scenarios add
-# `--root-path /iot` via a command override. No --reload in production.
+# the command. Root-path is unset here (served at /); to serve under a sub-path
+# add `--root-path /iot` via a command override. No --reload in production.
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]

@@ -6,8 +6,6 @@ The domain model: how state is stored, how devices authenticate, and how telemet
 
 ---
 
-# Core Concepts
-
 ## Data Storage
 
 All state is stored on the filesystem under `data/projects/` (configurable via `PROJECTS_DIR` env var):

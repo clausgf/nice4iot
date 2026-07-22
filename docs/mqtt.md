@@ -6,8 +6,6 @@ Topic layout, file delivery over MQTT, and broker configuration.
 
 ---
 
-# MQTT Support
-
 nice4iot maintains a **single persistent MQTT connection** shared across all projects. MQTT is enabled per-project via the `is_mqtt_enabled` flag.
 
 ## Topic structure
@@ -34,11 +32,11 @@ When a project has MQTT enabled, nice4iot publishes files to devices via the `do
 
 ## Configuration
 
-Global MQTT broker settings (server, port, credentials, client ID) are shared across all projects and can be changed in the **Projects** list page below the project grid. Per-project MQTT settings (topic base, QoS, retain, check interval) are in the project's **General** tab under _Files_.
+Global MQTT broker settings (server, port, credentials, client ID) are shared across all projects and are configured via the `MQTT_*` environment variables — MQTT is **disabled by default** ([docs/configuration.md](configuration.md#mqtt-broker)). The **Projects** list page shows the live connection status (read-only). Per-project MQTT settings (topic base, QoS, retain, check interval) are in the project's **General** tab under _Files_.
 
 ## LoRaWAN / The Things Network
 
-nice4iot's MQTT integration connects to an external MQTT broker using the server/port/credentials configured in the global MQTT settings. To receive TTN messages, point `server` at `<tenant>.cloud.thethings.network`. Note that TTN uses a different topic format and JSON payload structure — a payload adapter would be required to bridge TTN messages to nice4iot's expected format.
+nice4iot's MQTT integration connects to an external MQTT broker using the server/port/credentials from the `MQTT_*` environment variables. To receive TTN messages, set `MQTT_SERVER` to `<tenant>.cloud.thethings.network`. Note that TTN uses a different topic format and JSON payload structure — a payload adapter would be required to bridge TTN messages to nice4iot's expected format.
 
 ## Authentication TODO
 

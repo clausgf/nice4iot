@@ -283,7 +283,8 @@ def notify_device_provisioned(device: Device) -> None:
 # REST
 # ---------------------------------------------------------------------------
 
-def mount_extension_router(app: FastAPI, router: APIRouter) -> None:
+def mount_extension_router(app: FastAPI, router: APIRouter, *,
+                           require_device_auth: bool = False) -> None:
     """Mount an extension's REST router under /api/ext/<extension_name>/...
 
     Every route in *router* must declare a project_name path parameter
@@ -292,6 +293,20 @@ def mount_extension_router(app: FastAPI, router: APIRouter) -> None:
     before the route handler runs. A route without a project_name
     parameter raises RuntimeError at request time (a programming error,
     not a silent bypass).
+
+    **Caller authentication.** By itself this only gates on *enablement*, not
+    on *who* is calling: the routes are otherwise open. Set
+    ``require_device_auth=True`` to additionally require a valid device bearer
+    token (``Authorization: Bearer <token>``) on every request — the shared
+    ``device_auth`` dependency validates it and rejects missing/invalid/expired
+    tokens with 401, exactly like the built-in device endpoints. This is the
+    right choice for endpoints called *by devices* (e.g. a display fetching its
+    image). It requires every route to also declare a ``device_name`` path
+    parameter, since the token is validated against ``<project_name>/<device_name>``;
+    a route missing it raises RuntimeError at mount time. Endpoints called by the
+    logged-in operator's browser (e.g. an extension tab's own fetch) are a
+    different caller and are covered by the UI auth, not a device token — leave
+    ``require_device_auth`` off for those and rely on the enablement gate.
     """
     extension_name = _extension_name()
 
@@ -309,7 +324,22 @@ def mount_extension_router(app: FastAPI, router: APIRouter) -> None:
         if not enabled:
             raise HTTPException(status_code=404)
 
-    app.include_router(router, prefix=f"/api/ext/{extension_name}", dependencies=[Depends(_require_enabled)])
+    dependencies = [Depends(_require_enabled)]
+    if require_device_auth:
+        # Imported lazily to keep app.extensions free of an API-layer import at
+        # module load (and consistent with the other local imports here).
+        from app.api.dependencies import device_auth
+        for route in router.routes:
+            if '{device_name}' not in getattr(route, 'path', ''):
+                raise RuntimeError(
+                    f"extension {extension_name!r}: mount_extension_router(require_device_auth=True) "
+                    f"needs every route to declare a 'device_name' path parameter, but "
+                    f"{getattr(route, 'path', '')!r} does not — device_auth validates the token "
+                    f"against project_name/device_name."
+                )
+        dependencies.append(Depends(device_auth))
+
+    app.include_router(router, prefix=f"/api/ext/{extension_name}", dependencies=dependencies)
 
 
 # ---------------------------------------------------------------------------

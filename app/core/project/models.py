@@ -35,7 +35,8 @@ class Project(BaseModel):
 
     is_active: Annotated[bool,
             Field(title='Active',
-                  description='Inactive projects reject all device API requests (403).')
+                  description='Inactive projects are rejected: provisioning returns 403; '
+                              'device API requests return 401 (all auth failures are normalised to 401).')
         ] = True
 
     owner: Annotated[str,

@@ -102,7 +102,7 @@ def test_telemetry_inactive_device_rejected(client, provisioned):
 
 
 def test_telemetry_http_disabled_rejected(client, provisioned):
-    """Disabling HTTP API on a project blocks all device API calls (403)."""
+    """Disabling HTTP API on a project blocks all device API calls (401)."""
     from app.core.project.backend import get_project, project_adapter
     project = get_project(provisioned["project_name"], check_active=False)
     project.is_http_enabled = False

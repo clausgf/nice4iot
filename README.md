@@ -130,26 +130,15 @@ Full documentation lives in [docs/](docs/README.md):
 
 ## Deployment
 
-Container image and ready-made Docker Compose examples live in
-[`deploy/`](deploy/) — see [deploy/README.md](deploy/README.md) for the details,
-**including the security note to read before exposing nice4iot to a network.**
+A container image and a Docker Compose example live in [`deploy/`](deploy/):
 
 ```bash
 cd deploy
-mkdir -p data                              # must exist and be owned by your user
-
-docker compose up -d --build                                      # standalone, http://127.0.0.1:8080/
-docker compose -f docker-compose.caddy.yml up -d --build          # behind Caddy at /iot
-docker compose -f docker-compose.caddy-epaper.yml up -d --build   # Caddy + epaper extension
+mkdir -p data                # once, owned by your user
+docker compose up -d --build
 ```
 
-| Scenario | Setup | Reached at |
-|---|---|---|
-| `docker-compose.yml` | Standalone, no proxy | `http://127.0.0.1:8080/` |
-| `docker-compose.caddy.yml` | Behind Caddy, sub-path `/iot` | `http://<host>/iot/` |
-| `docker-compose.caddy-epaper.yml` | Caddy + `/iot` + epaper extension | `http://<host>/iot/` |
-
-Adjust the `PUID`/`PGID` build args to match the host user owning `deploy/data`, and set `NICEGUI_STORAGE_SECRET` to a long random value so UI sessions survive restarts. Serving under a sub-path requires both halves to agree: Caddy strips the prefix (`handle_path /iot/*`) while nice4iot is told its public prefix (`--root-path /iot`).
+The example runs nice4iot behind an external reverse proxy (it joins a `proxy` Docker network and only `expose`s port 8080 internally). See [deploy/README.md](deploy/README.md) for the details — **including the security note to read before exposing nice4iot to a network**, serving under a sub-path, and the epaper extension (built in by default).
 
 ---
 

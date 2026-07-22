@@ -14,17 +14,13 @@ import datetime
 import json
 import re
 from collections.abc import Awaitable, Callable
-from pathlib import Path
 
 import anyio
 import aiomqtt
 
 from app.config import app_config
 from app.exceptions import NotFoundError
-from app.mqtt.models import MqttGlobalConfig
 from app.util import logger, is_valid_filename, is_valid_upload_filename
-
-from niceview.dataadapter import JsonAdapter
 
 # ---------------------------------------------------------------------------
 # Module-level state
@@ -107,17 +103,6 @@ async def _dispatch_extension_topic(topic: str, payload: bytes) -> bool:
             logger.error(f"MQTT extension handler {extension_name!r}/{suffix!r} "
                          f"failed on {topic!r}: {e}")
     return matched
-
-
-# ---------------------------------------------------------------------------
-# Config adapter
-# ---------------------------------------------------------------------------
-
-def get_mqtt_adapter() -> JsonAdapter:
-    """Return a JsonAdapter for the global MQTT broker configuration."""
-    config_path = Path(app_config.projects_dir).resolve().parent / '.mqtt.json'
-    return JsonAdapter(MqttGlobalConfig, config_path,
-                              create_if_not_exist=True, lock_field='updated_at')
 
 
 # ---------------------------------------------------------------------------
@@ -376,9 +361,7 @@ async def mqtt_main_loop() -> None:
 
     while True:
         try:
-            config = await anyio.to_thread.run_sync(lambda: get_mqtt_adapter().read())
-
-            if not config.is_enabled:
+            if not app_config.mqtt_enabled:
                 if connection_status != "disabled":
                     _client = None
                     connection_status = "disabled"
@@ -387,19 +370,19 @@ async def mqtt_main_loop() -> None:
                 continue
 
             connect_kwargs: dict = {
-                'hostname': config.server,
-                'port': config.port,
-                'identifier': config.client_id,
+                'hostname': app_config.mqtt_server,
+                'port': app_config.mqtt_port,
+                'identifier': app_config.mqtt_client_id,
             }
-            if config.username:
-                connect_kwargs['username'] = config.username
-            if config.password:
-                connect_kwargs['password'] = config.password
+            if app_config.mqtt_username:
+                connect_kwargs['username'] = app_config.mqtt_username
+            if app_config.mqtt_password:
+                connect_kwargs['password'] = app_config.mqtt_password
 
             async with aiomqtt.Client(**connect_kwargs) as client:
                 _client = client
                 connection_status = "connected"
-                logger.info(f"MQTT connected to {config.server}:{config.port}")
+                logger.info(f"MQTT connected to {app_config.mqtt_server}:{app_config.mqtt_port}")
 
                 # Subscribe to all MQTT-enabled projects.
                 # Use specific topic patterns rather than # to avoid receiving

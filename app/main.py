@@ -84,10 +84,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan, title="nice4iot", version=app_version())
 
+_cors_origins = app_config.cors_allow_origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    # The CORS spec forbids combining a wildcard origin with credentials (the
+    # browser ignores it), so only allow credentials once origins are restricted.
+    allow_credentials=_cors_origins != ["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )

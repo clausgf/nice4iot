@@ -6,8 +6,6 @@ The contract devices depend on. Changes here are recorded in [CHANGELOG.md](../C
 
 ---
 
-# Device API Reference
-
 All device endpoints require `Authorization: Bearer <device_token>`.
 
 | Method | Path | Description |
@@ -24,7 +22,7 @@ Interactive API docs: `http://localhost:8000/docs`
 
 ---
 
-# Device Client / Test Tool
+## Device Client / Test Tool
 
 `tools/device_client.py` is a Python simulation of an [arduino4iot](https://github.com/clausgf/arduino4iot) device. It implements the same HTTP flow as the C++ library and is useful for integration testing, demos, and load testing without needing real hardware.
 

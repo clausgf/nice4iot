@@ -7,6 +7,7 @@ import time
 import anyio
 from niceview.dataadapter import JsonAdapter
 
+from app.config import app_config
 from app.paths import project_dir, device_dir
 from app.util import logger, is_valid_name
 from app.core.telemetry.models import MetricSeries, TelemetryBackend, TelemetryConfig
@@ -41,6 +42,29 @@ def get_telemetry_adapter(project_name: str) -> JsonAdapter:
     """Get a JsonAdapter for the telemetry configuration of a project."""
     return JsonAdapter(TelemetryConfig, project_dir(project_name) / TEL_FILE,
                               create_if_not_exist=True, lock_field='updated_at')
+
+
+def default_telemetry_config() -> TelemetryConfig:
+    """Build a TelemetryConfig seeded from the DEFAULT_TELEMETRY_* env vars, for
+    new projects. An unset (empty) env value keeps the model default, so with
+    none set this is just TelemetryConfig(). Editable per project afterwards."""
+    c = app_config
+    cfg = TelemetryConfig()
+    cfg.backend = c.default_telemetry_backend
+    p = cfg.prometheus
+    p.push_url = c.default_telemetry_prometheus_push_url or p.push_url
+    p.pull_url = c.default_telemetry_prometheus_pull_url or p.pull_url
+    p.username = c.default_telemetry_prometheus_username or p.username
+    p.password = c.default_telemetry_prometheus_password or p.password
+    i = cfg.influxdb
+    i.write_url = c.default_telemetry_influxdb_write_url or i.write_url
+    i.database = c.default_telemetry_influxdb_database or i.database
+    i.org = c.default_telemetry_influxdb_org or i.org
+    i.bucket = c.default_telemetry_influxdb_bucket or i.bucket
+    i.username = c.default_telemetry_influxdb_username or i.username
+    i.password = c.default_telemetry_influxdb_password or i.password
+    i.token = c.default_telemetry_influxdb_token or i.token
+    return cfg
 
 
 def _get_active_backend(project_name: str) -> TelemetryBackend | None:
