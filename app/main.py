@@ -3,7 +3,7 @@ import signal
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from nicegui import ui
 
@@ -138,6 +138,20 @@ for _, _ext_module_name, _ in pkgutil.iter_modules(_ext_paths, _ext_prefix):
     with _registering(_ext_name):
         _ext_module.register(app)
     _main_log.info(f"Registered extension {_ext_module_name!r}")
+
+# Fence the device-API namespace. NiceGUI's ui.run_with (below) mounts the UI
+# as a catch-all sub-app at '/', so any request under /api/* that no real route
+# above answered — an unknown path, or a wrong HTTP method on a known path —
+# would otherwise fall through to the UI and receive an HTML page instead of a
+# JSON error. Devices must always see JSON on /api/*, and the two auth domains
+# must stay separate (see SECURITY.md). Registered after the API routers and
+# every extension route, so those still win on an exact method+path match; this
+# only catches the leftovers. Regression-tested in tests/test_api_namespace.py.
+@app.api_route('/api/{_path:path}', include_in_schema=False,
+               methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'])
+async def _api_not_found(_path: str):
+    raise HTTPException(status_code=404, detail='Not Found')
+
 
 ui.run_with(app, title="nice4iot", storage_secret=app_config.nicegui_storage_secret)
 

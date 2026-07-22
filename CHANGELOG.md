@@ -6,6 +6,27 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-07-22
+
+### Changed
+
+- Updated the optional `epaper` extension dependency (nicepaper) from 0.9.0 to
+  0.10.0: WeatherNow wind-chart metric, localized text and configurable
+  wind-speed unit, and schedule size validation/warnings. Pinned by commit in
+  `uv.lock`; only affects images built with `--extra epaper`.
+
+### Fixed
+
+- The `/api/*` namespace now always answers with JSON. NiceGUI's `ui.run_with`
+  mounts the UI as a catch-all at `/`, so any unmatched request under `/api/*` —
+  an unknown path, or a wrong HTTP method on a known endpoint (e.g. `GET`ting the
+  `POST`-only `/api/provision`) — fell through to the UI and returned an HTML
+  page instead of a JSON error. A guard route registered after the API routers
+  (which still win on an exact method+path match) now returns a JSON `404`.
+  Correct device calls were unaffected; this only corrects the error responses.
+  Regression-tested in `tests/test_api_namespace.py` — the existing suite missed
+  it because its fixtures build a router-only app without NiceGUI mounted.
+
 ## [0.11.0] - 2026-07-22
 
 ### Added
