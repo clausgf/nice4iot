@@ -36,8 +36,11 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project ${INSTALL_EXTRAS}
 
 # 2) Application code, then install the project itself so importlib.metadata can
-#    report its version (surfaced at /docs).
+#    report its version (surfaced at /docs). README.md and LICENSE are required
+#    at build time: pyproject.toml declares readme = "README.md" and
+#    license-files = ["LICENSE"], and hatchling validates both exist.
 COPY app ./app
+COPY README.md LICENSE ./
 RUN uv sync --frozen --no-dev ${INSTALL_EXTRAS}
 
 COPY deploy/entrypoint.sh /entrypoint.sh
