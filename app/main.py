@@ -139,7 +139,7 @@ for _, _ext_module_name, _ in pkgutil.iter_modules(_ext_paths, _ext_prefix):
         _ext_module.register(app)
     _main_log.info(f"Registered extension {_ext_module_name!r}")
 
-ui.run_with(app, storage_secret=app_config.nicegui_storage_secret)
+ui.run_with(app, title="nice4iot", storage_secret=app_config.nicegui_storage_secret)
 
 
 if __name__ == '__main__':

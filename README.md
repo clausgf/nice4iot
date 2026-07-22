@@ -25,7 +25,7 @@ An IoT device management platform written in Python. It provides a REST API for 
 - **Project & device management** — organise devices into projects, manage metadata and lifecycle via a web UI
 - **Token-based provisioning** — devices self-register using a project-scoped provisioning token and receive a short-lived device token in return
 - **Telemetry ingestion & charting** — devices push measurements; nice4iot forwards them to a time-series backend (Prometheus remote write or InfluxDB line protocol) and always stores the last 2 000 readings locally. The Data tab charts directly from the configured backend (long history) and falls back to the local ring buffer when none is set up. Recommended backend: [VictoriaMetrics](https://victoriametrics.com) via the Prometheus backend — `push_url: http://host:8428/api/v1/write`, `pull_url: http://host:8428/api/v1/`
-- **Log ingestion** — devices push log lines; nice4iot forwards them to a log backend (Loki or local file); the UI shows a live tail of the file log
+- **Log ingestion** — devices push log lines; nice4iot forwards them to a log backend (Grafana Loki or a Loki-compatible endpoint such as [VictoriaLogs](https://docs.victoriametrics.com/victorialogs/), or a local file); the UI shows a live tail of the file log
 - **HTTP forwarding** — authenticated devices can proxy arbitrary requests through the platform to configured backend URLs
 - **File serving & upload** — devices can fetch and upload files; device-specific files take precedence over project-wide defaults (ETag caching supported)
 - **Auto-generated UI** — forms and tables are derived from Pydantic models via [niceview](https://github.com/clausgf/niceview), keeping model and UI in sync without boilerplate
@@ -100,7 +100,7 @@ For running it as a service, see [Deployment](#deployment). For development deta
 | Data modelling | [Pydantic v2](https://docs.pydantic.dev) |
 | UI generation | [niceview](https://github.com/clausgf/niceview) (custom library) |
 | Telemetry backends | [Prometheus](https://prometheus.io) remote write · [InfluxDB](https://influxdata.com) line protocol |
-| Log backends | [Grafana Loki](https://grafana.com/oss/loki/) · rotating file |
+| Log backends | [Grafana Loki](https://grafana.com/oss/loki/) / [VictoriaLogs](https://docs.victoriametrics.com/victorialogs/) (Loki push API) · rotating file |
 | Persistence | Filesystem (JSON files + JSONL) |
 | Package management | [uv](https://docs.astral.sh/uv/) |
 | Runtime | [uvicorn](https://www.uvicorn.org) |

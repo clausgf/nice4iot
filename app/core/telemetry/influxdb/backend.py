@@ -28,9 +28,17 @@ class InfluxLineBackend:
     """
     InfluxDB Line Protocol telemetry backend.
 
-    Writes device measurements to an InfluxDB-compatible endpoint.
-    Measurement name: {project_name}_{kind}
-    Tags: project, device
+    Data model, kept parallel to the Prometheus backend so the same payload
+    looks structurally the same across backends:
+
+        measurement = <project>          # namespace, like the Prometheus name prefix
+        tags        = device, kind       # dimensions, like Prometheus labels
+        fields      = the numeric values # the measured quantities
+
+    e.g. ``weatherstation,device=sensor_garden,kind=sensors temperature=22.4,humidity=60 <ns>``.
+    project is the namespace (a deliberate trade-off — see docs/architecture.md);
+    device and kind are dimensions. Unlike Prometheus, one point carries all of a
+    kind's fields together.
     """
 
     def __init__(self, project_name: str, config: InfluxLineConfig = InfluxLineConfig()):
@@ -72,8 +80,11 @@ class InfluxLineBackend:
                 logger.debug(f"Skipping non-numeric telemetry field '{k}' from {device_name}: {v!r}")
         if not fields:
             return None
-        measurement = _escape_measurement(f'{self.project_name}_{kind}')
-        tags = f'project={_escape_tag(self.project_name)},device={_escape_tag(device_name)}'
+        # measurement = project (namespace); device and kind are tags (dimensions),
+        # parallel to the Prometheus name-prefix + labels. No separate project tag:
+        # project is already the measurement.
+        measurement = _escape_measurement(self.project_name)
+        tags = f'device={_escape_tag(device_name)},kind={_escape_tag(kind)}'
         return f'{measurement},{tags} {",".join(fields)} {timestamp_ns}'
 
     async def write(self, device_name: str, values: dict, kind: str = 'default',

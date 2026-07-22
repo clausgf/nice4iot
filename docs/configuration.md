@@ -10,7 +10,7 @@ Settings are read from environment variables (or a `.env` file):
 
 | Variable | Default | Description |
 |---|---|---|
-| `PROJECTS_DIR` | `data/projects` | Root directory for all project and device data |
+| `PROJECTS_DIR` | `data/projects` | Root directory for all project and device data. In the container keep the default — it maps to the mounted `data` volume; change only together with the volume mount |
 | `PROVISIONING_TOKEN_LENGTH` | `64` | Length of generated provisioning tokens |
 | `PROVISIONING_TOKEN_EXPIRES_IN` | `365d` | Lifetime of provisioning tokens |
 | `DEVICE_TOKEN_LENGTH` | `32` | Length of device tokens; also seeds a new project's editable `device_token_length` |
@@ -91,7 +91,7 @@ a secret.
 | `DEFAULT_TELEMETRY_INFLUXDB_DATABASE` / `_ORG` / `_BUCKET` | InfluxDB targeting | 1.x db, or 2.x org/bucket |
 | `DEFAULT_TELEMETRY_INFLUXDB_USERNAME` / `_PASSWORD` / `_TOKEN` | InfluxDB auth | password/token are secrets |
 | `DEFAULT_LOGGING_LOKI_ENABLED` | Loki backend on/off | |
-| `DEFAULT_LOGGING_LOKI_URL` | Loki push URL | e.g. `http://loki:3100/loki/api/v1/push` |
+| `DEFAULT_LOGGING_LOKI_URL` | Loki push URL | Grafana Loki or VictoriaLogs, e.g. `http://victorialogs:9428/insert/loki/api/v1/push?_stream_fields=project,device` |
 | `DEFAULT_LOGGING_LOKI_USERNAME` / `_PASSWORD` / `_TENANT_ID` | Loki auth / multi-tenancy | password is a secret |
 
 `DEVICE_TOKEN_LENGTH` and `DEVICE_TOKEN_EXPIRES_IN` (in the main table above)

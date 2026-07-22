@@ -16,6 +16,30 @@ from app.util import logger
 
 _INVALID_METRIC_CHARS = re.compile(r'[^a-zA-Z0-9_]')
 
+# Recognised metric-name unit suffixes (Prometheus base units + common IoT
+# units), used to fill the OpenMetrics UNIT metadata heuristically. Kept in sync
+# with the naming guidance in docs/device-api.md.
+_KNOWN_UNITS = frozenset({
+    'seconds', 'bytes', 'bits', 'celsius', 'kelvin', 'volts', 'amperes',
+    'watts', 'joules', 'ohms', 'pascals', 'meters', 'grams', 'hertz',
+    'ratio', 'percent',
+})
+
+
+def _unit_for(field_key: str) -> str:
+    """Best-effort UNIT from a metric name's suffix; '' when unrecognised.
+
+    Strips a trailing ``_total`` (counter marker) first, then takes the last
+    underscore-separated segment (e.g. ``temperature_celsius`` → ``celsius``,
+    ``messages_sent_total`` → ``''``). Only known units are returned, so a plain
+    name like ``temperature`` yields ``''`` rather than a wrong guess. Purely
+    additive metadata; backends that ignore it (e.g. VictoriaMetrics) are
+    unaffected.
+    """
+    base = field_key[:-len('_total')] if field_key.endswith('_total') else field_key
+    suffix = base.rsplit('_', 1)[-1] if '_' in base else ''
+    return suffix if suffix in _KNOWN_UNITS else ''
+
 
 def metric_prefix(project_name: str) -> str:
     """Prometheus-safe metric-name prefix derived from the project name.
@@ -76,6 +100,8 @@ class PrometheusBackend:
     Metric names: {sanitized_project}_{field_key} (see metric_prefix())
     Labels: device, kind
     Fields ending in _total are written as COUNTER type; all others as GAUGE.
+    A recognised unit suffix (temperature_celsius, ..._bytes) fills the UNIT
+    metadata (see _unit_for()); backends that ignore it are unaffected.
     """
 
     def __init__(self, project_name: str, config: PrometheusConfig = PrometheusConfig()):
@@ -126,6 +152,9 @@ class PrometheusBackend:
             metadata = types_pb2.MetricMetadata()
             metadata.type = metric_type
             metadata.metric_family_name = metric_name
+            unit = _unit_for(k)
+            if unit:
+                metadata.unit = unit
             wr.metadata.append(metadata)
 
             ts = types_pb2.TimeSeries()

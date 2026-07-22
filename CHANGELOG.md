@@ -6,6 +6,34 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-07-22
+
+### Added
+
+- Container `HEALTHCHECK` polling `/health`, so `docker ps` reports healthy/
+  unhealthy and Compose can restart on failure or gate `depends_on`. Runs
+  directly against the app (independent of the reverse proxy / `--root-path`).
+- Heuristic OpenMetrics UNIT metadata for the Prometheus backend: a recognised
+  unit suffix (`_celsius`, `_bytes`, `_seconds`, …) fills the metric's unit.
+  Additive — backends that ignore it (e.g. VictoriaMetrics) are unaffected.
+- Documented VictoriaLogs as a supported log backend via the Loki push API
+  (`…/insert/loki/api/v1/push?_stream_fields=project,device`) — no code, the
+  existing Loki backend already speaks it, mirroring VictoriaMetrics.
+
+### Changed
+
+- **InfluxDB line-protocol data model** now mirrors the Prometheus backend:
+  measurement is `<project>`, `kind` is a **tag** (was part of the measurement),
+  and the redundant `project` tag is gone —
+  `weatherstation,device=…,kind=sensors temperature=22.4`. **Breaking** for
+  existing InfluxDB dashboards/queries built on the old `…_<kind>` measurement.
+- The browser tab title is now `nice4iot` (was the framework default `NiceGUI`).
+
+### Fixed
+
+- Switching from dark back to light mode required a page refresh; both toggles
+  now drive a single `ui.dark_mode()` instance and apply immediately.
+
 ## [0.10.0] - 2026-07-22
 
 ### Added

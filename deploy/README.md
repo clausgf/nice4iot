@@ -2,13 +2,27 @@
 
 A container image ([`Dockerfile`](Dockerfile)) and one Docker Compose example
 ([`docker-compose.yml`](docker-compose.yml)) for running nice4iot behind a
-reverse proxy. All commands are run from this `deploy/` directory; the image
+reverse proxy. Run the commands below from this `deploy/` directory; the image
 build context is the repository root (the compose file sets `context: ..`).
 
 ```bash
 mkdir -p data          # once, owned by your user — see the permissions note below
 docker compose up -d --build
 ```
+
+**Deploying from your own directory** (e.g. next to your other services'
+compose files) is usually cleaner than running from inside the checkout. Copy
+`docker-compose.yml` into that directory and point `build.context` at your
+cloned nice4iot repo — an absolute path, since it is no longer `..`:
+
+```yaml
+    build:
+      context: /home/you/git/nice4iot        # path to the cloned repo
+      dockerfile: deploy/Dockerfile
+```
+
+Then `mkdir -p data` there and `docker compose up -d --build` from that
+directory; `git pull` in the repo and rebuild to update.
 
 The example does not publish nice4iot itself: it joins an external `proxy`
 Docker network and only `expose`s port 8080 to that network, so a reverse proxy
@@ -26,6 +40,22 @@ reachable from anywhere untrusted:
   compose file is not a secret; with it, session cookies are forgeable.
 - Terminate TLS at the proxy. Device tokens travel in `Authorization` headers and
   are bearer credentials.
+
+### Two auth domains — don't lock out the devices
+
+nice4iot has two independent authentication paths, and they must not be conflated:
+
+- **Admin UI** (the NiceGUI pages) — for humans; guarded by `AUTH_PROVIDER`
+  (off by default), which you must turn on before exposing it.
+- **Device API** (`/api/*`) — for devices; already authenticated by per-device
+  **bearer tokens**. It needs no extra network auth, only TLS.
+
+The trap: if you protect the UI with a *blanket* proxy auth (e.g. oauth2-proxy in
+front of the whole app), it will also block `/api/*` and lock out every device.
+**Exempt `/api/*` from the proxy's login gate** so devices can still provision
+and push data; only the UI paths should require a human login. (If an external
+load balancer polls `/health` *through* the proxy, exempt that too — the
+container's own healthcheck hits the app directly and is unaffected.)
 
 ## Configuration
 
@@ -73,10 +103,13 @@ enable it per project under **Project → General → Extensions**.
 
 ## Notes
 
-- **`MQTT connection error: [Errno 111] Connection refused — retrying in 5 s`** in
-  the log is expected when no broker is running: MQTT ingest is enabled by default
-  and points at `localhost:1883`. Point it at your broker, or switch it off, under
-  **Settings → MQTT**.
+- **Healthcheck:** the image ships a `HEALTHCHECK` that polls `/health` inside the
+  container, so `docker ps` shows healthy/unhealthy and Compose can restart on
+  failure or gate `depends_on: { condition: service_healthy }`. It runs directly
+  against the app, so it is independent of the reverse proxy and `--root-path`.
+- **MQTT** is **off by default** (`MQTT_ENABLED=false`). If you enable it but the
+  broker isn't reachable yet, the log shows `MQTT connection error … retrying`
+  until it comes up — that is expected, not a failure of nice4iot.
 - The image bakes `app/` in and installs the project, so `/docs` reports the real
   version. Rebuild the image to ship code changes; for live-reload development run
   from source (`uv run uvicorn app.main:app --reload`, see the top-level README).

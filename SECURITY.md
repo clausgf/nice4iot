@@ -20,15 +20,21 @@ please allow reasonable time for a fix before disclosing publicly.
 
 Understanding the intended boundaries helps judge whether something is a bug:
 
-- **Device REST API** — protected by bearer tokens. Devices self-register with a
-  project-scoped provisioning token and receive a short-lived device token.
-  Tokens are bearer credentials: anyone holding one can act as that device, so
-  they must travel over TLS.
+- **Device REST API** (`/api/*`) — protected by bearer tokens. Devices
+  self-register with a project-scoped provisioning token and receive a
+  short-lived device token. Tokens are bearer credentials: anyone holding one can
+  act as that device, so they must travel over TLS.
 - **Management UI** — authentication is **optional and off by default**
   (`AUTH_PROVIDER=none`). This is a deliberate default for local trials, not a
   claim that the UI is safe to expose. An unauthenticated UI reachable from a
   network is a deployment mistake rather than a vulnerability in nice4iot — see
   the security note in [deploy/README.md](deploy/README.md).
+- **Two independent auth domains** — the UI auth (`AUTH_PROVIDER`) and the device
+  bearer-token auth are separate; the UI login never gates `/api/*`. A blanket
+  proxy auth placed in front of the whole app to protect the UI will also block
+  `/api/*` and lock out devices, so `/api/*` must be exempted from the proxy's
+  login gate. That is a configuration requirement, not a weakened boundary — the
+  device API stays bearer-token protected either way.
 - **No multi-user separation** — all UI operators share one access level. There
   is no RBAC, and no isolation between projects at the UI level. Privilege
   escalation *between UI users* is therefore not a meaningful boundary today.

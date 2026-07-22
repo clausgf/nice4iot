@@ -46,8 +46,9 @@ services:
       #DEFAULT_TELEMETRY_BACKEND: "prometheus"
       #DEFAULT_TELEMETRY_PROMETHEUS_PUSH_URL: "http://victoriametrics:8428/api/v1/write"
       #DEFAULT_TELEMETRY_PROMETHEUS_PULL_URL: "http://victoriametrics:8428/api/v1/"
+      # Logs via the Loki push API — Grafana Loki, or VictoriaLogs as shown here.
       #DEFAULT_LOGGING_LOKI_ENABLED: "true"
-      #DEFAULT_LOGGING_LOKI_URL: "http://loki:3100/loki/api/v1/push"
+      #DEFAULT_LOGGING_LOKI_URL: "http://victorialogs:9428/insert/loki/api/v1/push?_stream_fields=project,device"
     expose:
       - "8080"          # internal only; the reverse proxy is the public entrypoint
     networks:

@@ -52,6 +52,13 @@ USER iot
 
 EXPOSE 8080
 
+# Liveness probe for container orchestration (compose restart, k8s, depends_on:
+# service_healthy). Uses Python (always present) instead of curl, and polls the
+# app directly inside the container — unaffected by the reverse proxy or
+# --root-path. start-period covers startup (MQTT/watcher tasks).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health').read()" || exit 1
+
 # entrypoint.sh creates the projects directory (required at startup) then execs
 # the command. Root-path is unset here (served at /); to serve under a sub-path
 # add `--root-path /iot` via a command override. No --reload in production.

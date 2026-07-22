@@ -98,3 +98,32 @@ The REST API endpoints are protected by bearer tokens (a separate mechanism). Th
 ```bash
 kill -USR1 <pid>
 ```
+
+**Telemetry data model — one shape across backends.**
+A telemetry payload has four dimensions: **project**, **kind** (measurement
+group), **device**, and the **field** names carrying the numeric values. Both
+backends model them the same way, so the same reading looks structurally
+identical whether it lands in a Prometheus- or an InfluxDB-compatible store:
+
+| Dimension | Prometheus | InfluxDB |
+|---|---|---|
+| project | metric-name prefix (`weatherstation_…`) | measurement (`weatherstation`) |
+| kind | label | tag |
+| device | label | tag |
+| field | metric-name suffix (`…_temperature`) | field key |
+| value | sample | field value |
+
+So `{"temperature": 22.4, "humidity": 60}` (kind `sensors`) becomes
+`weatherstation_temperature{device="sensor_garden", kind="sensors"}` in Prometheus
+and `weatherstation,device=sensor_garden,kind=sensors temperature=22.4,humidity=60`
+in InfluxDB. `device` and `kind` are always *dimensions* (labels/tags); `field`
+is always the measured quantity; a `_total` suffix marks a Prometheus counter.
+
+**project is the namespace, not a label — a deliberate trade-off.** Idiomatic
+Prometheus would make `project` a label (`iot_temperature{project="…"}`) to allow
+cross-project aggregation. We instead bake it into the metric name / measurement:
+in a shared VictoriaMetrics it namespaces each project cleanly and prevents
+accidental cross-project name collisions. The cost is that aggregating *across*
+projects needs a name matcher (`{__name__=~"..._temperature"}`) rather than a
+`sum by`. For a device-management platform where projects are the primary tenancy
+boundary, that isolation is worth more than easy cross-project rollups.

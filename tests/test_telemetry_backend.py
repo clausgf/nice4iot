@@ -29,7 +29,7 @@ from app.core.telemetry.influxdb.backend import (
     _escape_tag,
 )
 from app.core.telemetry.influxdb.models import InfluxLineConfig
-from app.core.telemetry.prometheus.backend import _parse_matrix, metric_prefix
+from app.core.telemetry.prometheus.backend import _parse_matrix, _unit_for, metric_prefix
 
 _NOW = datetime.datetime(2025, 1, 1, 12, 0, 0, tzinfo=datetime.timezone.utc)
 
@@ -337,6 +337,20 @@ def test_metric_prefix(project, expected):
     assert metric_prefix(project) == expected
 
 
+@pytest.mark.parametrize("name, expected", [
+    ("temperature_celsius", "celsius"),
+    ("heap_free_bytes", "bytes"),
+    ("uptime_seconds", "seconds"),
+    ("flow_seconds_total", "seconds"),   # counter marker stripped, unit still found
+    ("messages_sent_total", ""),          # no unit before _total
+    ("temperature", ""),                  # bare name, no unit suffix
+    ("battery_voltage", ""),              # 'voltage' is the quantity, not a base unit
+    ("env_temp_celsius", "celsius"),      # works on flattened nested names too
+])
+def test_unit_for(name, expected):
+    assert _unit_for(name) == expected
+
+
 def test_parse_matrix_strips_sanitized_prefix():
     """A project with a hyphen stores metrics under the sanitized prefix; the
     parser must strip that same sanitized prefix on read."""
@@ -360,22 +374,22 @@ def test_escape_tag():
     assert _escape_tag("a b,c=d") == r"a\ b\,c\=d"
 
 
-def test_build_line_escapes_project_device_and_field_keys():
+def test_build_line_escapes_measurement_device_kind_and_field_keys():
     backend = InfluxLineBackend("pro j", InfluxLineConfig())
-    line = backend._build_line("dev,1", {"a b": 1.0}, "kind", 42)
-    # measurement escapes space+comma (not '='); tag values escape
-    # space/comma/equals; field keys escape space.
-    assert line == r"pro\ j_kind,project=pro\ j,device=dev\,1 a\ b=1.0 42"
+    line = backend._build_line("dev,1", {"a b": 1.0}, "ki nd", 42)
+    # measurement (project) escapes space+comma; device/kind tag values escape
+    # space/comma/equals; field keys escape space. No separate project tag.
+    assert line == r"pro\ j,device=dev\,1,kind=ki\ nd a\ b=1.0 42"
 
 
-def test_build_line_measurement_does_not_escape_equals():
-    """'=' is not special inside a line-protocol measurement name."""
+def test_build_line_kind_is_a_tag_and_escapes_equals():
+    """kind is now a tag value, so '=' in it must be escaped (unlike a measurement)."""
     backend = InfluxLineBackend("proj", InfluxLineConfig())
     line = backend._build_line("dev", {"temp": 1.0}, "ki=nd", 42)
-    assert line.startswith("proj_ki=nd,")
+    assert line == r"proj,device=dev,kind=ki\=nd temp=1.0 42"
 
 
 def test_build_line_plain_names_unchanged():
     backend = InfluxLineBackend("proj", InfluxLineConfig())
     line = backend._build_line("dev", {"temp": 22.4}, "sensors", 42)
-    assert line == "proj_sensors,project=proj,device=dev temp=22.4 42"
+    assert line == "proj,device=dev,kind=sensors temp=22.4 42"

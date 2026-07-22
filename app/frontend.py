@@ -60,6 +60,11 @@ def _user_menu() -> None:
     provider = get_auth_provider()
     username = provider.get_user(context.client.request)
 
+    # One dark-mode element for this page; both menu items drive the same
+    # instance. Creating a fresh ui.dark_mode() per click (as before) left
+    # conflicting elements behind, so switching back to light needed a refresh.
+    dark = ui.dark_mode()
+
     with ui.button(username or '', icon='person').props('flat color=white'):
         with ui.menu():
             if provider.login_required:
@@ -75,10 +80,10 @@ def _user_menu() -> None:
                 ui.separator()
             with ui.menu_item().classes('items-center gap-x-2'):
                 ui.icon('light_mode').props('size=large')
-                ui.label('Light Mode').on('click', lambda: ui.dark_mode().disable())
+                ui.label('Light Mode').on('click', dark.disable)
             with ui.menu_item().classes('items-center gap-x-2'):
                 ui.icon('dark_mode').props('size=large')
-                ui.label('Dark Mode').on('click', lambda: ui.dark_mode().enable())
+                ui.label('Dark Mode').on('click', dark.enable)
             ui.separator()
             with ui.menu_item().classes('items-center gap-x-2'):
                 ui.icon('api').props('size=large')

@@ -9,10 +9,14 @@ class LoggingBackend(Protocol):
 
 
 class LokiConfig(BaseModel):
-    """Pushes log messages to a Grafana Loki endpoint via the JSON push API."""
+    """Pushes log messages via the Loki JSON push API — to Grafana Loki or any
+    Loki-compatible endpoint such as VictoriaLogs."""
     is_active: Annotated[bool, Field(title='Active')] = False
-    log_url: Annotated[str, 
-            Field(description='Loki push API endpoint URL.')
+    log_url: Annotated[str,
+            Field(description=
+                'Loki push API endpoint URL.\n'
+                'Grafana Loki: http://loki:3100/loki/api/v1/push\n'
+                'VictoriaLogs: http://victorialogs:9428/insert/loki/api/v1/push?_stream_fields=project,device')
         ] = "http://alloy:8082/loki/api/v1/push"
     username: Annotated[str, 
             Field(description='Username for Basic Auth (e.g. Grafana Cloud user ID). Leave empty to disable auth.')
