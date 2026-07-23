@@ -6,6 +6,22 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.11.3] - 2026-07-23
+
+### Changed
+
+- Updated the optional `epaper` extension dependency (nicepaper) from 0.11.0 to
+  0.12.0: adds an Image widget. Pinned by commit in `uv.lock`; only affects
+  images built with `--extra epaper`.
+- On the device **General** tab, the Danger Zone card is now rendered last,
+  after any extension-registered cards, matching the project page.
+
+### Fixed
+
+- The device Status card no longer shows two stacked separators when a device
+  has neither a location nor a description: the separator above that block is
+  now only drawn when the block has content.
+
 ## [0.11.2] - 2026-07-23
 
 ### Changed

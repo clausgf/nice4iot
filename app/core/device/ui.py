@@ -127,7 +127,11 @@ def _status_card(device: Device, project_name: str, online_threshold_s: int, now
             ui.chip('Online' if online else 'Offline').props(
                 f'dense color={"green" if online else "grey"} text-color=white'
             )
-        ui.separator()
+        # Only separate the header from the location/description block when that
+        # block has content — otherwise this separator and the one below it
+        # (before "Last seen") would stack directly on top of each other.
+        if device.location or device.description:
+            ui.separator()
         if device.location:
             with ui.row().classes('items-center gap-1 q-mt-xs'):
                 ui.icon('place').classes('text-grey-6 text-sm')
@@ -174,14 +178,15 @@ async def device_general_panel(project_name: str, device_name: str) -> None:
             _device_general_card(project_name, device_name)
         with ui.card().classes('w-full'):
             _device_tokens_card(project_name, device_name)
-        with ui.card().classes('w-full'):
-            await _device_danger_card(project_name, device_name)
         for title, render_fn in await anyio.to_thread.run_sync(lambda: get_device_general_cards(project_name)):
             with ui.card().classes('w-full'):
                 # Match the device page's built-in expansions (subtitle1), not the
                 # config_expansion default (h6, used on the project page).
                 with config_expansion(title, level='subtitle1'):
                     await maybe_await(render_fn(project_name, device_name))
+        # Danger Zone always last, after any extension cards (matches the project page).
+        with ui.card().classes('w-full'):
+            await _device_danger_card(project_name, device_name)
 
 
 def _device_general_card(project_name: str, device_name: str) -> None:
