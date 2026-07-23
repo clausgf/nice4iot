@@ -6,6 +6,21 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-07-23
+
+### Changed
+
+- Updated the optional `epaper` extension dependency (nicepaper) from 0.10.0 to
+  0.11.0: WeatherChart axis titles and per-aspect font override. Pinned by commit
+  in `uv.lock`; only affects images built with `--extra epaper`.
+
+### Fixed
+
+- On the device **General** tab, extension-registered cards (e.g. E-Paper) now
+  use the same `subtitle1` header size as the built-in expansions on that tab.
+  They were falling through to `config_expansion`'s `h6` default (correct on the
+  project page, too large next to the device page's `subtitle1` headers).
+
 ## [0.11.1] - 2026-07-22
 
 ### Changed

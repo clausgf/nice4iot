@@ -178,7 +178,9 @@ async def device_general_panel(project_name: str, device_name: str) -> None:
             await _device_danger_card(project_name, device_name)
         for title, render_fn in await anyio.to_thread.run_sync(lambda: get_device_general_cards(project_name)):
             with ui.card().classes('w-full'):
-                with config_expansion(title):
+                # Match the device page's built-in expansions (subtitle1), not the
+                # config_expansion default (h6, used on the project page).
+                with config_expansion(title, level='subtitle1'):
                     await maybe_await(render_fn(project_name, device_name))
 
 
