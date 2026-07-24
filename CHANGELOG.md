@@ -6,6 +6,22 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-07-24
+
+### Changed
+
+- Refreshed all dependencies. Notably **niceview 0.9.0 → 0.9.1**, which fixes
+  `ui.number` conversion so a cleared numeric field becomes `None` again — a
+  stale model-validator error (e.g. the epaper widget's "Set width and height
+  together …") now clears once both fields are emptied. Also **nicepaper
+  0.12.0 → 0.13.0** (weather backoff/outage visibility, English defaults),
+  **NiceGUI 3.14.0 → 3.15.0**, **FastAPI 0.139.2 → 0.140.0**, **ruff → 0.16.0**,
+  and assorted patch bumps. The `/ui` routing was re-verified end to end against
+  NiceGUI 3.15.0.
+- `deploy/compose-ghcr.yml` now simply tracks `:latest` (the version-pinned
+  example line was dropped to avoid per-release churn; pinning is still
+  documented as an option).
+
 ## [0.13.0] - 2026-07-24
 
 ### Added

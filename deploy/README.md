@@ -28,10 +28,11 @@ docker compose -f compose-ghcr.yml up -d
 ```
 
 To update later, `pull` again and `up -d` — run by hand, or from a cron /
-systemd timer for automatic deployment of new releases. The file defaults to
-`:latest`; pin `:0.13.0` instead for controlled, reviewable upgrades. For fully
-hands-off updates, uncomment the bundled **Watchtower** service (it polls GHCR
-and restarts on every new image — i.e. deploys releases unreviewed).
+systemd timer for automatic deployment of new releases. The file tracks
+`:latest`; to pin a specific release for controlled, reviewable upgrades,
+replace `latest` with a version tag (e.g. `:0.13.0`). For fully hands-off
+updates, uncomment the bundled **Watchtower** service (it polls GHCR and
+restarts on every new image — i.e. deploys releases unreviewed).
 
 The GHCR image ships with the epaper extension baked in.
 
