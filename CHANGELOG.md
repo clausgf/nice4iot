@@ -6,6 +6,27 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-07-24
+
+### Added
+
+- **Software Bill of Materials** page in the user menu (`/sbom`): lists every
+  installed Python package and its version, with the niceview and epaper
+  (nicepaper) versions highlighted at the top.
+- **GHCR release pipeline** — `.github/workflows/release.yml` builds the image
+  and pushes it to `ghcr.io/clausgf/nice4iot` (tags `<version>`, `<major.minor>`,
+  `latest`, epaper included) on every `v*` git tag.
+- **`deploy/compose-ghcr.yml`** — run the pre-built GHCR image (no source/build
+  on the host); pull-based updates by default, with a commented-out Watchtower
+  service for hands-off auto-updates.
+- **`deploy/compose-develop.yml`** — local development: builds the image, mounts
+  the host `app/` over it, and runs `uvicorn --reload` on `localhost:8080`.
+
+### Changed
+
+- Renamed `deploy/docker-compose.yml` to **`deploy/compose-build.yml`** (the
+  build-from-source production variant) now that there are three compose files.
+
 ## [0.11.3] - 2026-07-23
 
 ### Changed

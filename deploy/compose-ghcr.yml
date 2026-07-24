@@ -1,0 +1,70 @@
+# nice4iot from the pre-built image on GHCR, published by
+# .github/workflows/release.yml on every `v*` tag. No source checkout, git, or
+# build toolchain needed on the host — just pull and run. Same reverse-proxy
+# assumptions as compose-build.yml: nice4iot is never published itself; it joins
+# the external `proxy` network and only `expose`s 8080 to it.
+#
+# The published image includes the epaper extension (nicepaper).
+#
+#   mkdir -p data                                       # once, owned by PUID/PGID
+#   docker compose -f compose-ghcr.yml pull
+#   docker compose -f compose-ghcr.yml up -d
+#
+# Read the security note in deploy/README.md before exposing the UI.
+
+networks:
+  proxy:
+    external: true
+
+services:
+  nice4iot:
+    # DEFAULT (no Watchtower): track the newest release and update on demand with
+    #   docker compose -f compose-ghcr.yml pull && docker compose -f compose-ghcr.yml up -d
+    # run by hand or from a cron / systemd timer. Pin a specific version instead
+    # (line below) for controlled, reviewable upgrades.
+    image: ghcr.io/clausgf/nice4iot:latest
+    #image: ghcr.io/clausgf/nice4iot:0.12.0
+    # Served at the domain root by default. To serve under a sub-path (e.g. /iot),
+    # use the second command and strip the prefix at the proxy. See deploy/README.md.
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+    #command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--root-path", "/iot"]
+    volumes:
+      - ./data:/home/iot/data
+    environment:
+      # Persist UI sessions across restarts — set a long random value.
+      NICEGUI_STORAGE_SECRET: "change-this-to-a-long-random-secret"
+      # MQTT is off by default. To use a broker, uncomment and adjust; prefer a
+      # Docker secret for MQTT_PASSWORD over an inline value. See docs/configuration.md.
+      #MQTT_ENABLED: "true"
+      #MQTT_SERVER: "mosquitto"
+      #MQTT_PORT: "1883"
+      #MQTT_USERNAME: ""
+      #MQTT_PASSWORD: ""
+      # Defaults for NEW projects (editable per project afterwards). Handy when
+      # most projects share one backend. Unset = today's behaviour. See docs.
+      #DEFAULT_TELEMETRY_BACKEND: "prometheus"
+      #DEFAULT_TELEMETRY_PROMETHEUS_PUSH_URL: "http://victoriametrics:8428/api/v1/write"
+      #DEFAULT_TELEMETRY_PROMETHEUS_PULL_URL: "http://victoriametrics:8428/api/v1/"
+      # Logs via the Loki push API — Grafana Loki, or VictoriaLogs as shown here.
+      #DEFAULT_LOGGING_LOKI_ENABLED: "true"
+      #DEFAULT_LOGGING_LOKI_URL: "http://victorialogs:9428/insert/loki/api/v1/push?_stream_fields=project,device"
+    expose:
+      - "8080"          # internal only; the reverse proxy is the public entrypoint
+    networks:
+      - proxy
+    restart: unless-stopped
+    # Opt this container in to Watchtower auto-updates (see the service below).
+    #labels:
+    #  com.centurylinklabs.watchtower.enable: "true"
+
+  # OPTIONAL — Watchtower for hands-off auto-updates. Uncomment this service AND
+  # the `labels` above, and use `image: ...:latest` (the default). Watchtower then
+  # polls GHCR and pulls + restarts nice4iot whenever a new image is published.
+  # Note: this deploys every new release UNREVIEWED — leave it commented and use
+  # the manual/scheduled `pull` above if you want a human in the loop.
+  #watchtower:
+  #  image: containrrr/watchtower:latest
+  #  command: --label-enable --cleanup --interval 300
+  #  volumes:
+  #    - /var/run/docker.sock:/var/run/docker.sock
+  #  restart: unless-stopped

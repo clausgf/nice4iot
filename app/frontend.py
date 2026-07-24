@@ -94,6 +94,9 @@ def _user_menu() -> None:
             with ui.menu_item().classes('items-center gap-x-2'):
                 ui.icon('code').props('size=large')
                 ui.link('Repository', 'https://github.com/clausgf/nice4iot', new_tab=True).classes('no-underline text-inherit')
+            with ui.menu_item().classes('items-center gap-x-2'):
+                ui.icon('inventory_2').props('size=large')
+                ui.link('Software Bill of Materials', '/sbom').classes('no-underline text-inherit')
             ui.separator()
             with ui.menu_item().classes('items-center gap-x-2'):
                 ui.label(f'nice4iot {app_version()} · AGPL-3.0').classes('text-xs opacity-60')
@@ -123,6 +126,57 @@ def page_login():
         username.on('keydown.enter', try_login)
         password.on('keydown.enter', try_login)
         ui.button('Log in', on_click=try_login).classes('w-full')
+
+
+@ui.page('/sbom')
+async def page_sbom():
+    """Software Bill of Materials — key components first, then every installed
+    package. Registered before the home_page catch-all so it is reachable (like
+    /login); NiceGUI/Starlette match routes in registration order.
+    """
+    if (redirect := login_redirect()):
+        return redirect
+
+    from app.sbom import collect_sbom, package_version
+    packages = await anyio.to_thread.run_sync(collect_sbom)
+    # Key components shown at the top, even if an optional one is absent.
+    highlights = [
+        ('niceview', await anyio.to_thread.run_sync(lambda: package_version('niceview'))),
+        ('E-Paper (nicepaper)', await anyio.to_thread.run_sync(lambda: package_version('nicepaper'))),
+    ]
+
+    with ui.header(elevated=True).classes('items-center gap-3'):
+        ui.html(_logo).classes('text-white cursor-pointer shrink-0') \
+            .on('click', lambda: ui.navigate.to(projects_url()))
+        ui.label('4IoT').classes('text-h6 font-bold cursor-pointer shrink-0') \
+            .on('click', lambda: ui.navigate.to(projects_url()))
+        ui.space()
+        _user_menu()
+
+    with ui.column().classes('w-full max-w-3xl mx-auto p-4 gap-4'):
+        ui.label('Software Bill of Materials').classes('text-h5')
+        ui.label(f'nice4iot {app_version()} · AGPL-3.0').classes('text-subtitle2 text-grey')
+
+        with ui.row().classes('w-full gap-4'):
+            for title, ver in highlights:
+                with ui.card().classes('grow'):
+                    ui.label(title).classes('text-subtitle1 font-bold')
+                    ui.label(ver or 'not installed').classes(
+                        'text-body2' + ('' if ver else ' text-grey italic'))
+
+        ui.separator()
+        ui.label(f'All installed packages ({len(packages)})').classes('text-subtitle1 font-bold')
+        table = ui.table(
+            columns=[
+                {'name': 'name', 'label': 'Package', 'field': 'name', 'align': 'left', 'sortable': True},
+                {'name': 'version', 'label': 'Version', 'field': 'version', 'align': 'left', 'sortable': True},
+            ],
+            rows=[{'name': name, 'version': ver} for name, ver in packages],
+            row_key='name',
+        ).classes('w-full').props('dense flat bordered')
+        with table.add_slot('top-left'):
+            ui.input(placeholder='Filter').props('dense clearable borderless') \
+                .bind_value_to(table, 'filter')
 
 
 _EXTENSION_PAGE_PATTERN = re.compile(r'^/(?P<project_id>[^/]+)/ext/(?P<extension_name>[^/]+)/?$')

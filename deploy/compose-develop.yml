@@ -1,0 +1,35 @@
+# nice4iot for LOCAL DEVELOPMENT. Builds the image for its dependency
+# environment, then bind-mounts the host source over it and runs uvicorn with
+# --reload, so edits under app/ on the host reload the running app live. The app
+# is published directly on localhost:8080 — no reverse proxy, no `proxy` network.
+# Not for production (debug logging, forgeable session secret, host port open).
+#
+#   mkdir -p data
+#   docker compose -f compose-develop.yml up --build
+#   # then open http://localhost:8080
+#
+# --reload watches the mounted app/ (watchfiles ships transitively via nicegui,
+# so reloads are efficient) and restarts the app on change.
+
+services:
+  nice4iot:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        PUID: "1000"   # match the owner of the host ./data and ../app (your uid)
+        PGID: "1000"
+        INSTALL_EXTRAS: "--extra epaper"
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080",
+              "--reload", "--reload-dir", "/home/iot/app", "--log-level", "debug"]
+    volumes:
+      - ./data:/home/iot/data
+      # Live source mount: the host's app/ shadows the copy baked into the image,
+      # so code changes take effect on reload without rebuilding.
+      - ../app:/home/iot/app
+    environment:
+      # Development only — not a real secret.
+      NICEGUI_STORAGE_SECRET: "dev-not-secret"
+    ports:
+      - "8080:8080"     # reachable at http://localhost:8080
+    restart: unless-stopped

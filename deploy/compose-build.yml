@@ -1,13 +1,14 @@
-# nice4iot behind an external reverse proxy (e.g. Caddy) on a shared `proxy`
-# Docker network. nice4iot itself is never published — the proxy is the only
-# public entry point.
+# nice4iot built from source, behind an external reverse proxy (e.g. Caddy) on a
+# shared `proxy` Docker network. nice4iot itself is never published — the proxy
+# is the only public entry point. Use this variant to build the image yourself
+# from the checkout; for a pre-built image see compose-ghcr.yml.
 #
 # The admin UI is UNAUTHENTICATED by default (AUTH_PROVIDER=none), so make sure
 # the proxy enforces auth (or restricts access) before exposing it. See the
 # security note in deploy/README.md.
 #
 #   mkdir -p data          # once, owned by your uid (PUID/PGID below)
-#   docker compose up -d --build
+#   docker compose -f compose-build.yml up -d --build
 
 networks:
   proxy:

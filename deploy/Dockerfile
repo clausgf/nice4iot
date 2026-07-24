@@ -7,7 +7,7 @@
 #     docker build -f deploy/Dockerfile -t nice4iot ..
 #
 # To include the epaper extension, build with INSTALL_EXTRAS="--extra epaper"
-# (the docker-compose.yml here sets this by default; see deploy/README.md).
+# (the compose files here set this by default; see deploy/README.md).
 FROM zauberzeug/nicegui:latest
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv

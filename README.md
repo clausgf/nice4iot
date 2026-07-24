@@ -130,15 +130,17 @@ Full documentation lives in [docs/](docs/README.md):
 
 ## Deployment
 
-A container image and a Docker Compose example live in [`deploy/`](deploy/):
+A container image and three Docker Compose files live in [`deploy/`](deploy/) —
+a pre-built image from GHCR (recommended), a build-it-yourself variant, and a
+development one with live reload:
 
 ```bash
 cd deploy
 mkdir -p data                # once, owned by your user
-docker compose up -d --build
+docker compose -f compose-ghcr.yml pull && docker compose -f compose-ghcr.yml up -d
 ```
 
-The example runs nice4iot behind an external reverse proxy (it joins a `proxy` Docker network and only `expose`s port 8080 internally). See [deploy/README.md](deploy/README.md) for the details — **including the security note to read before exposing nice4iot to a network**, serving under a sub-path, and the epaper extension (built in by default).
+The production files run nice4iot behind an external reverse proxy (it joins a `proxy` Docker network and only `expose`s port 8080 internally). Releases are published to `ghcr.io/clausgf/nice4iot` on every `v*` tag. See [deploy/README.md](deploy/README.md) for the details — **including the security note to read before exposing nice4iot to a network**, serving under a sub-path, and the epaper extension (built in by default).
 
 ---
 
