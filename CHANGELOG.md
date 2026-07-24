@@ -6,6 +6,32 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-07-24
+
+### Added
+
+- **Preferences page** (user menu → Preferences, `/ui/preferences`): the global
+  MQTT broker status and any extension-registered global cards now live here, so
+  `/ui` is a clean list of projects only.
+- The About page (`/ui/about`) lists nice4iot's own version and build commit
+  first, before niceview and the epaper extension. The GHCR image bakes the
+  release commit in via `NICE4IOT_GIT_COMMIT`; source/dev runs read it from git
+  (with a `-dirty` marker for uncommitted changes).
+
+### Changed
+
+- **The UI now lives under `/ui`** (`/` redirects there); `/api/*` is unchanged.
+  Projects are at `/ui/project/{project}`, devices at
+  `/ui/project/{project}/device/{device}`, and About/login moved under `/ui`
+  too. The literal `/ui/project/` prefix removes the top-level namespace
+  collisions of the old flat scheme — a project can no longer be confused with a
+  reserved page, so e.g. a project literally named `about` now works, and the
+  0.12.0 `/sbom` → *Project "sbom" does not exist* bug is structurally gone.
+  **Breaking** for UI bookmarks; **devices are unaffected** (`/api/*` unchanged).
+  Reverse proxies now gate the human UI with a single prefix rule (`/ui/*`); see
+  deploy/README.md.
+- Renamed the user-menu entry "Software Bill of Materials" to **About**.
+
 ## [0.12.0] - 2026-07-24
 
 ### Added

@@ -50,6 +50,13 @@ RUN chmod +x /entrypoint.sh \
     && chown -R ${PUID}:${PGID} /home/iot
 USER iot
 
+# Bake the build's git commit so the About page can show it at runtime — the
+# image carries no .git. Set late so a new commit only rebuilds these final,
+# cheap layers, not the dependency install above. release.yml passes the SHA;
+# left empty for local builds, where the About page just omits the revision.
+ARG NICE4IOT_GIT_COMMIT=""
+ENV NICE4IOT_GIT_COMMIT=${NICE4IOT_GIT_COMMIT}
+
 EXPOSE 8080
 
 # Liveness probe for container orchestration (compose restart, k8s, depends_on:

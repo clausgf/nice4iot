@@ -23,7 +23,7 @@ services:
     # run by hand or from a cron / systemd timer. Pin a specific version instead
     # (line below) for controlled, reviewable upgrades.
     image: ghcr.io/clausgf/nice4iot:latest
-    #image: ghcr.io/clausgf/nice4iot:0.12.0
+    #image: ghcr.io/clausgf/nice4iot:0.13.0
     # Served at the domain root by default. To serve under a sub-path (e.g. /iot),
     # use the second command and strip the prefix at the proxy. See deploy/README.md.
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]

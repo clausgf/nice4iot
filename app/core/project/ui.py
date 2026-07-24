@@ -69,14 +69,26 @@ async def all_projects_subpage(args: PageArguments, nav: ui.element):
 
         ui.button('New Project', icon='add').props('color=primary').on_click(_new_project).classes('w-full')
 
-    with ui.card().classes('w-full q-mt-md dense'):
-        with config_expansion('MQTT Broker'):
-            MqttStatusCard()
+# ***************************************************************************
 
-    for title, render_fn in get_global_cards():
-        with ui.card().classes('w-full q-mt-md dense'):
-            with config_expansion(title):
-                await maybe_await(render_fn())
+async def preferences_subpage(args: PageArguments, nav: ui.element):
+    """Global preferences (User menu → Preferences): MQTT broker status and any
+    extension-registered global cards. Kept off the project list so /ui stays a
+    pure list of projects."""
+    nav.clear()
+    with nav:
+        ui.label('/').classes('text-h6 text-white opacity-50')
+        ui.label('Preferences').classes('text-h6 font-bold text-white')
+
+    with ui.column().classes('w-full max-w-3xl mx-auto p-4 gap-4'):
+        ui.label('Preferences').classes('text-h5')
+        with ui.card().classes('w-full dense'):
+            with config_expansion('MQTT Broker'):
+                MqttStatusCard()
+        for title, render_fn in get_global_cards():
+            with ui.card().classes('w-full dense'):
+                with config_expansion(title):
+                    await maybe_await(render_fn())
 
 # ***************************************************************************
 

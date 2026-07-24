@@ -29,7 +29,7 @@ docker compose -f compose-ghcr.yml up -d
 
 To update later, `pull` again and `up -d` — run by hand, or from a cron /
 systemd timer for automatic deployment of new releases. The file defaults to
-`:latest`; pin `:0.12.0` instead for controlled, reviewable upgrades. For fully
+`:latest`; pin `:0.13.0` instead for controlled, reviewable upgrades. For fully
 hands-off updates, uncomment the bundled **Watchtower** service (it polls GHCR
 and restarts on every new image — i.e. deploys releases unreviewed).
 
@@ -91,17 +91,18 @@ reachable from anywhere untrusted:
 
 nice4iot has two independent authentication paths, and they must not be conflated:
 
-- **Admin UI** (the NiceGUI pages) — for humans; guarded by `AUTH_PROVIDER`
-  (off by default), which you must turn on before exposing it.
+- **Admin UI** (the NiceGUI pages, under `/ui`) — for humans; guarded by
+  `AUTH_PROVIDER` (off by default), which you must turn on before exposing it.
 - **Device API** (`/api/*`) — for devices; already authenticated by per-device
   **bearer tokens**. It needs no extra network auth, only TLS.
 
 The trap: if you protect the UI with a *blanket* proxy auth (e.g. oauth2-proxy in
 front of the whole app), it will also block `/api/*` and lock out every device.
-**Exempt `/api/*` from the proxy's login gate** so devices can still provision
-and push data; only the UI paths should require a human login. (If an external
-load balancer polls `/health` *through* the proxy, exempt that too — the
-container's own healthcheck hits the app directly and is unaffected.)
+Because the UI lives under `/ui`, gating is a clean prefix rule: **require the
+human login only for `/ui/*`**, and leave `/api/*` (device tokens), the NiceGUI
+assets/WebSocket (`/_nicegui*`, `/_nicegui_ws`) and `/health` open. Everything
+under `/ui` needs the login; `/ui/login` itself must stay reachable when you use
+the built-in password provider. (`/` just redirects to `/ui`.)
 
 ## Configuration
 
@@ -147,10 +148,10 @@ image and pushes it to `ghcr.io/clausgf/nice4iot` whenever a `v*` tag is pushed.
 Tag a green `main` commit:
 
 ```bash
-git tag v0.12.0 && git push --tags
+git tag v0.13.0 && git push --tags
 ```
 
-The image is tagged with the full version (`0.12.0`), the major.minor (`0.12`),
+The image is tagged with the full version (`0.13.0`), the major.minor (`0.13`),
 and `latest`, and always includes the epaper extension. `compose-ghcr.yml` then
 pulls it. Pushing to `ghcr.io/<owner>/…` uses the workflow's built-in
 `GITHUB_TOKEN` (`packages: write`); no extra secret is needed. Make the package
@@ -180,7 +181,9 @@ project under **Project → General → Extensions**.
   (live source mount + `uvicorn --reload`) for development — see *Local
   development* above. You can also run from source directly with
   `uv run uvicorn app.main:app --reload` (see the top-level README).
-- **Software Bill of Materials:** the running app lists every installed package
-  and its version under the user menu → **Software Bill of Materials** (`/sbom`),
-  with the niceview and epaper/nicepaper versions called out at the top.
+- **About / Software Bill of Materials:** the user menu → **About** (`/about`)
+  shows nice4iot's version and build commit, the niceview and epaper/nicepaper
+  versions, and every installed package with its version. The GHCR image bakes
+  the release commit in (`NICE4IOT_GIT_COMMIT`); locally-built images show the
+  version only.
 - These compose files are examples; validate the build in your own environment.

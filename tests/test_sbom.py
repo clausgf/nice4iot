@@ -1,5 +1,5 @@
 """Unit tests for the Software Bill of Materials backend (app.sbom)."""
-from app.sbom import collect_sbom, package_version
+from app.sbom import app_revision, collect_sbom, package_version
 
 
 def test_collect_sbom_returns_sorted_name_version_pairs():
@@ -29,3 +29,14 @@ def test_package_version_for_installed_package():
 
 def test_package_version_for_absent_package_is_none():
     assert package_version('this-distribution-does-not-exist-xyz') is None
+
+
+def test_app_revision_is_str_or_none():
+    rev = app_revision()
+    assert rev is None or isinstance(rev, str)
+
+
+def test_app_revision_prefers_baked_env(monkeypatch):
+    monkeypatch.setenv('NICE4IOT_GIT_COMMIT', 'abc1234def56789')
+    # Baked value wins over any git lookup, truncated to 12 chars.
+    assert app_revision() == 'abc1234def56'

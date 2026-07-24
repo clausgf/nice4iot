@@ -50,9 +50,11 @@ jobs:
           context: .
           file: deploy/Dockerfile
           push: true
-          # The published image ships with the epaper extension baked in.
+          # The published image ships with the epaper extension baked in, and the
+          # release commit so the About page can show it at runtime.
           build-args: |
             INSTALL_EXTRAS=--extra epaper
+            NICE4IOT_GIT_COMMIT=${{ github.sha }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

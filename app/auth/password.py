@@ -33,7 +33,8 @@ class PasswordAuthProvider(AuthProvider):
         return app.storage.user.get('username')
 
     def logout_url(self) -> Optional[str]:
-        return '/login'
+        from app.routes import login_url
+        return login_url()
 
     def logout(self) -> None:
         app.storage.user.pop('username', None)

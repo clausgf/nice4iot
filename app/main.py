@@ -3,8 +3,9 @@ import signal
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from nicegui import ui
 
 from app.config import app_config
@@ -96,9 +97,12 @@ app.add_middleware(
 )
 
 
-# @app.get("/")
-# async def root():
-#     return RedirectResponse(url="/ui")
+@app.get("/")
+async def root(request: Request):
+    # The UI lives under /ui; the bare root just redirects there. Honours a
+    # reverse-proxy root_path so it works when served under a sub-path too.
+    return RedirectResponse(url=f"{request.scope.get('root_path', '')}/ui")
+
 
 @app.get("/health")
 async def health():

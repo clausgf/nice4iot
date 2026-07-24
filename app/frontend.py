@@ -2,12 +2,15 @@ import asyncio
 import re
 
 import anyio
-from nicegui import context, ui
+from nicegui import context, PageArguments, ui
 from fastapi.responses import RedirectResponse
 
-from app.core.project.ui import all_projects_subpage, project_subpage
+from app.core.project.ui import all_projects_subpage, preferences_subpage, project_subpage
 from app.core.device.ui import device_subpage
-from app.routes import projects_url, ROUTE_DEVICE, ROUTE_PROJECT, ROUTE_PROJECTS
+from app.routes import (
+    about_url, login_url, preferences_url, project_url, projects_url,
+    UI_PREFIX, ROUTE_ABOUT, ROUTE_DEVICE, ROUTE_PREFERENCES, ROUTE_PROJECT, ROUTE_PROJECTS,
+)
 from app.auth import get_auth_provider, PasswordAuthProvider
 from app.util import app_version
 
@@ -52,7 +55,7 @@ def login_redirect():
     request = context.client.request
     if provider.login_required and provider.get_user(request) is None:
         root_path = request.scope.get('root_path', '') if request else ''
-        return RedirectResponse(f"{root_path}/login")
+        return RedirectResponse(f"{root_path}{login_url()}")
     return None
 
 
@@ -73,11 +76,14 @@ def _user_menu() -> None:
                 if provider.logout_url():
                     def do_logout():
                         provider.logout()
-                        ui.navigate.to(provider.logout_url() or '/')
+                        ui.navigate.to(provider.logout_url() or projects_url())
                     with ui.menu_item(on_click=do_logout).classes('items-center gap-x-2'):
                         ui.icon('logout').props('size=large')
                         ui.label('Logout')
                 ui.separator()
+            with ui.menu_item().classes('items-center gap-x-2'):
+                ui.icon('settings').props('size=large')
+                ui.link('Preferences', preferences_url()).classes('no-underline text-inherit')
             with ui.menu_item().classes('items-center gap-x-2'):
                 ui.icon('light_mode').props('size=large')
                 ui.label('Light Mode').on('click', dark.disable)
@@ -95,20 +101,20 @@ def _user_menu() -> None:
                 ui.icon('code').props('size=large')
                 ui.link('Repository', 'https://github.com/clausgf/nice4iot', new_tab=True).classes('no-underline text-inherit')
             with ui.menu_item().classes('items-center gap-x-2'):
-                ui.icon('inventory_2').props('size=large')
-                ui.link('Software Bill of Materials', '/sbom').classes('no-underline text-inherit')
+                ui.icon('info').props('size=large')
+                ui.link('About', about_url()).classes('no-underline text-inherit')
             ui.separator()
             with ui.menu_item().classes('items-center gap-x-2'):
                 ui.label(f'nice4iot {app_version()} · AGPL-3.0').classes('text-xs opacity-60')
 
 
-@ui.page('/login')
+@ui.page('/ui/login')
 def page_login():
     provider = get_auth_provider()
     if not isinstance(provider, PasswordAuthProvider) or provider.get_user():
         request = context.client.request
         root_path = request.scope.get('root_path', '') if request else ''
-        return RedirectResponse(f"{root_path}/")
+        return RedirectResponse(f"{root_path}{projects_url()}")
 
     with ui.card().classes('absolute-center items-stretch'):
         ui.label('4IoT').classes('text-h6')
@@ -119,7 +125,7 @@ def page_login():
             # bcrypt verification is CPU bound, keep it off the event loop
             if await asyncio.to_thread(provider.verify, username.value, password.value):
                 provider.login(username.value)
-                ui.navigate.to('/')
+                ui.navigate.to(projects_url())
             else:
                 ui.notify('Wrong username or password', type='negative')
 
@@ -128,34 +134,36 @@ def page_login():
         ui.button('Log in', on_click=try_login).classes('w-full')
 
 
-@ui.page('/sbom')
-async def page_sbom():
-    """Software Bill of Materials — key components first, then every installed
-    package. Registered before the home_page catch-all so it is reachable (like
-    /login); NiceGUI/Starlette match routes in registration order.
-    """
-    if (redirect := login_redirect()):
-        return redirect
+async def about_subpage(args: PageArguments, nav: ui.element):
+    """About / Software Bill of Materials, as a client-side sub-page so it routes
+    through ui.sub_pages like the rest of the app (a standalone @ui.page is not
+    reachable — the sub_pages router intercepts internal navigation first).
 
-    from app.sbom import collect_sbom, package_version
+    nice4iot's own version and build revision come first, then the key
+    components, then every installed package.
+    """
+    nav.clear()
+    with nav:
+        ui.label('/').classes('text-h6 text-white opacity-50')
+        ui.label('About').classes('text-h6 font-bold text-white')
+
+    from app.sbom import app_revision, collect_sbom, package_version
     packages = await anyio.to_thread.run_sync(collect_sbom)
-    # Key components shown at the top, even if an optional one is absent.
+    revision = await anyio.to_thread.run_sync(app_revision)
+    niceview_v = await anyio.to_thread.run_sync(lambda: package_version('niceview'))
+    nicepaper_v = await anyio.to_thread.run_sync(lambda: package_version('nicepaper'))
+
+    # Own version first (with the build commit when known), then key components.
+    own_version = app_version() + (f' · {revision}' if revision else '')
     highlights = [
-        ('niceview', await anyio.to_thread.run_sync(lambda: package_version('niceview'))),
-        ('E-Paper (nicepaper)', await anyio.to_thread.run_sync(lambda: package_version('nicepaper'))),
+        ('nice4iot', own_version),
+        ('niceview', niceview_v),
+        ('E-Paper (nicepaper)', nicepaper_v),
     ]
 
-    with ui.header(elevated=True).classes('items-center gap-3'):
-        ui.html(_logo).classes('text-white cursor-pointer shrink-0') \
-            .on('click', lambda: ui.navigate.to(projects_url()))
-        ui.label('4IoT').classes('text-h6 font-bold cursor-pointer shrink-0') \
-            .on('click', lambda: ui.navigate.to(projects_url()))
-        ui.space()
-        _user_menu()
-
     with ui.column().classes('w-full max-w-3xl mx-auto p-4 gap-4'):
-        ui.label('Software Bill of Materials').classes('text-h5')
-        ui.label(f'nice4iot {app_version()} · AGPL-3.0').classes('text-subtitle2 text-grey')
+        ui.label('About').classes('text-h5')
+        ui.label('AGPL-3.0 · Software Bill of Materials').classes('text-subtitle2 text-grey')
 
         with ui.row().classes('w-full gap-4'):
             for title, ver in highlights:
@@ -179,11 +187,12 @@ async def page_sbom():
                 .bind_value_to(table, 'filter')
 
 
-_EXTENSION_PAGE_PATTERN = re.compile(r'^/(?P<project_id>[^/]+)/ext/(?P<extension_name>[^/]+)/?$')
+_EXTENSION_PAGE_PATTERN = re.compile(
+    r'^/ui/project/(?P<project_id>[^/]+)/ext/(?P<extension_name>[^/]+)/?$')
 
 
-@ui.page('/')
-@ui.page('/{_:path}')
+@ui.page('/ui')
+@ui.page('/ui/{_:path}')
 async def home_page():
     if (redirect := login_redirect()):
         return redirect
@@ -204,7 +213,7 @@ async def home_page():
             enabled = await anyio.to_thread.run_sync(
                 lambda: is_extension_enabled(project_id, extension_name))
             if not enabled:
-                return RedirectResponse(f'/{project_id}')
+                return RedirectResponse(project_url(project_id))
             await maybe_await(render_fn(project_id))
             return
 
@@ -219,11 +228,17 @@ async def home_page():
         _user_menu()
 
     with ui.column().classes('w-full'):
+        # root_path=UI_PREFIX strips the /ui prefix before matching, so the route
+        # keys stay relative. The literal 'project' segment keeps project names
+        # from ever colliding with /about or /preferences.
         ui.sub_pages(
             {
-                ROUTE_PROJECTS: all_projects_subpage,
-                ROUTE_PROJECT:  project_subpage,
-                ROUTE_DEVICE:   device_subpage,
+                ROUTE_PROJECTS:    all_projects_subpage,
+                ROUTE_ABOUT:       about_subpage,
+                ROUTE_PREFERENCES: preferences_subpage,
+                ROUTE_PROJECT:     project_subpage,
+                ROUTE_DEVICE:      device_subpage,
             },
             data={'nav': nav},
+            root_path=UI_PREFIX,
         ).classes('w-full')

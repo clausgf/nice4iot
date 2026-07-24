@@ -304,7 +304,7 @@ def register(app):
     register_project_page(_kiosk_view)
 ```
 
-This serves at `/<project_name>/ext/<extension_name>` (get the URL with
+This serves at `/ui/project/<project_name>/ext/<extension_name>` (get the URL with
 `app.routes.project_extension_url(project_name, extension_name)` — handy
 for linking to it from one of your own cards). `render_fn` owns the
 **entire** page; nice4iot renders nothing around it. There is no
@@ -455,7 +455,7 @@ def register(app: FastAPI) -> None:
     register_project_card('dashboard', _dashboard_card)
     register_global_card('E-Paper', _global_card)
     register_project_tab('E-Paper', _screens_tab)
-    register_project_page(_kiosk_view)  # /<project_name>/ext/epaper
+    register_project_page(_kiosk_view)  # /ui/project/<project_name>/ext/epaper
     register_topic_handler('status', _on_status)  # ext/epaper/+/status
     register_device_provisioned_callback(_on_new_device)
 ```
