@@ -62,6 +62,10 @@ Provisioning request (provisioning token)
 
 `PUT /api/file/{project}/{device}/{filename}` writes to the device-specific path atomically (via a temp file). The filename must contain only `[a-zA-Z0-9_\-.]` and must not contain `..`.
 
+### Editing files in the UI
+
+The **Files** tab (project and device) browses the same directories with a drill-down editor: JSON and recognised text files edit inline, images preview inline, other binaries download only. A flat JSON object also gets a **Form** view. Dropping a sibling `<name>.schema.json` (a small JSON-Schema subset) turns that into a proper form with typed widgets and validation — the device may upload the schema, but it stays inert until a user **approves** it (approval is bound to the schema's content hash, so a device changing it forces re-approval). See [File Editing & Forms](file-forms.md).
+
 ## Size Limits
 
 | Resource | Limit | Config key |

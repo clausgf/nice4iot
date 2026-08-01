@@ -6,14 +6,28 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-08-01
+
 ### Added
 
-- Files tab: browse files with a list ↔ detail **drill-down** (built on niceview's
-  `DrillDownWrapper`), **inline editing** for JSON and recognised text files, and
-  **inline preview** for images (png/jpg/gif/webp ≤ 2 MB). SVG and other binaries
-  stay download-only. This is phase 1 of the file-editing feature — see
-  [docs/file-forms.md](docs/file-forms.md) for the full design (schema-driven
-  JSON forms with a device-schema approval workflow are planned).
+- **File editing in the UI.** The project/device **Files** tab is now a file
+  browser with a list ↔ detail **drill-down** (built on niceview's
+  `DrillDownWrapper`): JSON and recognised text files open in an inline editor,
+  images (png/jpg/gif/webp ≤ 2 MB) in an inline preview; SVG and other binaries
+  stay download-only.
+- **JSON forms.** A flat JSON object also offers a **Form** tab with widgets
+  inferred from its values (raw stays default). With a sibling
+  `<name>.schema.json` (a minimal JSON-Schema subset — types, `enum`→select,
+  `date`, multiline, `minimum`/`maximum`, `maxLength`, `required`,
+  `title`/`description`), the schema-driven form becomes the default. Saving
+  **merges** into the file, preserving keys the schema/form does not cover.
+- **Device-schema approval.** A schema uploaded by a device is inert until a user
+  approves it; approval is bound to the schema's content hash, so a device
+  changing the schema forces re-approval. Editing a schema in the UI approves it
+  automatically (admin provenance). Untrusted schemas are rendered by a small
+  dedicated interpreter — never `pydantic.create_model`/niceview, never as
+  HTML/Markdown — and `$ref`/`pattern` are not honoured (no SSRF / ReDoS). See
+  [docs/file-forms.md](docs/file-forms.md).
 
 ### Changed
 

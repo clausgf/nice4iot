@@ -27,7 +27,7 @@ An IoT device management platform written in Python. It provides a REST API for 
 - **Telemetry ingestion & charting** — devices push measurements; nice4iot forwards them to a time-series backend (Prometheus remote write or InfluxDB line protocol) and always stores the last 2 000 readings locally. The Data tab charts directly from the configured backend (long history) and falls back to the local ring buffer when none is set up. Recommended backend: [VictoriaMetrics](https://victoriametrics.com) via the Prometheus backend — `push_url: http://host:8428/api/v1/write`, `pull_url: http://host:8428/api/v1/`
 - **Log ingestion** — devices push log lines; nice4iot forwards them to a log backend (Grafana Loki or a Loki-compatible endpoint such as [VictoriaLogs](https://docs.victoriametrics.com/victorialogs/), or a local file); the UI shows a live tail of the file log
 - **HTTP forwarding** — authenticated devices can proxy arbitrary requests through the platform to configured backend URLs
-- **File serving & upload** — devices can fetch and upload files; device-specific files take precedence over project-wide defaults (ETag caching supported)
+- **File serving, upload & editing** — devices can fetch and upload files; device-specific files take precedence over project-wide defaults (ETag caching supported). In the UI, browse files with a drill-down editor, preview images, and edit JSON as raw text or as a form — optionally driven by an uploaded schema you approve ([docs/file-forms.md](docs/file-forms.md))
 - **Auto-generated UI** — forms and tables are derived from Pydantic models via [niceview](https://github.com/clausgf/niceview), keeping model and UI in sync without boilerplate
 - **Alarm system** — per-project alarm rules (metric thresholds + built-in device-offline rule); state-based with acknowledgment; alarm panels on project and device dashboards
 - **System health** — project dashboard shows live green/red status for MQTT, telemetry, and logging backends; external-call errors are captured without raising exceptions
@@ -120,6 +120,7 @@ Full documentation lives in [docs/](docs/README.md):
 | [Core Concepts](docs/concepts.md) | Data storage, token model, device lifecycle, alarms, system health |
 | [Device API Reference](docs/device-api.md) | The REST contract devices depend on, plus the device simulator |
 | [Configuration](docs/configuration.md) | Environment variables and UI authentication |
+| [File Editing & Forms](docs/file-forms.md) | The file browser/editor and schema-driven JSON forms with device-schema approval |
 | [MQTT Support](docs/mqtt.md) | Topic layout, file delivery, broker settings |
 | [Architecture](docs/architecture.md) | Module layout and the design decisions behind it |
 | [Extensions](docs/extensions.md) | Adding endpoints, MQTT handlers, and UI from a separate package |

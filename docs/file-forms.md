@@ -1,7 +1,7 @@
-# File Editing & Schema-Driven Forms — Design
+# File Editing & Schema-Driven Forms
 
-Status: **design, not yet implemented.** This documents the agreed shape of the
-feature and the decisions behind it, to be built in phases (see the end).
+Status: **implemented in 0.14.0.** This documents the feature and the design
+decisions behind it. Implementation lives in `app/core/device/files_ui.py`.
 
 [← Documentation index](README.md) · [Architecture](architecture.md)
 
@@ -166,25 +166,26 @@ one predicate covers device-uploaded, edited, and UI-created cases.
 
 ## Other decisions (defaults)
 
-- **Drill-down** is a deep-link query param (`…?tab=Files&file=config.json`), so
-  the editor is shareable and the back button works — consistent with the
-  `/ui` sub-pages routing.
+- **Drill-down** is built on niceview's `DrillDownWrapper` (in-page list↔detail
+  navigation with a Back button and slide animation). The originally-planned
+  per-file deep-link was dropped in favour of reusing the wrapper; the Files tab
+  itself stays deep-linkable via `?tab=Files`.
 - **Editable vs download-only:** JSON and the recognised text extensions
   (`.txt/.yaml/.yml/.toml/.md/.csv/.ini/.cfg/.conf/.xml/.html/.css/.js/.py/.sh`)
-  are editable; images preview-only; everything else download-only. Binary is
-  detected by extension plus a NUL-byte sniff.
-- **Validation scope (v1):** UI-only. The server does **not** reject
-  device-uploaded data that violates a schema; the schema drives the form and
-  in-UI validation, not API ingest. (Server-side validation is a possible later
-  addition.)
-- **Async I/O:** all file reads/writes, hashing, and schema parsing at UI entry
-  points are wrapped with `anyio.to_thread.run_sync`, per the project rule.
+  are editable; images preview-only; everything else download-only.
+- **Validation scope:** UI-only. The server does **not** reject device-uploaded
+  data that violates a schema; the schema drives the form and in-UI validation,
+  not API ingest. (Server-side validation is a possible later addition.)
+- **Async I/O:** the Files UI reads/writes/hashes files synchronously in the
+  render path, consistent with the rest of `files_ui.py`. Wrapping these at the
+  UI boundary with `anyio.to_thread.run_sync` (the project rule) is a known
+  follow-up.
 
-## Phasing
+## Delivery
 
-Each phase is independently shippable.
+Built and shipped in three phases, all in 0.14.0:
 
-1. **Editing UX** — image preview, editable text, drill-down deep-link. No schema.
+1. **Editing UX** — drill-down (DrillDownWrapper), image preview, editable text.
 2. **Auto-form** — form tab for *flat JSON without a schema*, field types
    inferred from the current values (raw stays default).
 3. **Schema-driven form** — the JSON-Schema subset, the interpreter, and the

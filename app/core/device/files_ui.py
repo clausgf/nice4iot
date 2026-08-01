@@ -14,9 +14,11 @@ docs/file-forms.md).
 """
 import asyncio
 import base64
+import hashlib
 import json
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, NamedTuple
+from typing import Any, Callable, NamedTuple
 
 from nicegui import ui
 from niceview import DirectoryAdapter, DrillDownWrapper, FileEntry
@@ -102,13 +104,291 @@ def _download_file(path: Path) -> None:
 # Detail view (render_detail) — one file, dispatched by type
 # ---------------------------------------------------------------------------
 
-def _render_json_editor(path: Path, ctx: _Ctx) -> None:
-    try:
-        raw = path.read_text(encoding='utf-8') if path.is_file() else '{}'
-        content = json.dumps(json.loads(raw), indent=2, ensure_ascii=False)
-    except (OSError, json.JSONDecodeError):
-        content = path.read_text(encoding='utf-8', errors='replace') if path.is_file() else '{}'
+@dataclass
+class _FormField:
+    """One form field. Phase 2 infers key/kind/value from a flat JSON object's
+    values; phase 3 builds the same shape from a schema, adding the metadata
+    below (title/enum/min/max/…)."""
+    key: str
+    kind: str        # string | integer | number | boolean | string_list | enum | textarea | date
+    value: Any
+    label: str | None = None
+    description: str | None = None
+    enum: list | None = None
+    minimum: float | None = None
+    maximum: float | None = None
+    max_length: int | None = None
+    max_items: int | None = None
+    required: bool = False
 
+
+def _infer_kind(v: Any) -> str | None:
+    if isinstance(v, bool):        # bool is a subclass of int — check it first
+        return 'boolean'
+    if isinstance(v, int):
+        return 'integer'
+    if isinstance(v, float):
+        return 'number'
+    if isinstance(v, str):
+        return 'string'
+    if isinstance(v, list) and all(isinstance(x, str) for x in v):
+        return 'string_list'
+    return None
+
+
+def _infer_flat_fields(obj: dict) -> list[_FormField] | None:
+    """Field specs for a flat object, or None if any value isn't representable
+    (nested object, mixed/other list, null) — then no form tab is offered."""
+    fields: list[_FormField] = []
+    for key, value in obj.items():
+        kind = _infer_kind(value)
+        if kind is None:
+            return None
+        fields.append(_FormField(key, kind, value))
+    return fields
+
+
+# --- schema-driven form (phase 3): a minimal JSON-Schema subset -------------
+# Deliberately NOT a JSON Schema implementation: flat object only, a fixed set of
+# types, unknown keywords ignored, and no $ref (SSRF) / pattern (untrusted regex,
+# ReDoS). Rendered by _render_form_field below — never fed to pydantic.create_model
+# or niceview — so the untrusted-input path stays small. See docs/file-forms.md.
+
+_SCHEMA_MAX_BYTES = 256 * 1024
+_SCHEMA_MAX_FIELDS = 500
+
+
+def _num(v: Any) -> float | None:
+    return v if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+
+
+def _int(v: Any) -> int | None:
+    return v if isinstance(v, int) and not isinstance(v, bool) else None
+
+
+def _empty_for(kind: str) -> Any:
+    return {'boolean': False, 'string_list': []}.get(kind, None if kind in ('integer', 'number') else '')
+
+
+def _schema_kind(spec: dict) -> str | None:
+    t = spec.get('type')
+    if t == 'string':
+        if isinstance(spec.get('enum'), list):
+            return 'enum'
+        if spec.get('format') == 'date':
+            return 'date'
+        if spec.get('x-multiline') is True:
+            return 'textarea'
+        return 'string'
+    if t == 'integer':
+        return 'integer'
+    if t == 'number':
+        return 'number'
+    if t == 'boolean':
+        return 'boolean'
+    if t == 'array' and isinstance(spec.get('items'), dict) and spec['items'].get('type') == 'string':
+        return 'string_list'
+    return None  # unknown/unsupported type — ignored (field editable via raw only)
+
+
+def _fields_from_schema(schema: dict, data: dict) -> list[_FormField] | None:
+    """Build form fields from the schema subset, or None if it is not a usable
+    flat object schema. Values come from *data*, then the field's ``default``."""
+    if not isinstance(schema, dict) or schema.get('type') != 'object':
+        return None
+    props = schema.get('properties')
+    if not isinstance(props, dict):
+        return None
+    required = set(schema.get('required') or [])
+    fields: list[_FormField] = []
+    for name, spec in list(props.items())[:_SCHEMA_MAX_FIELDS]:
+        if not isinstance(spec, dict):
+            continue
+        kind = _schema_kind(spec)
+        if kind is None:
+            continue
+        default = spec.get('default')
+        value = data.get(name, default if default is not None else _empty_for(kind))
+        fields.append(_FormField(
+            key=name, kind=kind, value=value,
+            label=spec.get('title') if isinstance(spec.get('title'), str) else None,
+            description=spec.get('description') if isinstance(spec.get('description'), str) else None,
+            enum=spec.get('enum') if isinstance(spec.get('enum'), list) else None,
+            minimum=_num(spec.get('minimum')), maximum=_num(spec.get('maximum')),
+            max_length=_int(spec.get('maxLength')), max_items=_int(spec.get('maxItems')),
+            required=name in required,
+        ))
+    return fields
+
+
+def _resolve_schema_path(data_path: Path, fallback_dir: Path | None) -> Path | None:
+    """The '<name>.schema.json' sibling of a '<name>.json' data file, resolved in
+    the file's own directory first, then *fallback_dir* (device dir → project dir).
+    Schema files themselves get no schema."""
+    if data_path.suffix.lower() != '.json' or data_path.name.endswith('.schema.json'):
+        return None
+    schema_name = f'{data_path.name[:-len(".json")]}.schema.json'
+    here = data_path.with_name(schema_name)
+    if here.is_file():
+        return here
+    if fallback_dir is not None:
+        there = fallback_dir / schema_name
+        if there.is_file():
+            return there
+    return None
+
+
+def _load_schema(schema_path: Path) -> dict | None:
+    try:
+        if schema_path.stat().st_size > _SCHEMA_MAX_BYTES:
+            return None
+        parsed = json.loads(schema_path.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+# --- schema approval (device-uploaded schemas are inert until approved) ------
+
+def _approvals_path(project_name: str) -> Path:
+    return get_project_dir(project_name) / '.schema_approvals.json'
+
+
+def _schema_key(schema_path: Path, project_name: str) -> str:
+    try:
+        return schema_path.relative_to(get_project_dir(project_name)).as_posix()
+    except ValueError:
+        return schema_path.name
+
+
+def _file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _load_approvals(project_name: str) -> dict:
+    path = _approvals_path(project_name)
+    try:
+        return json.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _is_schema_approved(schema_path: Path, project_name: str) -> bool:
+    try:
+        current = _file_sha256(schema_path)
+    except OSError:
+        return False
+    return _load_approvals(project_name).get(_schema_key(schema_path, project_name)) == current
+
+
+def _approve_schema(schema_path: Path, project_name: str) -> None:
+    """Record the schema's current content hash as approved. Called when a user
+    approves an uploaded schema, or saves/edits one in the UI (admin provenance)."""
+    try:
+        digest = _file_sha256(schema_path)
+    except OSError:
+        return
+    approvals = _load_approvals(project_name)
+    approvals[_schema_key(schema_path, project_name)] = digest
+    _atomic_write_text(_approvals_path(project_name), json.dumps(approvals, indent=2) + '\n')
+
+
+def _render_widget(field: _FormField, label: str) -> Callable[[], Any]:
+    """Render the input widget for *field*; return a getter for its value.
+
+    Only text goes into text-rendering widgets (labels, options) — schema-supplied
+    strings are never passed to ui.markdown/ui.html, so a schema cannot inject markup.
+    """
+    if field.kind == 'boolean':
+        w = ui.switch(label, value=bool(field.value))
+        return lambda: bool(w.value)
+    if field.kind == 'enum':
+        options = [str(x) for x in (field.enum or [])]
+        w = ui.select(options, label=label, value=field.value if field.value in options else None) \
+            .props('outlined dense').classes('w-full')
+        return lambda: w.value
+    if field.kind == 'textarea':
+        w = ui.textarea(label, value=field.value or '').props('outlined dense').classes('w-full')
+        return lambda: w.value
+    if field.kind == 'date':
+        w = ui.input(label, value=field.value or '').props('outlined dense type=date').classes('w-full')
+        return lambda: w.value or None
+    if field.kind == 'integer':
+        w = ui.number(label, value=field.value, precision=0, step=1,
+                      min=field.minimum, max=field.maximum).props('outlined dense').classes('w-full')
+        return lambda: int(w.value) if w.value is not None else None
+    if field.kind == 'number':
+        w = ui.number(label, value=field.value, min=field.minimum, max=field.maximum) \
+            .props('outlined dense').classes('w-full')
+        return lambda: w.value
+    if field.kind == 'string_list':
+        w = ui.input_chips(label, value=list(field.value or [])).props('outlined dense').classes('w-full')
+        return lambda: list(w.value or [])
+    w = ui.input(label, value=field.value or '').props('outlined dense').classes('w-full')
+    if field.max_length:
+        w.props(f'maxlength={field.max_length}')
+    return lambda: w.value
+
+
+def _render_form_field(field: _FormField) -> Callable[[], Any]:
+    label = (field.label or field.key) + (' *' if field.required else '')
+    with ui.column().classes('w-full gap-0'):
+        getter = _render_widget(field, label)
+        if field.description:
+            ui.label(field.description).classes('text-caption text-grey-6')
+    return getter
+
+
+def _validate_field(field: _FormField, value: Any) -> str | None:
+    """Enforce the subset's constraints with plain checks (no regex). Returns the
+    first error message for *field*, or None if the value is acceptable."""
+    name = field.label or field.key
+    empty = value is None or value == '' or value == []
+    if field.required and empty:
+        return f'{name}: required'
+    if empty:
+        return None
+    if field.kind in ('integer', 'number'):
+        if field.minimum is not None and value < field.minimum:
+            return f'{name}: must be ≥ {field.minimum}'
+        if field.maximum is not None and value > field.maximum:
+            return f'{name}: must be ≤ {field.maximum}'
+    if field.kind in ('string', 'textarea') and field.max_length and len(value) > field.max_length:
+        return f'{name}: at most {field.max_length} characters'
+    if field.kind == 'enum' and field.enum and value not in [str(x) for x in field.enum]:
+        return f'{name}: not an allowed value'
+    if field.kind == 'string_list' and field.max_items is not None and len(value) > field.max_items:
+        return f'{name}: at most {field.max_items} items'
+    return None
+
+
+def _json_form(path: Path, ctx: _Ctx, original: dict, fields: list[_FormField]) -> None:
+    getters: dict[str, Callable[[], Any]] = {}
+    with ui.column().classes('w-full gap-3'):
+        if not fields:
+            ui.label('Empty object — nothing to edit as a form.').classes('text-caption text-grey-6')
+        for field in fields:
+            getters[field.key] = _render_form_field(field)
+
+    def _save() -> None:
+        values = {f.key: getters[f.key]() for f in fields}
+        for f in fields:
+            if (err := _validate_field(f, values[f.key])) is not None:
+                ui.notify(err, type='negative')
+                return
+        # Merge into the existing object: overwrite only the form's keys, keep the
+        # rest (a schema may cover only part of the file).
+        merged = dict(original)
+        merged.update(values)
+        if _atomic_write_text(path, json.dumps(merged, indent=2, ensure_ascii=False) + '\n'):
+            ui.notify(f'Saved {path.name}', type='positive')
+            _maybe_publish(path, ctx)
+
+    with ui.row().classes('w-full justify-end q-mt-sm'):
+        ui.button('Save', on_click=_save).props('color=primary')
+
+
+def _json_raw_editor(path: Path, ctx: _Ctx, content: str) -> None:
     editor = (
         ui.codemirror(value=content, language='JSON', line_wrapping=True)
         .classes('w-full border rounded').style('height: clamp(240px, 55vh, 640px)')
@@ -123,9 +403,82 @@ def _render_json_editor(path: Path, ctx: _Ctx) -> None:
         if _atomic_write_text(path, json.dumps(parsed, indent=2, ensure_ascii=False) + '\n'):
             ui.notify(f'Saved {path.name}', type='positive')
             _maybe_publish(path, ctx)
+            if path.name.endswith('.schema.json'):
+                # Editing/creating a schema in the UI is admin provenance → auto-approved.
+                _approve_schema(path, ctx.project_name)
 
     with ui.row().classes('w-full justify-end q-mt-sm'):
         ui.button('Save', on_click=_save).props('color=primary')
+
+
+def _schema_pending_banner(schema_path: Path, ctx: _Ctx, on_approve: Callable[[], None]) -> None:
+    with ui.row().classes('w-full items-center gap-2 q-pa-sm rounded-borders') \
+            .style('background: rgba(255,167,38,0.15)'):
+        ui.icon('warning').classes('text-orange')
+        ui.label(f'The schema "{schema_path.name}" was uploaded and needs your approval '
+                 'before it drives the form.').classes('grow text-body2')
+
+        def _approve() -> None:
+            _approve_schema(schema_path, ctx.project_name)
+            ui.notify(f'Approved {schema_path.name}', type='positive')
+            on_approve()
+        ui.button('Approve', icon='verified', on_click=_approve).props('dense color=primary')
+
+
+def _json_with_form(path: Path, ctx: _Ctx, parsed: dict, pretty: str,
+                    fields: list[_FormField], *, form_default: bool) -> None:
+    """Form + Raw tabs; *form_default* selects which is shown first. No live sync
+    between the tabs — each renders from the on-disk content read by the caller."""
+    with ui.tabs().classes('w-full') as tabs:
+        form_tab = ui.tab('Form')
+        raw_tab = ui.tab('Raw')
+    with ui.tab_panels(tabs, value=(form_tab if form_default else raw_tab)).classes('w-full'):
+        with ui.tab_panel(form_tab):
+            _json_form(path, ctx, parsed, fields)
+        with ui.tab_panel(raw_tab):
+            _json_raw_editor(path, ctx, pretty)
+
+
+def _render_json_detail(path: Path, ctx: _Ctx, fallback_dir: Path | None = None) -> None:
+    """JSON detail. With an approved sibling schema the schema-driven form is the
+    default tab; without one, a flat object still gets an inferred Form tab (raw
+    default). An unapproved uploaded schema shows an approval banner and raw only.
+    Wrapped in a local refreshable so approving re-renders the view in place."""
+
+    @ui.refreshable
+    def detail() -> None:
+        try:
+            parsed = json.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}
+            pretty = json.dumps(parsed, indent=2, ensure_ascii=False)
+        except (OSError, json.JSONDecodeError):
+            content = path.read_text(encoding='utf-8', errors='replace') if path.is_file() else '{}'
+            _json_raw_editor(path, ctx, content)
+            return
+        if not isinstance(parsed, dict):
+            _json_raw_editor(path, ctx, pretty)
+            return
+
+        schema_path = _resolve_schema_path(path, fallback_dir)
+        if schema_path is not None:
+            if not _is_schema_approved(schema_path, ctx.project_name):
+                _schema_pending_banner(schema_path, ctx, on_approve=detail.refresh)
+                _json_raw_editor(path, ctx, pretty)
+                return
+            schema = _load_schema(schema_path)
+            schema_fields = _fields_from_schema(schema, parsed) if schema is not None else None
+            if schema_fields is not None:
+                _json_with_form(path, ctx, parsed, pretty, schema_fields, form_default=True)
+                return
+            ui.label('Schema present but not a usable flat-object schema; editing raw.') \
+                .classes('text-caption text-grey-6')
+
+        inferred = _infer_flat_fields(parsed)
+        if inferred is None:
+            _json_raw_editor(path, ctx, pretty)
+            return
+        _json_with_form(path, ctx, parsed, pretty, inferred, form_default=False)
+
+    detail()
 
 
 def _render_text_editor(path: Path, ctx: _Ctx) -> None:
@@ -169,7 +522,8 @@ def _render_download_only(path: Path, reason: str) -> None:
                   on_click=lambda: _download_file(path)).props('outline')
 
 
-def _file_detail(dir_path: Path, key: str, ctx: _Ctx) -> None:
+def _file_detail(dir_path: Path, key: str, ctx: _Ctx,
+                 schema_fallback_dir: Path | None = None) -> None:
     """render_detail body for one file, dispatched on type and size."""
     path = dir_path / key
     if not path.is_file():
@@ -178,7 +532,7 @@ def _file_detail(dir_path: Path, key: str, ctx: _Ctx) -> None:
     ext = path.suffix.lower()
     size = path.stat().st_size
     if ext == '.json':
-        _render_json_editor(path, ctx)
+        _render_json_detail(path, ctx, schema_fallback_dir)
     elif ext in _IMAGE_MIME:
         if size <= _MAX_IMAGE_SIZE:
             _render_image_preview(path)
@@ -337,7 +691,8 @@ def _make_upload_handler(directory: Path, refresh: Callable[[], None], ctx: _Ctx
 # Card = DrillDownWrapper(list <-> detail) + an always-visible upload footer
 # ---------------------------------------------------------------------------
 
-def _files_card(dir_path: Path, *, title: str, description: str, ctx: _Ctx) -> None:
+def _files_card(dir_path: Path, *, title: str, description: str, ctx: _Ctx,
+                schema_fallback_dir: Path | None = None) -> None:
     from app.core.file.backend import get_file_config
     dir_path.mkdir(parents=True, exist_ok=True)
     max_upload = get_file_config(ctx.project_name).max_upload_size
@@ -359,7 +714,7 @@ def _files_card(dir_path: Path, *, title: str, description: str, ctx: _Ctx) -> N
             item_title_field='name',
             add_button=None, delete_button=None,  # our own row/footer actions instead
             render_list_item=_list_item,
-            render_detail=lambda _a, key, _set: _file_detail(dir_path, key, ctx),
+            render_detail=lambda _a, key, _set: _file_detail(dir_path, key, ctx, schema_fallback_dir),
         ).render()
 
     ui.markdown(description).classes('text-caption q-ma-none')
@@ -403,8 +758,11 @@ def device_files_panel(project_name: str, device_name: str) -> None:
     ctx = _Ctx(project_name, device_name, mqtt_enabled)
     with ui.grid().classes('grid-cols-1 lg:grid-cols-2 gap-4 w-full'):
         with ui.card().classes('w-full'):
+            # Device files fall back to the project dir for their schema, mirroring
+            # the data-file fallback.
             _files_card(get_device_path(project_name, device_name),
-                        title='Device Files', description=_DEVICE_DESC, ctx=ctx)
+                        title='Device Files', description=_DEVICE_DESC, ctx=ctx,
+                        schema_fallback_dir=get_project_dir(project_name))
         with ui.card().classes('w-full'):
             _files_card(get_project_dir(project_name),
                         title='Project Files', description=_PROJECT_DESC, ctx=ctx)
