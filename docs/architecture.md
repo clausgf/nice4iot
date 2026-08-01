@@ -89,6 +89,17 @@ IO-heavy backend calls with `anyio.to_thread.run_sync` to avoid blocking the
 event loop. The telemetry hot path (`_append_local_metrics`) is wrapped inside
 `write_telemetry`. This is the project-wide rule; see CLAUDE.md for details.
 
+**Device-supplied schemas are untrusted; forms are interpreted, not generated.**
+The planned schema-driven file forms (see
+[File Editing & Schema-Driven Forms](file-forms.md)) accept a *minimal
+JSON-Schema subset*, not the full spec, and render it with a small dedicated
+interpreter rather than feeding it into `pydantic.create_model`/niceview — which
+stays reserved for our own code-defined models. A device-uploaded schema is
+inert until a user approves it, approval is bound to the schema's content hash
+(a device edit changes the hash and forces re-approval), and schema text is
+never rendered as HTML/Markdown. This keeps the untrusted-input path small,
+auditable, and free of `$ref` (SSRF) and `pattern` (ReDoS) risk.
+
 **Pluggable UI authentication, disabled by default.**
 The REST API endpoints are protected by bearer tokens (a separate mechanism). The NiceGUI management UI has its own optional auth, selected via `AUTH_PROVIDER` (`none` by default) — see [Configuration → Authentication](configuration.md#authentication) and `app/auth/`.
 

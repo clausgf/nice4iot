@@ -6,6 +6,23 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+### Added
+
+- Files tab: browse files with a list ↔ detail **drill-down** (built on niceview's
+  `DrillDownWrapper`), **inline editing** for JSON and recognised text files, and
+  **inline preview** for images (png/jpg/gif/webp ≤ 2 MB). SVG and other binaries
+  stay download-only. This is phase 1 of the file-editing feature — see
+  [docs/file-forms.md](docs/file-forms.md) for the full design (schema-driven
+  JSON forms with a device-schema approval workflow are planned).
+
+### Changed
+
+- Updated dependencies: **niceview 0.9.1 → 0.10.0** (fixes `ui.number` conversion
+  so a cleared numeric field becomes `None` again — a stale model-validator error
+  such as the epaper widget's "Set width and height together …" now clears; adds
+  the `DirectoryAdapter` all-files mode the file browser builds on) and
+  **nicepaper 0.13.0 → 0.13.1**.
+
 ## [0.13.1] - 2026-07-24
 
 ### Changed

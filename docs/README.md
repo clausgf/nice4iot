@@ -28,5 +28,8 @@
   behind it (filesystem storage, sync I/O in an async app, caching).
 - **[Extensions](extensions.md)** — adding REST endpoints, MQTT pub/sub, and UI
   cards or tabs from a separately deployed package.
+- **[File Editing & Schema-Driven Forms](file-forms.md)** *(design)* — the
+  planned file browser/editor, image preview, and the minimal JSON-Schema subset
+  with its device-schema approval workflow.
 - **[Development](development.md)** — setup, running from source, tests, linting.
 - **[Contributing](../CONTRIBUTING.md)** — the rules enforced in review.

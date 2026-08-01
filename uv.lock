@@ -1087,8 +1087,8 @@ wheels = [
 
 [[package]]
 name = "nicepaper"
-version = "0.13.0"
-source = { git = "https://github.com/clausgf/nicepaper.git#15f99adcfaf6215136e8db758c7dca65f134cbb7" }
+version = "0.13.1"
+source = { git = "https://github.com/clausgf/nicepaper.git#5550e2ee390287ea0fd780bf196bcff972ec38b9" }
 dependencies = [
     { name = "aiofiles" },
     { name = "aiohttp" },
@@ -1107,8 +1107,8 @@ dependencies = [
 
 [[package]]
 name = "niceview"
-version = "0.9.1"
-source = { git = "https://github.com/clausgf/niceview.git#1c9985633c616937234e7bf1545f80d6452c2d09" }
+version = "0.10.0"
+source = { git = "https://github.com/clausgf/niceview.git#d787a9874217b7837f275ce2f3529bb7c473a6b9" }
 dependencies = [
     { name = "annotated-types" },
     { name = "nicegui" },
