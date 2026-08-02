@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, NamedTuple
 
+import anyio
 from nicegui import ui
 from niceview import DirectoryAdapter, DrillDownWrapper, FileEntry
 from niceview.util import confirm_dialog
@@ -663,25 +664,35 @@ async def _new_json_dialog(directory: Path, refresh: Callable[[], None], ctx: _C
 
 
 def _make_upload_handler(directory: Path, refresh: Callable[[], None], ctx: _Ctx):
-    """Return an upload handler that writes uploaded files to *directory* atomically."""
-    def _handle(e) -> None:
-        filename = e.name
+    """Return an upload handler that writes uploaded files to *directory* atomically.
+
+    An upload can be several MB, so the blocking write/rename is pushed to a
+    worker thread — the same treatment as the device-facing PUT /api/file path."""
+    async def _handle(e) -> None:
+        # NiceGUI 3.x: the upload event carries a FileUpload (e.file) whose read()
+        # is async; the earlier e.name / e.content.read() no longer exist.
+        filename = e.file.name
         if not is_valid_upload_filename(filename):
             ui.notify(f'Invalid filename: {filename!r}', type='negative')
             e.sender.reset()
             return
         dest = directory / filename
         tmp = dest.with_name(dest.name + '.tmp')
-        try:
-            tmp.write_bytes(e.content.read())
+        content = await e.file.read()
+
+        def _write() -> None:
+            tmp.write_bytes(content)
             tmp.rename(dest)
+
+        try:
+            await anyio.to_thread.run_sync(_write)
             ui.notify(f'Uploaded {filename}', type='positive')
             refresh()
             _maybe_publish(dest, ctx)
         except Exception as exc:
             log.exception(f'Upload failed: {exc}')
             ui.notify(f'Upload failed: {exc}', type='negative')
-            tmp.unlink(missing_ok=True)
+            await anyio.to_thread.run_sync(lambda: tmp.unlink(missing_ok=True))
         finally:
             e.sender.reset()
     return _handle

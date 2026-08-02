@@ -176,10 +176,13 @@ one predicate covers device-uploaded, edited, and UI-created cases.
 - **Validation scope:** UI-only. The server does **not** reject device-uploaded
   data that violates a schema; the schema drives the form and in-UI validation,
   not API ingest. (Server-side validation is a possible later addition.)
-- **Async I/O:** the Files UI reads/writes/hashes files synchronously in the
-  render path, consistent with the rest of `files_ui.py`. Wrapping these at the
-  UI boundary with `anyio.to_thread.run_sync` (the project rule) is a known
-  follow-up.
+- **Async I/O:** the large upload write is pushed to a worker thread
+  (`anyio.to_thread.run_sync`), like the device-facing `PUT /api/file`. The
+  remaining reads (editor content, image bytes, the directory listing, the schema
+  read + hash) run inside NiceGUI's synchronous render — and, for the browser,
+  inside `DrillDownWrapper`'s synchronous `render_list_item` / `render_detail`
+  callbacks — so they cannot be awaited without an async-render hook in niceview.
+  They are bounded, single, mostly small local-FS reads, kept synchronous.
 
 ## Delivery
 

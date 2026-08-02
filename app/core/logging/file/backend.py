@@ -5,6 +5,8 @@ import logging.handlers
 import os
 from pathlib import Path
 
+import anyio
+
 from app.core.logging.models import FileLogConfig
 from app.config import app_config
 
@@ -88,5 +90,11 @@ class FileLogBackend:
         self._handlers[key] = (handler, self.config)
 
     async def write(self, device_name: str, logmsg: str) -> None:
+        # _ensure_handler stays on the event loop: it mutates the shared _handlers
+        # dict and only touches the filesystem on the first call per device, so
+        # running it in a worker thread would race for no real gain.
         self._ensure_handler(device_name)
-        logging.getLogger(f'device_log.{self.project_name}.{device_name}').info('%s', logmsg)
+        logger = logging.getLogger(f'device_log.{self.project_name}.{device_name}')
+        # The actual (blocking) file append goes to a worker thread — same
+        # treatment as the telemetry hot path, so a slow disk can't stall the loop.
+        await anyio.to_thread.run_sync(lambda: logger.info('%s', logmsg))
