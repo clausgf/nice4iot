@@ -6,6 +6,36 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-08-02
+
+### Added
+
+- **Device firmware-version reporting.** A device may report its running firmware
+  via the optional `X-Firmware-Version` (and optional `X-Firmware-Commit`)
+  request header on any authenticated device API call, and at `POST /api/provision`.
+  The value is stored server-side in a per-device `.runtime.json` sidecar (next to
+  `last_seen_at`, never in `device.json`) and shown in the **Device → Dashboard**
+  Status card and the **Project → Devices** table. Headers are optional and
+  backward-compatible; omitting them leaves the last reported value unchanged. See
+  [docs/firmware-releases.md](docs/firmware-releases.md#reporting-the-running-version).
+
+### Changed
+
+- Per-device `last_seen_at` now lives in `.runtime.json` (was the bare-timestamp
+  `.last_seen` file), alongside the reported firmware fields. Existing `.last_seen`
+  files are still read as a migration fallback.
+- The device-log append hot path (`POST /api/log`) and the UI file-upload write are
+  now off-loaded to a worker thread (`anyio.to_thread`), matching the telemetry hot
+  path and `PUT /api/file`.
+- Dependency lock: **niceview** pin moved to the relocated `0.10.0` tag (mypy typing
+  fix in `DirectoryAdapter`).
+
+### Fixed
+
+- **UI file upload** was broken since the NiceGUI 3.x upgrade (`UploadEventArguments`
+  no longer exposes `.name`/`.content`); it now uses `e.file.name` /
+  `await e.file.read()`. Regression shipped in 0.14.0.
+
 ## [0.14.0] - 2026-08-01
 
 ### Added

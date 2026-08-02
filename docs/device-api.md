@@ -20,6 +20,27 @@ All device endpoints require `Authorization: Bearer <device_token>`.
 
 Interactive API docs: `http://localhost:8000/docs`
 
+## Reporting firmware version (optional)
+
+On any authenticated request — and on `POST /api/provision` — a device may report
+the firmware it is running via two optional headers:
+
+| Header | Meaning |
+|---|---|
+| `X-Firmware-Version` | The running firmware version (e.g. a release tag `v1.4.0`). |
+| `X-Firmware-Commit` | Optional build/commit identifier. |
+
+Both are optional and backward-compatible: omitting them leaves the last reported
+value unchanged; they are never required and never affect authentication. The
+server stores the latest value per device (capped at 64 characters, whitespace
+trimmed) and shows it in the management UI (Device Dashboard, Devices table). The
+value is *reported*, not verified — it reflects what the device claims to run.
+
+Reporting on **every** request keeps the shown version fresh; reporting **at
+provisioning** guarantees a known value at least at each token refresh. Bake the
+version into the firmware image at build time so it can be reported (see
+[Firmware from GitHub Releases → Reporting the running version](firmware-releases.md#reporting-the-running-version)).
+
 ## Telemetry metric names
 
 `POST /api/telemetry/{project}/{device}/{kind}` takes a JSON object of numeric

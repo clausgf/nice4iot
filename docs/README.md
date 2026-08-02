@@ -31,5 +31,9 @@
 - **[File Editing & Schema-Driven Forms](file-forms.md)** *(design)* — the
   planned file browser/editor, image preview, and the minimal JSON-Schema subset
   with its device-schema approval workflow.
+- **[Firmware from GitHub Releases](firmware-releases.md)** — devices report their
+  running version (`X-Firmware-Version`, *implemented*); plus the *design* for a
+  per-project/device firmware source that pulls a release asset (`firmware.bin`)
+  from a public GitHub repo into the file store, manually or on a schedule.
 - **[Development](development.md)** — setup, running from source, tests, linting.
 - **[Contributing](../CONTRIBUTING.md)** — the rules enforced in review.

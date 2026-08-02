@@ -145,6 +145,14 @@ def _status_card(device: Device, project_name: str, online_threshold_s: int, now
             ui.label(f'{render_datetime(device.last_seen_at)}  ({_ago(delta)})').classes('text-body2')
         else:
             ui.label('Never').classes('text-body2 text-grey-6')
+        ui.label('Firmware').classes('text-caption text-grey-6 q-mt-xs')
+        if device.firmware_version:
+            fw = device.firmware_version
+            if device.firmware_commit:
+                fw += f'  ({device.firmware_commit})'
+            ui.label(fw).classes('text-body2')
+        else:
+            ui.label('Unknown').classes('text-body2 text-grey-6')
 
 
 def _provisioning_card(device: Device) -> None:
@@ -299,6 +307,7 @@ class ProjectDevicesTable:
             {'name': 'is_active', 'label': 'Active', 'field': 'is_active', 'sortable': True},
             {'name': 'location', 'label': 'Location', 'field': 'location', 'sortable': True},
             {'name': 'last_seen_at', 'label': 'Last Seen', 'field': 'last_seen_at', 'sortable': True},
+            {'name': 'firmware_version', 'label': 'Firmware', 'field': 'firmware_version', 'sortable': True},
             {'name': 'is_provisioning_approved', 'label': 'Provisioning OK', 'field': 'is_provisioning_approved', 'sortable': True},
         ]
         rows = [
@@ -309,6 +318,7 @@ class ProjectDevicesTable:
                 'is_active': d.is_active,
                 'location': d.location or '',
                 'last_seen_at': render_datetime(d.last_seen_at),
+                'firmware_version': d.firmware_version or '—',
                 'is_provisioning_approved': d.is_provisioning_approved,
             }
             for d in self.devices

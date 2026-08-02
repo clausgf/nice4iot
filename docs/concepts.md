@@ -21,9 +21,10 @@ data/projects/
     ├── <shared_file>           # Project-wide fallback files served to devices
     └── <device_name>/
         ├── .device.json        # Device settings (autosave, optimistic-locked)
-        ├── .last_seen          # last_seen_at timestamp — written on every API auth,
-        │                       # kept separate so device.json is only written on
-        │                       # explicit user/provisioning actions (avoids lock conflict)
+        ├── .runtime.json       # device-reported runtime state: last_seen_at (written on
+        │                       # every API auth) + firmware_version/commit (reported via
+        │                       # X-Firmware-* headers). Kept separate so device.json is only
+        │                       # written on explicit user/provisioning actions (avoids lock conflict)
         ├── .tokens.json        # Device bearer token list (file-locked on write)
         ├── .device.log         # File logging backend output (rotated)
         ├── .device_metrics.jsonl  # Local telemetry ring buffer (max 2 000 lines)

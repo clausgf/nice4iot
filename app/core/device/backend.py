@@ -15,7 +15,7 @@ from app.core.token.backend import (
     create_token, device_token_lock, load_device_tokens,
     purge_expired_tokens, save_device_tokens, validate_token,
 )
-from app.core.device.models import Device
+from app.core.device.models import Device, DeviceRuntime
 from app.core.project.backend import get_project, get_project_path
 from app.core.project.models import Project
 from app.util import logger, is_valid_name
@@ -24,7 +24,9 @@ from niceview.dataadapter import lenient_model_load
 ###############################################################################
 
 DEVICE_FILE_NAME = '.device.json'
-_LAST_SEEN_FILE = '.last_seen'
+_RUNTIME_FILE = '.runtime.json'
+_LAST_SEEN_FILE = '.last_seen'  # legacy: bare-timestamp file, read-only migration fallback
+_FW_MAX_LEN = 64  # cap device-reported firmware strings (untrusted header input)
 
 # ---------------------------------------------------------------------------
 # In-process device list cache
@@ -50,29 +52,67 @@ def flush_device_list_cache() -> None:
     _device_list_cache.clear()
 
 ###############################################################################
-# last_seen_at — stored separately from device.json to eliminate write conflicts
+# Device runtime state — stored separately from device.json to eliminate conflicts
 ###############################################################################
 # device.json is managed by the UI's ModelForm (autosave=True, lock_field='updated_at').
 # Storing last_seen_at there caused optimistic-lock conflicts whenever a device pushed
-# telemetry while a user had the General tab open. .last_seen holds only the timestamp;
-# get_device() reads it and populates the in-memory field.
+# telemetry while a user had the General tab open. .runtime.json holds the fields a
+# device updates on every request (last_seen_at) or reports (firmware_version); it is
+# never touched by the UI. get_device() reads it and copies the values onto the model.
 
 
-def write_last_seen(project_name: str, device_name: str, dt: datetime.datetime) -> None:
-    """Atomically write last_seen_at to .last_seen (separate from device.json)."""
-    path = device_dir(project_name, device_name) / _LAST_SEEN_FILE
-    tmp = path.with_name(path.name + '.tmp')
-    tmp.write_text(dt.isoformat())
-    tmp.rename(path)
-
-
-def read_last_seen(project_name: str, device_name: str) -> datetime.datetime | None:
-    """Read last_seen_at from .last_seen. Returns None if the file does not exist."""
+def _read_legacy_last_seen(project_name: str, device_name: str) -> datetime.datetime | None:
+    """Read the pre-.runtime.json bare-timestamp .last_seen file (migration fallback)."""
     path = device_dir(project_name, device_name) / _LAST_SEEN_FILE
     try:
         return datetime.datetime.fromisoformat(path.read_text().strip())
     except (OSError, ValueError):
         return None
+
+
+def read_runtime(project_name: str, device_name: str) -> DeviceRuntime:
+    """Load the device runtime sidecar. Falls back to the legacy .last_seen file,
+    then to an empty DeviceRuntime when neither exists."""
+    path = device_dir(project_name, device_name) / _RUNTIME_FILE
+    try:
+        text = path.read_text()
+    except OSError:
+        return DeviceRuntime(last_seen_at=_read_legacy_last_seen(project_name, device_name))
+    return lenient_model_load(DeviceRuntime, text, str(path))
+
+
+def write_runtime(project_name: str, device_name: str, *,
+                  last_seen_at: datetime.datetime | None = None,
+                  firmware_version: str | None = None,
+                  firmware_commit: str | None = None) -> DeviceRuntime:
+    """Merge-update the device runtime sidecar and write it atomically.
+
+    Only the provided (non-None) fields are changed; the rest are preserved. Passing
+    a firmware_version/commit stamps firmware_reported_at. Firmware strings are
+    stripped and length-capped (untrusted device input)."""
+    rt = read_runtime(project_name, device_name)
+    if last_seen_at is not None:
+        rt.last_seen_at = last_seen_at
+    if firmware_version is not None:
+        rt.firmware_version = firmware_version.strip()[:_FW_MAX_LEN]
+        rt.firmware_reported_at = datetime.datetime.now(datetime.timezone.utc)
+    if firmware_commit is not None:
+        rt.firmware_commit = firmware_commit.strip()[:_FW_MAX_LEN]
+    path = device_dir(project_name, device_name) / _RUNTIME_FILE
+    tmp = path.with_name(path.name + '.tmp')
+    tmp.write_text(rt.model_dump_json(indent=2))
+    tmp.rename(path)
+    return rt
+
+
+def write_last_seen(project_name: str, device_name: str, dt: datetime.datetime) -> None:
+    """Update last_seen_at in the runtime sidecar (separate from device.json)."""
+    write_runtime(project_name, device_name, last_seen_at=dt)
+
+
+def read_last_seen(project_name: str, device_name: str) -> datetime.datetime | None:
+    """Read last_seen_at from the runtime sidecar. Returns None if unknown."""
+    return read_runtime(project_name, device_name).last_seen_at
 
 ###############################################################################
 
@@ -180,12 +220,16 @@ def get_device(project_name: str, device_name: str, check_active: bool = False) 
             created_at=datetime.datetime.fromtimestamp(stat_info.st_ctime, tz=datetime.timezone.utc),
             updated_at=datetime.datetime.fromtimestamp(stat_info.st_mtime, tz=datetime.timezone.utc),
         )
-    # last_seen_at lives in .last_seen (not device.json) to avoid write conflicts
-    # with the UI's autosave adapter. Fall back to device.json value during migration
-    # (old devices that haven't authenticated yet after the switch).
-    fresh = read_last_seen(project_name, device_name)
-    if fresh is not None:
-        device.last_seen_at = fresh
+    # Runtime state (last_seen_at, firmware_*) lives in .runtime.json (not device.json)
+    # to avoid write conflicts with the UI's autosave adapter. last_seen_at falls back
+    # to the device.json value during migration (old devices not yet re-seen); the
+    # firmware fields default to empty until the device first reports them.
+    rt = read_runtime(project_name, device_name)
+    if rt.last_seen_at is not None:
+        device.last_seen_at = rt.last_seen_at
+    device.firmware_version = rt.firmware_version
+    device.firmware_commit = rt.firmware_commit
+    device.firmware_reported_at = rt.firmware_reported_at
     if check_active and not device.is_active:
         raise ForbiddenError(f"Device {project_name}/{device_name} is not active.")
     return device
@@ -248,8 +292,14 @@ def get_devices(project_name: str) -> list[Device]:
 
 ###############################################################################
 
-def get_auth_project_device(project_name: str, device_name: str, device_token: str) -> tuple[Project, Device]:
+def get_auth_project_device(project_name: str, device_name: str, device_token: str,
+                            firmware_version: str | None = None,
+                            firmware_commit: str | None = None) -> tuple[Project, Device]:
     """Authenticate device and return (project, device).
+
+    firmware_version/firmware_commit are the values the device optionally reports via
+    the X-Firmware-Version / X-Firmware-Commit request headers; when present they are
+    recorded in the runtime sidecar alongside last_seen_at.
 
     Raises:
         NotFoundError: Project or device not found, or device inactive.
@@ -279,16 +329,27 @@ def get_auth_project_device(project_name: str, device_name: str, device_token: s
         save_device_tokens(project_name, device_name, tokens)
 
     now = datetime.datetime.now(datetime.timezone.utc)
-    write_last_seen(project_name, device_name, now)
+    rt = write_runtime(project_name, device_name, last_seen_at=now,
+                       firmware_version=firmware_version, firmware_commit=firmware_commit)
     device.last_seen_at = now
+    device.firmware_version = rt.firmware_version
+    device.firmware_commit = rt.firmware_commit
+    device.firmware_reported_at = rt.firmware_reported_at
 
     return project, device
 
 
 MAX_DEVICE_TOKENS = 32
 
-def device_provision(project: Project, device_name: str):
+def device_provision(project: Project, device_name: str,
+                     firmware_version: str | None = None,
+                     firmware_commit: str | None = None):
     """Provision a device and return the new bearer AuthToken.
+
+    firmware_version/firmware_commit are optionally reported by the device at
+    provisioning (X-Firmware-Version / X-Firmware-Commit headers); when present they
+    are recorded in the runtime sidecar. This guarantees a known version at least at
+    every token refresh, even if a device omits the header on regular requests.
 
     Raises:
         NotFoundError: Device not found and autocreate is disabled.
@@ -343,6 +404,10 @@ def device_provision(project: Project, device_name: str):
 
     device.last_provisioned_at = now
     update_device(device)
+
+    if firmware_version is not None or firmware_commit is not None:
+        write_runtime(project.name, device_name,
+                      firmware_version=firmware_version, firmware_commit=firmware_commit)
 
     return token
 

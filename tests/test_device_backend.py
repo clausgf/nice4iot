@@ -8,14 +8,19 @@ import pytest
 
 from app.core.device.backend import (
     DEVICE_FILE_NAME,
+    _FW_MAX_LEN,
+    _RUNTIME_FILE,
     create_device,
     device_adapter,
+    get_auth_project_device,
     get_device,
     get_device_path,
     get_file_path,
     read_last_seen,
+    read_runtime,
     rename_device,
     write_last_seen,
+    write_runtime,
 )
 from app.core.device.models import Device
 from app.core.project.backend import create_project
@@ -206,3 +211,71 @@ def test_last_seen_falls_back_to_device_json_during_migration(device, project):
     d = get_device(project, device.name)
     assert d.last_seen_at is not None
     assert d.last_seen_at.year == 2024
+
+
+# ---------------------------------------------------------------------------
+# firmware runtime state — stored in .runtime.json, reported by the device
+# ---------------------------------------------------------------------------
+
+def test_write_runtime_records_firmware(device, project):
+    write_runtime(project, device.name, firmware_version='v1.2.3', firmware_commit='abc123')
+    rt = read_runtime(project, device.name)
+    assert rt.firmware_version == 'v1.2.3'
+    assert rt.firmware_commit == 'abc123'
+    assert rt.firmware_reported_at is not None
+
+
+def test_write_runtime_merges_last_seen_and_firmware(device, project):
+    """last_seen and firmware are updated independently; each preserves the other."""
+    now = datetime.datetime(2025, 6, 1, 12, 0, 0, tzinfo=datetime.timezone.utc)
+    write_last_seen(project, device.name, now)
+    write_runtime(project, device.name, firmware_version='v2')  # no last_seen
+    rt = read_runtime(project, device.name)
+    assert rt.last_seen_at == now  # preserved
+    assert rt.firmware_version == 'v2'
+
+
+def test_firmware_string_is_stripped_and_capped(device, project):
+    write_runtime(project, device.name, firmware_version='  ' + 'x' * (_FW_MAX_LEN + 20) + '  ')
+    rt = read_runtime(project, device.name)
+    assert rt.firmware_version == 'x' * _FW_MAX_LEN
+
+
+def test_get_device_populates_firmware(device, project):
+    write_runtime(project, device.name, firmware_version='v9.9', firmware_commit='deadbeef')
+    d = get_device(project, device.name)
+    assert d.firmware_version == 'v9.9'
+    assert d.firmware_commit == 'deadbeef'
+    assert d.firmware_reported_at is not None
+
+
+def test_device_json_not_touched_on_runtime_write(device, project):
+    """Writing firmware to .runtime.json must not modify device.json."""
+    json_path = get_device_path(project, device.name) / DEVICE_FILE_NAME
+    mtime_before = json_path.stat().st_mtime
+    write_runtime(project, device.name, firmware_version='v1')
+    assert json_path.stat().st_mtime == mtime_before
+    assert (get_device_path(project, device.name) / _RUNTIME_FILE).is_file()
+
+
+def test_auth_records_reported_firmware(provisioned):
+    """get_auth_project_device stores the header-reported firmware and returns it."""
+    p = provisioned
+    _, d = get_auth_project_device(
+        p["project_name"], p["device_name"], p["device_token"],
+        firmware_version=' v1.4.0 ', firmware_commit='c0ffee',
+    )
+    assert d.firmware_version == 'v1.4.0'
+    assert d.firmware_commit == 'c0ffee'
+    rt = read_runtime(p["project_name"], p["device_name"])
+    assert rt.firmware_version == 'v1.4.0'
+    assert rt.firmware_commit == 'c0ffee'
+
+
+def test_auth_without_firmware_preserves_previous(provisioned):
+    """A request that omits the header leaves a previously reported version intact."""
+    p = provisioned
+    write_runtime(p["project_name"], p["device_name"], firmware_version='v1.0.0')
+    get_auth_project_device(p["project_name"], p["device_name"], p["device_token"])
+    rt = read_runtime(p["project_name"], p["device_name"])
+    assert rt.firmware_version == 'v1.0.0'  # unchanged, not wiped

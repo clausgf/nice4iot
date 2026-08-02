@@ -86,6 +86,27 @@ class Device(BaseModel):
             niceview.Field(editable=False)
         ] = None
 
+    firmware_version: Annotated[str,
+            Field(default='',
+                  description='Firmware version the device last reported (via the X-Firmware-Version '
+                              'header on authenticated API requests, or at provisioning). '
+                              'Device-reported runtime state; source of truth is .runtime.json, not this file.'),
+            niceview.Field(editable=False)
+        ] = ''
+
+    firmware_commit: Annotated[str,
+            Field(default='',
+                  description='Firmware commit/build identifier the device last reported '
+                              '(via the X-Firmware-Commit header). Optional companion to firmware_version.'),
+            niceview.Field(editable=False)
+        ] = ''
+
+    firmware_reported_at: Annotated[datetime.datetime | None,
+            Field(default=None,
+                  description='Timestamp when the device last reported its firmware version (UTC).'),
+            niceview.Field(editable=False)
+        ] = None
+
     tags: Annotated[list[str],
             Field(description='Free-form labels for grouping and filtering devices.'),
             niceview.Field()
@@ -96,3 +117,20 @@ class Device(BaseModel):
             "Device settings and provisioning state. "
             "The device name is the filesystem key and cannot be changed without renaming the directory."
         )
+
+
+class DeviceRuntime(BaseModel):
+    """Device-reported runtime state, persisted in ``.runtime.json`` next to the
+    device directory.
+
+    Kept separate from ``device.json`` on purpose: these fields change on every
+    authenticated request (last_seen) or firmware report, and writing them into
+    ``device.json`` — managed by the UI's optimistic-locked autosave adapter —
+    would cause lock conflicts. ``get_device()`` loads this sidecar and copies the
+    values onto the in-memory :class:`Device`.
+    """
+
+    last_seen_at: datetime.datetime | None = None
+    firmware_version: str = ''
+    firmware_commit: str = ''
+    firmware_reported_at: datetime.datetime | None = None

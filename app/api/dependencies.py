@@ -50,9 +50,13 @@ async def device_auth(project_name: str, device_name: str, request: Request) -> 
     token_value = token_value.strip()
     if scheme.lower() != "bearer" or not token_value:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid authentication token.")
+    # Optional device-reported firmware version (empty/absent → None → left unchanged).
+    fw_version = (request.headers.get("X-Firmware-Version") or '').strip() or None
+    fw_commit = (request.headers.get("X-Firmware-Commit") or '').strip() or None
     try:
         project, device = await anyio.to_thread.run_sync(
-            lambda: get_auth_project_device(project_name, device_name, token_value)
+            lambda: get_auth_project_device(project_name, device_name, token_value,
+                                            firmware_version=fw_version, firmware_commit=fw_commit)
         )
     except Nice4IotError:
         # All auth errors are normalized to 401 — devices must not learn why auth failed.

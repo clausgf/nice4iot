@@ -24,7 +24,7 @@ All 4xx errors from the provisioning flow are surfaced as-is (not normalized to
 
 import datetime
 import anyio
-from fastapi import APIRouter, Body, HTTPException, status
+from fastapi import APIRouter, Body, HTTPException, Request, status
 from pydantic import BaseModel
 
 from app.core.device.backend import device_provision
@@ -107,7 +107,7 @@ class ProvisioningResponse(BaseModel):
         },
     },
 )
-async def provision(provisioning_request: ProvisioningRequest = Body(...)) -> ProvisioningResponse:
+async def provision(request: Request, provisioning_request: ProvisioningRequest = Body(...)) -> ProvisioningResponse:
     """
     Provision a device and return a short-lived bearer token.
 
@@ -162,9 +162,12 @@ async def provision(provisioning_request: ProvisioningRequest = Body(...)) -> Pr
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             detail="HTTP API is disabled for this project.")
 
+    fw_version = (request.headers.get("X-Firmware-Version") or '').strip() or None
+    fw_commit = (request.headers.get("X-Firmware-Commit") or '').strip() or None
     try:
         token = await anyio.to_thread.run_sync(
-            lambda: device_provision(project, provisioning_request.deviceName)
+            lambda: device_provision(project, provisioning_request.deviceName,
+                                     firmware_version=fw_version, firmware_commit=fw_commit)
         )
     except NotFoundError as e:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(e))
