@@ -10,6 +10,15 @@ from nicegui import ui
 
 from app.config import app_config
 from app.util import app_version
+from app.sbom import app_commit_date, app_revision
+
+# Build identity, resolved once at startup (git may fork on a source run) and
+# surfaced on /health for deployment verification and monitoring.
+_BUILD_INFO = {
+    "version": app_version(),
+    "commit": app_revision(),
+    "commit_date": app_commit_date(),
+}
 from app.api.provisioning import router as provisioning_router
 from app.api.device import router as device_router
 from app.api.file import router as file_router
@@ -106,7 +115,7 @@ async def root(request: Request):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    return {"status": "ok", **_BUILD_INFO}
 
 
 app.include_router(provisioning_router, prefix='/api', tags=['provisioning'])

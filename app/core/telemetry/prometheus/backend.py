@@ -166,7 +166,10 @@ class PrometheusBackend:
 
         payload = snappy.compress(wr.SerializeToString())
         try:
-            async with httpx.AsyncClient() as client:
+            # follow_redirects: a proxy that 308-redirects (e.g. http→https or
+            # trailing-slash normalisation) must be followed, not silently treated
+            # as success (308 < 400). 307/308 preserve the POST method and body.
+            async with httpx.AsyncClient(follow_redirects=True) as client:
                 async with asyncio.timeout(self.config.write_timeout):
                     resp = await client.post(self.config.push_url, data=payload,
                                              headers=self._write_headers())
@@ -192,11 +195,16 @@ class PrometheusBackend:
         window_s = max(1, math.ceil((end - start).total_seconds()))
         selector = (f'{{__name__=~"{re.escape(metric_prefix(self.project_name))}_.+",'
                     f'device="{device_name}"}}[{window_s}s]')
-        async with httpx.AsyncClient() as client:
+        # follow_redirects: a proxy that 308-redirects (http→https, trailing-slash
+        # normalisation) would otherwise surface as a non-200 and force the local
+        # fallback. 307/308 preserve the GET, so following is safe.
+        async with httpx.AsyncClient(follow_redirects=True) as client:
             async with asyncio.timeout(self.config.read_timeout):
                 r = await client.get(f'{self.config.pull_url}query',
                                      params={'query': selector, 'time': str(end.timestamp())},
                                      headers=self._read_headers())
         if r.status_code != 200:
-            raise RuntimeError(f"Telemetry read returned HTTP {r.status_code}: {r.text[:200]}")
+            location = r.headers.get('location', '')
+            hint = f' (unfollowed redirect → {location})' if location else ''
+            raise RuntimeError(f"Telemetry read returned HTTP {r.status_code}{hint}: {r.text[:200]}")
         return _parse_matrix(r.json(), self.project_name)

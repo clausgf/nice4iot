@@ -38,6 +38,27 @@ def app_revision() -> str | None:
         return None
 
 
+def app_commit_date() -> str | None:
+    """Committer date (ISO-8601) of the commit this build came from, or ``None``.
+
+    Prefers ``NICE4IOT_GIT_COMMIT_DATE`` baked in at build time (the GHCR image
+    sets it from the release commit, since the image has no ``.git``); otherwise
+    reads the committer date of ``HEAD`` from git in the source tree.
+    """
+    baked = os.environ.get('NICE4IOT_GIT_COMMIT_DATE')
+    if baked:
+        return baked.strip() or None
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    try:
+        out = subprocess.run(['git', '-C', root, 'show', '-s', '--format=%cI', 'HEAD'],
+                             capture_output=True, text=True, timeout=2)
+        if out.returncode != 0:
+            return None
+        return out.stdout.strip() or None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
 def package_version(name: str) -> str | None:
     """Installed version of a single distribution, or ``None`` if not installed.
 

@@ -56,6 +56,10 @@ USER iot
 # left empty for local builds, where the About page just omits the revision.
 ARG NICE4IOT_GIT_COMMIT=""
 ENV NICE4IOT_GIT_COMMIT=${NICE4IOT_GIT_COMMIT}
+# Committer date (ISO-8601) of that commit, shown next to the commit on the About
+# page and in /health. release.yml passes it; empty for local builds.
+ARG NICE4IOT_GIT_COMMIT_DATE=""
+ENV NICE4IOT_GIT_COMMIT_DATE=${NICE4IOT_GIT_COMMIT_DATE}
 
 EXPOSE 8080
 

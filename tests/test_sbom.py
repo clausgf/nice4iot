@@ -1,5 +1,5 @@
 """Unit tests for the Software Bill of Materials backend (app.sbom)."""
-from app.sbom import app_revision, collect_sbom, package_version
+from app.sbom import app_commit_date, app_revision, collect_sbom, package_version
 
 
 def test_collect_sbom_returns_sorted_name_version_pairs():
@@ -40,3 +40,22 @@ def test_app_revision_prefers_baked_env(monkeypatch):
     monkeypatch.setenv('NICE4IOT_GIT_COMMIT', 'abc1234def56789')
     # Baked value wins over any git lookup, truncated to 12 chars.
     assert app_revision() == 'abc1234def56'
+
+
+def test_app_commit_date_is_str_or_none():
+    d = app_commit_date()
+    assert d is None or isinstance(d, str)
+
+
+def test_app_commit_date_prefers_baked_env(monkeypatch):
+    monkeypatch.setenv('NICE4IOT_GIT_COMMIT_DATE', '2026-08-02T21:48:49+00:00')
+    assert app_commit_date() == '2026-08-02T21:48:49+00:00'
+
+
+def test_app_commit_date_empty_env_falls_through_to_git(monkeypatch):
+    # An empty baked value is treated as unset (falls through to git), never
+    # returned as an empty string.
+    monkeypatch.setenv('NICE4IOT_GIT_COMMIT_DATE', '')
+    result = app_commit_date()
+    assert result != ''
+    assert result is None or isinstance(result, str)

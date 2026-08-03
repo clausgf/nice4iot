@@ -147,14 +147,17 @@ async def about_subpage(args: PageArguments, nav: ui.element):
         ui.label('/').classes('text-h6 text-white opacity-50')
         ui.label('About').classes('text-h6 font-bold text-white')
 
-    from app.sbom import app_revision, collect_sbom, package_version
+    from app.sbom import app_commit_date, app_revision, collect_sbom, package_version
     packages = await anyio.to_thread.run_sync(collect_sbom)
     revision = await anyio.to_thread.run_sync(app_revision)
+    commit_date = await anyio.to_thread.run_sync(app_commit_date)
     niceview_v = await anyio.to_thread.run_sync(lambda: package_version('niceview'))
     nicepaper_v = await anyio.to_thread.run_sync(lambda: package_version('nicepaper'))
 
-    # Own version first (with the build commit when known), then key components.
-    own_version = app_version() + (f' · {revision}' if revision else '')
+    # Own version first (with the build commit and its date when known), then key
+    # components. commit_date is ISO-8601; the date part is enough here.
+    date_short = commit_date[:10] if commit_date else None
+    own_version = ' · '.join(p for p in (app_version(), revision, date_short) if p)
     highlights = [
         ('nice4iot', own_version),
         ('niceview', niceview_v),

@@ -6,6 +6,30 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-08-03
+
+### Added
+
+- **Build identity on `/health`.** `GET /health` now returns `version`, `commit`,
+  and `commit_date` alongside `status` — for deployment verification and
+  monitoring. The About page also shows the commit date next to the commit, and
+  the GHCR image bakes it in via `NICE4IOT_GIT_COMMIT_DATE`.
+
+### Changed
+
+- **Deploy:** the bundled (commented) Watchtower service now uses the maintained
+  `ghcr.io/nicholas-fedor/watchtower` fork; the original `containrrr/watchtower`
+  is unmaintained and a modern Docker daemon rejects its old client ("client
+  version 1.25 is too old").
+
+### Fixed
+
+- **Telemetry read/write now follow HTTP redirects.** A Prometheus/VictoriaMetrics
+  endpoint behind a proxy that 308-redirects (e.g. http→https or trailing-slash
+  normalisation) caused reads to fall back to the local store and writes to be
+  silently dropped (308 < 400 read as success). Both paths now use
+  `follow_redirects=True` (307/308 preserve method and body).
+
 ## [0.15.0] - 2026-08-02
 
 ### Added
