@@ -18,9 +18,13 @@ data/projects/
     ├── .telemetry.json         # Telemetry backend config
     ├── .logging.json           # Logging backend config
     ├── .forwards.json          # Named HTTP forwarding rules
+    ├── .firmware.json          # Firmware source (GitHub repo) for project-wide firmware.bin
+    ├── .firmware.state.json    # Last firmware pull: tag, digest, pulled_at, etag
     ├── <shared_file>           # Project-wide fallback files served to devices
     └── <device_name>/
         ├── .device.json        # Device settings (autosave, optimistic-locked)
+        ├── .firmware.json          # Optional per-device firmware source (overrides project)
+        ├── .firmware.state.json    # Last firmware pull for this device
         ├── .runtime.json       # device-reported runtime state: last_seen_at (written on
         │                       # every API auth) + firmware_version/commit (reported via
         │                       # X-Firmware-* headers). Kept separate so device.json is only

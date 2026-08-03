@@ -6,6 +6,23 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-08-03
+
+### Added
+
+- **Firmware pull from GitHub Releases.** The project/device **Files** tab gains a
+  **Firmware source** card: point a project (or device) at a *public* GitHub repo
+  and pull a release asset (default `firmware.bin`) into that directory —
+  manually (*Pull now*) or automatically (opt-in per-source background loop with a
+  configurable interval, 5-minute floor, conditional ETag polling). Channels:
+  `stable` / `prerelease` / `pinned` tag. The download is streamed with a 64 MiB
+  cap and, when GitHub supplies the asset `digest`, SHA-256-verified before an
+  atomic write; state is recorded in `.firmware.state.json`. No credentials are
+  ever sent (public repos only); `repo` is `owner/name` (no URLs → no SSRF).
+  Optional MQTT force-publish on pull for device-level sources. The device API is
+  unchanged — devices keep fetching the file via `GET /api/file`. See
+  [docs/firmware-releases.md](docs/firmware-releases.md).
+
 ## [0.15.1] - 2026-08-03
 
 ### Added

@@ -1,12 +1,12 @@
 # Firmware from GitHub Releases
 
-Status: the **firmware pull** from GitHub (most of this document) is **design,
-not yet implemented**; the **[running-version reporting](#reporting-the-running-version)**
-at the end is **implemented**. This documents a planned extension of the
-**Files** panel — per project (and per device) a public GitHub repository can be
-configured as a firmware source, and a release asset (default `firmware.bin`)
-pulled into the file store, manually or on a schedule — plus the shipped
-mechanism by which devices report the version they run.
+Status: **implemented.** Per project (and per device) a public GitHub repository
+can be configured as a firmware source, and a release asset (default
+`firmware.bin`) pulled into the file store, manually or on a schedule. This also
+documents the companion mechanism by which devices
+[report the version they run](#reporting-the-running-version). Implementation:
+`app/core/firmware/` (backend + UI) and `app/core/device/files_ui.py` (card
+placement).
 
 [← Documentation index](README.md) · [Core Concepts](concepts.md) · [Architecture](architecture.md)
 
@@ -53,9 +53,12 @@ device-dir/
   firmware.bin            ← pulled asset (overrides the project default)
 ```
 
-Resolution is **device dir first, then project dir** — identical to file
-serving. A device override replaces the project config wholesale (it is not
-merged).
+Each `.firmware.json` is **independent** and drives pulls into **its own
+directory**: the project source writes `firmware.bin` into the project dir, a
+device source into that device's dir. Inheritance is not a config concern — it
+happens at *serve* time through the existing file fallback (a device's
+`firmware.bin` overrides the project's). So a device only needs its own
+`.firmware.json` when it should track a *different* source than the project.
 
 `FirmwareSource` fields (all admin-set in the UI):
 
@@ -125,9 +128,10 @@ it runs the same pull steps 1–6, so a fleet can track a channel hands-off, wit
 `publish_on_pull` notifying devices over MQTT.
 
 Rate limits: unauthenticated GitHub allows **60 requests/hour per IP**.
-Conditional requests keep steady-state polling essentially free; a sane floor is
-enforced on `auto_pull_interval_min`, and rate-limit headers are logged so a busy
-instance is diagnosable.
+Conditional requests keep steady-state polling essentially free; a **5-minute
+floor** is enforced on `auto_pull_interval_min`, and rate-limit headers are
+logged (a warning when the remaining budget drops to ≤ 5) so a busy instance is
+diagnosable. The loop ticks once a minute and honours each source's own interval.
 
 ## Security model
 
@@ -141,9 +145,9 @@ instance is diagnosable.
 - **No SSRF.** Only `owner/repo` is accepted (regex-validated), never a URL.
   Requests are pinned to `api.github.com`; the asset download follows the
   redirect only to GitHub's own asset host, with a bounded redirect count.
-- **Bounded download.** The asset is streamed with a hard size cap (separate
-  from, and larger than, the 10 MiB UI-upload cap, since firmware images can be
-  bigger); the cap aborts the stream mid-flight.
+- **Bounded download.** The asset is streamed with a hard **64 MiB** cap
+  (separate from, and larger than, the 10 MiB UI-upload cap, since firmware
+  images can be bigger); the cap aborts the stream mid-flight.
 - **Integrity.** When GitHub provides the asset `digest`, the download is
   verified against its SHA-256 before the atomic rename; a mismatch writes
   nothing.

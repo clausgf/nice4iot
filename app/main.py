@@ -65,6 +65,18 @@ async def _alarm_check_loop() -> None:
             _main_log.error(f"alarm_check_loop error: {e}")
 
 
+async def _firmware_auto_pull_loop() -> None:
+    """Periodically pull firmware for sources with auto-pull enabled (per-source
+    interval and conditional ETag requests keep this cheap)."""
+    while True:
+        await asyncio.sleep(60)
+        try:
+            from app.core.firmware.backend import auto_pull_tick
+            await auto_pull_tick()
+        except Exception as e:
+            _main_log.error(f"firmware_auto_pull_loop error: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Register callbacks to wire up MQTT ↔ file-backend without circular imports
@@ -80,12 +92,13 @@ async def lifespan(app: FastAPI):
     mqtt_task = asyncio.create_task(_mqtt_loop_wrapper())
     watcher_task = asyncio.create_task(file_watcher_loop())
     alarm_task = asyncio.create_task(_alarm_check_loop())
+    firmware_task = asyncio.create_task(_firmware_auto_pull_loop())
 
     yield
 
-    for task in (mqtt_task, watcher_task, alarm_task):
+    for task in (mqtt_task, watcher_task, alarm_task, firmware_task):
         task.cancel()
-    for task in (mqtt_task, watcher_task, alarm_task):
+    for task in (mqtt_task, watcher_task, alarm_task, firmware_task):
         try:
             await task
         except asyncio.CancelledError:

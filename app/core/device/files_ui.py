@@ -760,6 +760,7 @@ _PROJECT_DESC = ('Shared files in the project directory. '
 
 def device_files_panel(project_name: str, device_name: str) -> None:
     """Content of the device Files tab (device files + project-file fallback)."""
+    from app.core.firmware.ui import firmware_source_card
     from app.core.project.backend import get_project
     try:
         mqtt_enabled = get_project(project_name, check_active=False).is_mqtt_enabled
@@ -767,21 +768,42 @@ def device_files_panel(project_name: str, device_name: str) -> None:
         mqtt_enabled = False
     # Both cards publish to this device when MQTT is on.
     ctx = _Ctx(project_name, device_name, mqtt_enabled)
-    with ui.grid().classes('grid-cols-1 lg:grid-cols-2 gap-4 w-full'):
+
+    @ui.refreshable
+    def body() -> None:
         with ui.card().classes('w-full'):
-            # Device files fall back to the project dir for their schema, mirroring
-            # the data-file fallback.
-            _files_card(get_device_path(project_name, device_name),
-                        title='Device Files', description=_DEVICE_DESC, ctx=ctx,
-                        schema_fallback_dir=get_project_dir(project_name))
-        with ui.card().classes('w-full'):
-            _files_card(get_project_dir(project_name),
-                        title='Project Files', description=_PROJECT_DESC, ctx=ctx)
+            # Device-level firmware source: pulls into the device dir (overrides project).
+            firmware_source_card(get_device_path(project_name, device_name),
+                                 project_name=project_name, device_name=device_name,
+                                 refresh_files=body.refresh)
+        with ui.grid().classes('grid-cols-1 lg:grid-cols-2 gap-4 w-full'):
+            with ui.card().classes('w-full'):
+                # Device files fall back to the project dir for their schema, mirroring
+                # the data-file fallback.
+                _files_card(get_device_path(project_name, device_name),
+                            title='Device Files', description=_DEVICE_DESC, ctx=ctx,
+                            schema_fallback_dir=get_project_dir(project_name))
+            with ui.card().classes('w-full'):
+                _files_card(get_project_dir(project_name),
+                            title='Project Files', description=_PROJECT_DESC, ctx=ctx)
+
+    body()
 
 
 def project_files_panel(project_name: str) -> None:
-    """Content of the project Files tab (single card, full width)."""
-    with ui.card().classes('w-full'):
-        _files_card(get_project_dir(project_name),
-                    title='Project Files', description=_PROJECT_DESC,
-                    ctx=_Ctx(project_name, None, False))
+    """Content of the project Files tab (firmware source + files card)."""
+    from app.core.firmware.ui import firmware_source_card
+
+    @ui.refreshable
+    def body() -> None:
+        with ui.card().classes('w-full'):
+            # Project-level firmware source: pulls into the project dir (served as fallback).
+            firmware_source_card(get_project_dir(project_name),
+                                 project_name=project_name, device_name=None,
+                                 refresh_files=body.refresh)
+        with ui.card().classes('w-full'):
+            _files_card(get_project_dir(project_name),
+                        title='Project Files', description=_PROJECT_DESC,
+                        ctx=_Ctx(project_name, None, False))
+
+    body()
