@@ -6,6 +6,20 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-08-03
+
+### Added
+
+- **Data-tab explorer config is persisted per device.** The selected time window
+  and traces (colour/kind/metric) are saved to `.data_view.json` and restored on
+  the next visit.
+
+### Changed
+
+- **Removed the per-label chips from the Data tab** (0.18.1) — with many labels the
+  row became cluttered. The reported labels are still available in the local store
+  (`l{}` / `latest_labels()`); a better visualisation is under discussion.
+
 ## [0.18.1] - 2026-08-03
 
 ### Added

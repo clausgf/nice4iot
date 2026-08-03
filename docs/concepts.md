@@ -32,6 +32,7 @@ data/projects/
         ├── .tokens.json        # Device bearer token list (file-locked on write)
         ├── .device.log         # File logging backend output (rotated)
         ├── .device_metrics.jsonl  # Local telemetry ring buffer (max 2 000 lines)
+        ├── .data_view.json     # Persisted Data-tab explorer config (window + traces)
         └── <device_file>       # Device-specific files (override project defaults)
 ```
 

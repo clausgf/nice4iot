@@ -27,6 +27,19 @@ class MetricSeries:
     points: list[tuple[datetime.datetime, float]]  # ascending by timestamp
 
 
+class DataTrace(BaseModel):
+    """One trace in the Data-tab explorer: a colour plus a kind/metric selection."""
+    color: str = 'Blue'
+    kind: str | None = None
+    metric: str | None = None
+
+
+class DataView(BaseModel):
+    """Persisted Data-tab explorer configuration, per device (``.data_view.json``)."""
+    window: str = 'Last 24 h'
+    traces: list[DataTrace] = Field(default_factory=lambda: [DataTrace()])
+
+
 class TelemetryBackend(Protocol):
     async def write(self, device_name: str, values: dict, kind: str,
                     timestamp: datetime.datetime | None,

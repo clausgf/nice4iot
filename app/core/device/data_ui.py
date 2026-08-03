@@ -12,18 +12,19 @@ metric selector), pick a time window, and renders all traces on a shared
 Plotly chart. Additional traces can be added with the "+" button; existing
 ones removed with the per-row Delete button.
 
-Reported labels (firmware_version, site, …) for the selected window are shown as
-chips next to the source chip, read from the local store's ``l{}`` objects
-(see latest_labels()).
+The explorer configuration (time window + traces) is persisted per device in
+``.data_view.json`` and restored on the next visit (see read_data_view /
+save_data_view).
 """
+import asyncio
 import datetime
 
 import anyio
 import plotly.graph_objects as go
 from nicegui import ui
 
-from app.core.telemetry.backend import latest_labels, read_series
-from app.core.telemetry.models import MetricSeries
+from app.core.telemetry.backend import read_data_view, read_series, save_data_view
+from app.core.telemetry.models import DataTrace, DataView, MetricSeries
 
 import logging
 log = logging.getLogger("uvicorn")
@@ -48,10 +49,11 @@ _AUTO_REFRESH_INTERVAL = 30.0  # seconds
 
 async def device_data_panel(project_name: str, device_name: str) -> None:
     """Content of the Data tab."""
+    view = await anyio.to_thread.run_sync(lambda: read_data_view(project_name, device_name))
     with ui.card().classes('w-full'):
         with ui.expansion('Telemetry Explorer', value=True).classes('w-full').props(
                 'dense header-class="text-subtitle1 font-bold"'):
-            explorer = _DataExplorer(project_name, device_name)
+            explorer = _DataExplorer(project_name, device_name, view)
             await explorer.initialize()
 
 
@@ -64,14 +66,18 @@ class _DataExplorer:
     options). Color/metric changes only redraw the chart.
     """
 
-    def __init__(self, project_name: str, device_name: str) -> None:
+    def __init__(self, project_name: str, device_name: str,
+                 view: DataView | None = None) -> None:
         self.project_name = project_name
         self.device_name = device_name
-        self.window = 'Last 24 h'
-        self.traces: list[dict] = [{'color': 'Blue', 'kind': None, 'metric': None}]
+        # Restore the persisted config (window + traces); fall back to defaults.
+        self.window = view.window if view and view.window in _WINDOWS else 'Last 24 h'
+        self.traces: list[dict] = (
+            [t.model_dump() for t in view.traces] if view and view.traces
+            else [{'color': 'Blue', 'kind': None, 'metric': None}]
+        )
         self._series: list[MetricSeries] = []
         self._source: str = 'local'
-        self._labels: dict[str, str] = {}
         self._auto_refresh = False
 
         with ui.row().classes('w-full items-center gap-4 q-mt-xs flex-wrap'):
@@ -100,10 +106,13 @@ class _DataExplorer:
                 ui.select(_TRACE_COLORS, value=trace['color'], label='Color').props(
                     'dense outlined').classes('w-28').on_value_change(
                     lambda e, t=trace: self._on_trace_color(t, e.value))
-                ui.select(kinds, value=trace['kind'], label='Kind').props(
+                # value must be a current option or NiceGUI raises — on the first
+                # render (before data loads) a restored kind/metric may not be in
+                # the options yet; _refresh() reloads and refreshes with valid values.
+                ui.select(kinds, value=trace['kind'] if trace['kind'] in kinds else None, label='Kind').props(
                     'dense outlined').classes('w-40').on_value_change(
                     lambda e, t=trace: self._on_trace_kind(t, e.value))
-                ui.select(metrics, value=trace['metric'], label='Metric').props(
+                ui.select(metrics, value=trace['metric'] if trace['metric'] in metrics else None, label='Metric').props(
                     'dense outlined').classes('w-48').on_value_change(
                     lambda e, t=trace: self._on_trace_metric(t, e.value))
                 ui.button(icon='delete').props(
@@ -141,19 +150,21 @@ class _DataExplorer:
         if self._auto_refresh:
             await self._refresh()
 
+    def _save_view(self) -> None:
+        """Persist the current config off the event loop (fire-and-forget). Called
+        on explicit user changes; rapid successive saves are fine (last wins)."""
+        view = DataView(window=self.window,
+                        traces=[DataTrace(**t) for t in self.traces])
+        asyncio.create_task(anyio.to_thread.run_sync(
+            lambda: save_data_view(self.project_name, self.device_name, view)))
+
     # ------------------------------------------------------------------
     # Data loading (async IO)
     # ------------------------------------------------------------------
 
     async def _refresh(self, _=None) -> None:
-        since = self._since()
         self._series, self._source = await read_series(
-            self.project_name, self.device_name, since=since
-        )
-        # Labels come from the local store's l{} — available regardless of the
-        # chart's data source, and describe the data in the selected window.
-        self._labels = await anyio.to_thread.run_sync(
-            lambda: latest_labels(self.project_name, self.device_name, since=since)
+            self.project_name, self.device_name, since=self._since()
         )
         kinds = self._kinds()
         for trace in self.traces:
@@ -167,6 +178,7 @@ class _DataExplorer:
 
     async def _on_window(self, value: str) -> None:
         self.window = value
+        self._save_view()
         await self._refresh()
 
     # ------------------------------------------------------------------
@@ -175,16 +187,19 @@ class _DataExplorer:
 
     def _on_trace_color(self, trace: dict, color: str) -> None:
         trace['color'] = color
+        self._save_view()
         self._draw_chart_ui()
 
     def _on_trace_kind(self, trace: dict, kind: str | None) -> None:
         trace['kind'] = kind
         trace['metric'] = self._first_metric(kind)
+        self._save_view()
         self._traces_ui.refresh()
         self._draw_chart_ui()
 
     def _on_trace_metric(self, trace: dict, metric: str | None) -> None:
         trace['metric'] = metric
+        self._save_view()
         self._draw_chart_ui()
 
     def _add_trace(self) -> None:
@@ -193,12 +208,14 @@ class _DataExplorer:
         kinds = self._kinds()
         kind = kinds[0] if kinds else None
         self.traces.append({'color': color, 'kind': kind, 'metric': self._first_metric(kind)})
+        self._save_view()
         self._traces_ui.refresh()
         self._draw_chart_ui()
 
     def _remove_trace(self, idx: int) -> None:
         if len(self.traces) > 1:
             self.traces.pop(idx)
+        self._save_view()
         self._traces_ui.refresh()
         self._draw_chart_ui()
 
@@ -211,9 +228,6 @@ class _DataExplorer:
         with self.summary_row:
             source_label = 'local buffer' if self._source == 'local' else self._source
             ui.chip(f'Source: {source_label}').props('dense outline square').classes('text-caption')
-            for k, v in sorted(self._labels.items()):
-                ui.chip(f'{k}: {v}').props('dense outline square color=primary') \
-                    .classes('text-caption').tooltip('Reported label (target_info)')
         fig = go.Figure()
         has_data = False
 

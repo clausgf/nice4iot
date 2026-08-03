@@ -21,13 +21,15 @@ from app.core.telemetry.backend import (
     latest_labels,
     normalize_metrics,
     observed_metrics,
+    read_data_view,
     read_local_metrics,
     read_series,
     sanitize_metric_name,
+    save_data_view,
     split_metrics,
     write_telemetry,
 )
-from app.core.telemetry.models import MetricSeries
+from app.core.telemetry.models import DataTrace, DataView, MetricSeries
 from app.core.telemetry.prometheus.backend import PrometheusBackend
 from app.core.telemetry.prometheus.models import PrometheusConfig
 from app.core.telemetry.influxdb.backend import (
@@ -470,6 +472,19 @@ def test_latest_labels_empty_without_any(proj_dev):
     p, d = proj_dev
     _append_local_metrics(p, d, "system", {"t": 1.0}, _NOW)
     assert latest_labels(p, d) == {}
+
+
+def test_data_view_roundtrip_and_default(proj_dev):
+    p, d = proj_dev
+    assert read_data_view(p, d) is None
+    view = DataView(window="Last 6 h",
+                    traces=[DataTrace(color="Red", kind="system", metric="battery_V")])
+    save_data_view(p, d, view)
+    got = read_data_view(p, d)
+    assert got.window == "Last 6 h"
+    assert got.traces[0].color == "Red"
+    assert got.traces[0].kind == "system"
+    assert got.traces[0].metric == "battery_V"
 
 
 def _series_by_name(wr):

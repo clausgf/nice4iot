@@ -5,16 +5,19 @@ import re
 import time
 
 import anyio
-from niceview.dataadapter import JsonAdapter
+from niceview.dataadapter import JsonAdapter, lenient_model_load
 
 from app.config import app_config
 from app.paths import project_dir, device_dir
 from app.util import logger, is_valid_name
-from app.core.telemetry.models import INFO_METRIC_KEY, MetricSeries, TelemetryBackend, TelemetryConfig
+from app.core.telemetry.models import (
+    INFO_METRIC_KEY, DataView, MetricSeries, TelemetryBackend, TelemetryConfig,
+)
 from app.core.telemetry.prometheus.backend import PrometheusBackend
 from app.core.telemetry.influxdb.backend import InfluxLineBackend
 
 TEL_FILE = '.telemetry.json'
+DATA_VIEW_FILE = '.data_view.json'
 LOCAL_METRICS_FILE = '.device_metrics.jsonl'
 LOCAL_METRICS_MAX_LINES = 2000
 _TRIM_EVERY_N = 10  # trim JSONL only every N writes to amortise O(n) read cost
@@ -146,6 +149,25 @@ def read_local_metrics(project_name: str, device_name: str,
                 continue
         records.append(rec)
     return records
+
+
+def read_data_view(project_name: str, device_name: str) -> DataView | None:
+    """Load the persisted Data-tab explorer config, or None if none saved yet.
+    Blocking file IO — wrap with ``anyio.to_thread.run_sync`` in async callers."""
+    path = device_dir(project_name, device_name) / DATA_VIEW_FILE
+    try:
+        text = path.read_text()
+    except OSError:
+        return None
+    return lenient_model_load(DataView, text, str(path))
+
+
+def save_data_view(project_name: str, device_name: str, view: DataView) -> None:
+    """Persist the Data-tab explorer config atomically. Blocking file IO."""
+    path = device_dir(project_name, device_name) / DATA_VIEW_FILE
+    tmp = path.with_name(path.name + '.tmp')
+    tmp.write_text(view.model_dump_json(indent=2))
+    tmp.rename(path)
 
 
 def latest_labels(project_name: str, device_name: str,
