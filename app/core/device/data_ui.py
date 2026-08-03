@@ -11,13 +11,18 @@ The panel lets the user define multiple traces (each with a color, kind and
 metric selector), pick a time window, and renders all traces on a shared
 Plotly chart. Additional traces can be added with the "+" button; existing
 ones removed with the per-row Delete button.
+
+Reported labels (firmware_version, site, …) for the selected window are shown as
+chips next to the source chip, read from the local store's ``l{}`` objects
+(see latest_labels()).
 """
 import datetime
 
+import anyio
 import plotly.graph_objects as go
 from nicegui import ui
 
-from app.core.telemetry.backend import read_series
+from app.core.telemetry.backend import latest_labels, read_series
 from app.core.telemetry.models import MetricSeries
 
 import logging
@@ -66,6 +71,7 @@ class _DataExplorer:
         self.traces: list[dict] = [{'color': 'Blue', 'kind': None, 'metric': None}]
         self._series: list[MetricSeries] = []
         self._source: str = 'local'
+        self._labels: dict[str, str] = {}
         self._auto_refresh = False
 
         with ui.row().classes('w-full items-center gap-4 q-mt-xs flex-wrap'):
@@ -140,8 +146,14 @@ class _DataExplorer:
     # ------------------------------------------------------------------
 
     async def _refresh(self, _=None) -> None:
+        since = self._since()
         self._series, self._source = await read_series(
-            self.project_name, self.device_name, since=self._since()
+            self.project_name, self.device_name, since=since
+        )
+        # Labels come from the local store's l{} — available regardless of the
+        # chart's data source, and describe the data in the selected window.
+        self._labels = await anyio.to_thread.run_sync(
+            lambda: latest_labels(self.project_name, self.device_name, since=since)
         )
         kinds = self._kinds()
         for trace in self.traces:
@@ -199,6 +211,9 @@ class _DataExplorer:
         with self.summary_row:
             source_label = 'local buffer' if self._source == 'local' else self._source
             ui.chip(f'Source: {source_label}').props('dense outline square').classes('text-caption')
+            for k, v in sorted(self._labels.items()):
+                ui.chip(f'{k}: {v}').props('dense outline square color=primary') \
+                    .classes('text-caption').tooltip('Reported label (target_info)')
         fig = go.Figure()
         has_data = False
 

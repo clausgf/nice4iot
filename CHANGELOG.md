@@ -6,6 +6,16 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.18.1] - 2026-08-03
+
+### Added
+
+- **Reported labels shown in the Data tab.** The Telemetry Explorer displays the
+  labels (`firmware_version`, `site`, …) reported for the selected time window as
+  chips next to the source chip, read from the local store's `l{}` objects
+  (`latest_labels()`) — so they are shown regardless of whether the chart data
+  comes from the local buffer or a remote backend.
+
 ## [0.18.0] - 2026-08-03
 
 ### Added

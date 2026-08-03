@@ -148,6 +148,20 @@ def read_local_metrics(project_name: str, device_name: str,
     return records
 
 
+def latest_labels(project_name: str, device_name: str,
+                  since: datetime.datetime | None = None) -> dict[str, str]:
+    """Most recent value seen per label key in the local store's ``l{}`` objects.
+
+    Records are chronological, so a later record's value wins. Used by the Data
+    tab to show the labels (firmware_version, site, …) that describe the data.
+    Blocking file IO — wrap with ``anyio.to_thread.run_sync`` in async callers."""
+    labels: dict[str, str] = {}
+    for rec in read_local_metrics(project_name, device_name, since=since):
+        for k, v in rec.get('l', {}).items():
+            labels[k] = v
+    return labels
+
+
 def observed_metrics(project_name: str) -> dict[str, list[str]]:
     """Collect the metric names seen in the local store, grouped by kind.
 
