@@ -7,6 +7,12 @@ import niceview
 from app.core.telemetry.prometheus.models import PrometheusConfig
 from app.core.telemetry.influxdb.models import InfluxLineConfig
 
+# Name of the synthetic info series that carries a write's string labels, following
+# the OpenMetrics `target_info` convention: Prometheus emits `<project>_target_info`,
+# InfluxDB the measurement `<project>_target_info`. Reserved as a numeric metric key
+# (a numeric field of this name is dropped) to avoid colliding with the info series.
+INFO_METRIC_KEY = 'target_info'
+
 
 @dataclasses.dataclass
 class MetricSeries:
@@ -23,7 +29,8 @@ class MetricSeries:
 
 class TelemetryBackend(Protocol):
     async def write(self, device_name: str, values: dict, kind: str,
-                    timestamp: datetime.datetime | None) -> None: ...
+                    timestamp: datetime.datetime | None,
+                    labels: dict | None = None) -> None: ...
 
     async def read_series(self, device_name: str,
                           start: datetime.datetime,

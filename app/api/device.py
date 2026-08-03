@@ -96,19 +96,25 @@ async def post_telemetry_with_names(
     all backends: any other character (dots, dashes, spaces, ...) is replaced
     with ``_`` (e.g. ``"cpu.load-1m"`` becomes ``cpu_load_1m``).
 
-    Only numeric (float/int) leaf values are forwarded to the backend.
-    Non-numeric fields (e.g. ``"status": "ok"``) are **silently ignored**;
-    a warning is logged server-side. This allows mixed payloads without
-    failing the entire measurement batch.
+    **Numeric values** are forwarded as metrics. **String values** are treated as
+    low-cardinality **labels** (device metadata): they are *not* attached to the
+    numeric series but collected into one synthetic ``<project>_target_info`` info
+    series (value 1) carrying all labels of the write, following the OpenMetrics
+    ``target_info`` convention. This keeps the numeric series clean and churn-free
+    when a label value changes. Labels must be **slowly changing / bounded**
+    (firmware version, site, hardware revision) — never per-request values.
+    Guards: label names must be valid (``[a-zA-Z_][a-zA-Z0-9_]*``), values are
+    trimmed and capped at 64 chars, at most 8 labels per write, and ``device`` /
+    ``kind`` / ``__name__`` are protected. A **numeric** field named ``target_info``
+    is dropped (reserved for the info series). Other value types are ignored.
 
-    **Reserved metadata fields.** Two top-level string keys are recognised as
-    device metadata rather than metrics and are removed before numeric
-    processing: ``firmware_version`` and ``firmware_commit``. When present they
-    update the device's reported firmware (the same runtime state as the
-    ``X-Firmware-Version`` / ``X-Firmware-Commit`` headers), so a device may
-    report its version in the telemetry body instead of via a header::
+    Example — one numeric metric plus two labels::
 
-        {"firmware_version": "1.4.0", "temperature": 22.4, "battery_V": 3.71}
+        {"firmware_version": "1.4.0", "site": "hall2", "temperature": 22.4}
+
+    **firmware_version / firmware_commit** additionally update the device's reported
+    firmware (the same runtime state as the ``X-Firmware-*`` headers), so a device
+    may report its version in the telemetry body instead of via a header.
 
     The measurement **timestamp** is always the server arrival time (UTC).
     Devices cannot supply their own timestamp in the payload.
@@ -148,13 +154,13 @@ async def post_telemetry_with_names(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                             detail='Request body is not valid JSON')
 
-    # Reserved metadata fields: a device may report its running firmware in the
-    # telemetry body (as an alternative to the X-Firmware-Version header). These
-    # are string, not numeric — pull them out before numeric processing and route
-    # them to the runtime sidecar, exactly like the header path.
+    # firmware_version / firmware_commit in the telemetry body additionally update
+    # the device's reported firmware (runtime sidecar), like the X-Firmware-* headers.
+    # They are left in the payload so they also flow as string labels on the info
+    # series (dual purpose: nice4iot UI + Grafana).
     if isinstance(measurements, dict):
-        raw_version = measurements.pop('firmware_version', None)
-        raw_commit = measurements.pop('firmware_commit', None)
+        raw_version = measurements.get('firmware_version')
+        raw_commit = measurements.get('firmware_commit')
         fw_version = raw_version.strip() if isinstance(raw_version, str) and raw_version.strip() else None
         fw_commit = raw_commit.strip() if isinstance(raw_commit, str) and raw_commit.strip() else None
         if fw_version is not None or fw_commit is not None:

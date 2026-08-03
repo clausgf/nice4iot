@@ -6,6 +6,23 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-08-03
+
+### Added
+
+- **String telemetry fields become labels via a synthetic info series.** A device
+  may send string fields (e.g. `firmware_version`, `site`) alongside numeric
+  measurements. Instead of tagging every numeric series (which would churn on each
+  change), every write emits **one** `<project>_target_info{…} 1` series carrying
+  all of that write's labels (OpenMetrics `target_info` convention) — an
+  `<project>_target_info` measurement on InfluxDB, an `l{}` object in the local
+  JSONL record. Query with `metric * on(device) group_left(firmware_version)
+  <project>_target_info`. Guards: valid label names, values trimmed/capped at 64,
+  ≤ 8 labels/write, `device`/`kind`/`__name__` protected, and a **numeric** field
+  named `target_info` is dropped (reserved). `firmware_version`/`firmware_commit`
+  are labels **and** still update the reported-firmware runtime state. See
+  [docs/device-api.md](docs/device-api.md#string-fields-become-labels).
+
 ## [0.17.0] - 2026-08-03
 
 ### Added

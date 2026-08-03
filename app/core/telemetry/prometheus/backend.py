@@ -8,7 +8,7 @@ import asyncio
 
 import httpx
 import snappy
-from app.core.telemetry.models import MetricSeries
+from app.core.telemetry.models import INFO_METRIC_KEY, MetricSeries
 from app.core.telemetry.prometheus.models import PrometheusConfig
 from app.core.telemetry.prometheus import prom_spec_pb2, types_pb2
 from app.util import logger
@@ -131,12 +131,15 @@ class PrometheusBackend:
             headers['Authorization'] = f'Basic {credentials}'
         return headers
 
-    async def write(self, device_name: str, values: dict, kind: str = 'default',
-                    timestamp: datetime.datetime | None = None) -> None:
+    def _build_write_request(self, device_name: str, values: dict, kind: str,
+                             ts_ms: int, labels: dict) -> 'prom_spec_pb2.WriteRequest':
+        """Build the remote-write payload: one clean series per numeric metric,
+        plus (when labels are present) one synthetic ``<project>_target_info`` series
+        carrying all labels of this write, value 1. Labels are NOT attached to the
+        numeric series — that keeps them churn-free when a label value changes."""
         wr = prom_spec_pb2.WriteRequest()
         device_label = types_pb2.Label(name='device', value=device_name)
         kind_label = types_pb2.Label(name='kind', value=kind)
-        ts_ms = round(timestamp.timestamp() * 1000) if timestamp else round(time.time() * 1000)
         prefix = metric_prefix(self.project_name)
 
         for k, v in values.items():
@@ -164,6 +167,29 @@ class PrometheusBackend:
             ts.samples.append(types_pb2.Sample(timestamp=ts_ms, value=v))
             wr.timeseries.append(ts)
 
+        if labels:
+            info_name = f'{prefix}_{INFO_METRIC_KEY}'
+            meta = types_pb2.MetricMetadata()
+            meta.type = types_pb2.MetricMetadata.MetricType.GAUGE
+            meta.metric_family_name = info_name
+            wr.metadata.append(meta)
+
+            info_ts = types_pb2.TimeSeries()
+            info_ts.labels.append(types_pb2.Label(name='__name__', value=info_name))
+            info_ts.labels.append(device_label)
+            info_ts.labels.append(kind_label)
+            for lk in sorted(labels):
+                info_ts.labels.append(types_pb2.Label(name=lk, value=labels[lk]))
+            info_ts.samples.append(types_pb2.Sample(timestamp=ts_ms, value=1))
+            wr.timeseries.append(info_ts)
+
+        return wr
+
+    async def write(self, device_name: str, values: dict, kind: str = 'default',
+                    timestamp: datetime.datetime | None = None,
+                    labels: dict | None = None) -> None:
+        ts_ms = round(timestamp.timestamp() * 1000) if timestamp else round(time.time() * 1000)
+        wr = self._build_write_request(device_name, values, kind, ts_ms, labels or {})
         payload = snappy.compress(wr.SerializeToString())
         try:
             # follow_redirects: a proxy that 308-redirects (e.g. http→https or

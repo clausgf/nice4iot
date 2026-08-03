@@ -71,10 +71,36 @@ well — they are recommendations for device firmware, not enforced by the serve
   names (`supply_voltage`, `battery_voltage`) when they don't — otherwise the two
   kinds collide on one Prometheus series.
 
-**Reserved keys.** `firmware_version` and `firmware_commit` are treated as device
-metadata, not metrics: they are removed before numeric processing and update the
-device's reported firmware (equivalent to the `X-Firmware-*` headers). All other
-non-numeric values are silently ignored.
+### String fields become labels
+
+A **string** value is not a metric — it is treated as a low-cardinality **label**
+(a dimension like `firmware_version`, `site`, `hw_rev`). Instead of tagging every
+numeric series (which would churn on each change), all string labels of a write are
+collected into **one synthetic info series** per write, following the OpenMetrics
+`target_info` convention:
+
+| Backend | Numeric value → | String value → | Info carrier |
+|---|---|---|---|
+| Prometheus / VictoriaMetrics | series `<project>_<field>{device,kind}` | **label** on the info series | series `<project>_target_info{device,kind,…} 1` |
+| InfluxDB | field on measurement `<project>` | **tag** on the info point | measurement `<project>_target_info … value=1i` |
+| Local store | `v{}` in the JSONL record | key in the record's `l{}` | (kept in the same record) |
+
+Query the version alongside a metric with a label join:
+
+```promql
+myproj_temperature_celsius * on(device) group_left(firmware_version) myproj_target_info
+```
+
+**Rules and limits.** Keep labels **slowly changing / bounded** — never per-request
+values (IDs, timestamps, measurements), or you create series churn / cardinality
+blow-up. Label names must match `[a-zA-Z_][a-zA-Z0-9_]*`; values are trimmed and
+capped at 64 chars; at most 8 labels per write; `device`/`kind`/`__name__` are
+protected; a **numeric** field named `target_info` is dropped (reserved). Other
+value types are ignored.
+
+**Reserved keys.** `firmware_version` and `firmware_commit` are ordinary labels but
+additionally update the device's reported firmware (equivalent to the `X-Firmware-*`
+headers) — so they show up both in Grafana (as labels) and in the nice4iot UI.
 
 ---
 

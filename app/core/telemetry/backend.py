@@ -10,7 +10,7 @@ from niceview.dataadapter import JsonAdapter
 from app.config import app_config
 from app.paths import project_dir, device_dir
 from app.util import logger, is_valid_name
-from app.core.telemetry.models import MetricSeries, TelemetryBackend, TelemetryConfig
+from app.core.telemetry.models import INFO_METRIC_KEY, MetricSeries, TelemetryBackend, TelemetryConfig
 from app.core.telemetry.prometheus.backend import PrometheusBackend
 from app.core.telemetry.influxdb.backend import InfluxLineBackend
 
@@ -86,15 +86,23 @@ def _get_active_backend(project_name: str) -> TelemetryBackend | None:
 
 
 def _append_local_metrics(project_name: str, device_name: str, kind: str,
-                           values: dict, timestamp: datetime.datetime) -> None:
-    """Append one JSONL record to the per-device local metrics file."""
+                           values: dict, timestamp: datetime.datetime,
+                           labels: dict | None = None) -> None:
+    """Append one JSONL record to the per-device local metrics file.
+
+    The record is ``{ts, kind, v: {numeric}}`` plus an ``l: {labels}`` object when
+    the write carried string labels (kept together with the numerics — locally
+    there is no cardinality concern, so no separate info series is needed)."""
     numeric = {k: v for k, v in values.items() if isinstance(v, numbers.Number)}
     if not numeric:
         return
     path = device_dir(project_name, device_name) / LOCAL_METRICS_FILE
     if not path.parent.is_dir():
         return  # device directory not yet created via create_device()
-    record = json.dumps({'ts': timestamp.isoformat(), 'kind': kind, 'v': numeric}) + '\n'
+    record_data: dict = {'ts': timestamp.isoformat(), 'kind': kind, 'v': numeric}
+    if labels:
+        record_data['l'] = labels
+    record = json.dumps(record_data) + '\n'
     with path.open('a', encoding='utf-8') as f:
         f.write(record)
     # Trim to LOCAL_METRICS_MAX_LINES only every _TRIM_EVERY_N writes.
@@ -219,6 +227,53 @@ def normalize_metrics(values: dict) -> dict:
     return {sanitize_metric_name(k): v for k, v in flatten_metrics(values).items()}
 
 
+# ---------------------------------------------------------------------------
+# Numeric metrics vs. string labels
+# ---------------------------------------------------------------------------
+# Numeric leaves are measurements. String leaves are treated as low-cardinality
+# device metadata (labels/tags) and are NOT attached to the numeric series —
+# instead every backend emits one synthetic info series carrying all labels of a
+# write (see docs/firmware-releases.md and the telemetry data-model docs). This
+# keeps the numeric series clean and churn-free when a label value changes.
+
+LABEL_MAX_LEN = 64               # cap on a single label value (chars)
+LABEL_MAX_COUNT = 8              # cap on labels per write
+_LABEL_NAME_RE = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
+_RESERVED_LABEL_NAMES = frozenset({'__name__', 'device', 'kind'})
+
+
+def split_metrics(values: dict) -> tuple[dict, dict]:
+    """Split a normalized payload into (numeric_metrics, string_labels).
+
+    Numeric leaves become metrics; a numeric field named ``target_info`` is
+    dropped (reserved for the synthetic info series) with a warning. String
+    leaves become labels — the key must be a valid Prometheus label name and not
+    reserved (``device``/``kind``/``__name__``); the value is trimmed and capped
+    at ``LABEL_MAX_LEN``; empty values are dropped; at most ``LABEL_MAX_COUNT``
+    labels are kept (sorted, deterministic). All other value types are ignored.
+    """
+    numeric: dict = {}
+    labels: dict = {}
+    for k, v in values.items():
+        if isinstance(v, numbers.Number):  # bool is a Number too, kept as today
+            if k == INFO_METRIC_KEY:
+                logger.warning(f"Dropping numeric field '{k}': reserved for the info metric")
+                continue
+            numeric[k] = v
+        elif isinstance(v, str):
+            value = v.strip()
+            if not value:
+                continue
+            if k in _RESERVED_LABEL_NAMES or not _LABEL_NAME_RE.match(k):
+                logger.debug(f"Dropping label '{k}': reserved or invalid label name")
+                continue
+            labels[k] = value[:LABEL_MAX_LEN]
+    if len(labels) > LABEL_MAX_COUNT:
+        logger.warning(f"Too many telemetry labels ({len(labels)}); keeping {LABEL_MAX_COUNT}")
+        labels = dict(sorted(labels.items())[:LABEL_MAX_COUNT])
+    return numeric, labels
+
+
 async def write_telemetry(project_name: str, device_name: str, values: dict,
                           kind: str = 'default',
                           timestamp: datetime.datetime | None = None) -> None:
@@ -231,11 +286,12 @@ async def write_telemetry(project_name: str, device_name: str, values: dict,
     names stay flat and backend-compatible everywhere.
     """
     values = normalize_metrics(values)
+    numeric, labels = split_metrics(values)
     now = timestamp or datetime.datetime.now(datetime.timezone.utc)
     backend = _get_active_backend(project_name)
     if backend:
         try:
-            await backend.write(device_name, values, kind, now)
+            await backend.write(device_name, numeric, kind, now, labels=labels)
             from app.health import set_health
             set_health(f'{project_name}:telemetry', True)
         except Exception as e:
@@ -243,10 +299,11 @@ async def write_telemetry(project_name: str, device_name: str, values: dict,
             set_health(f'{project_name}:telemetry', False, str(e))
     # _append_local_metrics and alarm evaluation do file IO — offload to thread pool.
     await anyio.to_thread.run_sync(
-        lambda: _append_local_metrics(project_name, device_name, kind, values, now)
+        lambda: _append_local_metrics(project_name, device_name, kind, numeric, now, labels=labels)
     )
+    # Alarms evaluate numeric measurements only; labels are metadata.
     await anyio.to_thread.run_sync(
-        lambda: _evaluate_alarms(project_name, device_name, kind, values)
+        lambda: _evaluate_alarms(project_name, device_name, kind, numeric)
     )
 
 

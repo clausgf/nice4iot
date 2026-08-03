@@ -12,6 +12,9 @@ from app.core.device.backend import create_device
 from app.core.device.models import Device
 from app.core.project.backend import create_project
 from app.core.telemetry.backend import (
+    INFO_METRIC_KEY,
+    LABEL_MAX_COUNT,
+    LABEL_MAX_LEN,
     LOCAL_METRICS_MAX_LINES,
     _append_local_metrics,
     flatten_metrics,
@@ -20,9 +23,12 @@ from app.core.telemetry.backend import (
     read_local_metrics,
     read_series,
     sanitize_metric_name,
+    split_metrics,
     write_telemetry,
 )
 from app.core.telemetry.models import MetricSeries
+from app.core.telemetry.prometheus.backend import PrometheusBackend
+from app.core.telemetry.prometheus.models import PrometheusConfig
 from app.core.telemetry.influxdb.backend import (
     InfluxLineBackend,
     _escape_measurement,
@@ -393,3 +399,131 @@ def test_build_line_plain_names_unchanged():
     backend = InfluxLineBackend("proj", InfluxLineConfig())
     line = backend._build_line("dev", {"temp": 22.4}, "sensors", 42)
     assert line == "proj,device=dev,kind=sensors temp=22.4 42"
+
+
+# ---------------------------------------------------------------------------
+# split_metrics — numeric vs. string labels
+# ---------------------------------------------------------------------------
+
+def test_split_numeric_and_labels():
+    num, lab = split_metrics({"temp": 22.4, "count": 3, "site": "hall2", "firmware_version": "1.4.0"})
+    assert num == {"temp": 22.4, "count": 3}
+    assert lab == {"site": "hall2", "firmware_version": "1.4.0"}
+
+
+def test_split_drops_reserved_info_numeric():
+    num, lab = split_metrics({INFO_METRIC_KEY: 1, "temp": 1.0})
+    assert INFO_METRIC_KEY not in num
+    assert num == {"temp": 1.0}
+
+
+def test_split_drops_reserved_and_invalid_label_names():
+    num, lab = split_metrics({"device": "x", "kind": "y", "__name__": "z", "1bad": "v", "good": "v"})
+    assert lab == {"good": "v"}       # device/kind/__name__ reserved; 1bad is an invalid label name
+    assert num == {}
+
+
+def test_split_caps_value_length_and_trims():
+    num, lab = split_metrics({"v": "  " + "x" * (LABEL_MAX_LEN + 10) + "  "})
+    assert lab["v"] == "x" * LABEL_MAX_LEN
+
+
+def test_split_caps_label_count():
+    payload = {f"l{i}": "v" for i in range(LABEL_MAX_COUNT + 5)}
+    _num, lab = split_metrics(payload)
+    assert len(lab) == LABEL_MAX_COUNT
+
+
+def test_split_empty_string_dropped():
+    _num, lab = split_metrics({"a": "   ", "b": "x"})
+    assert lab == {"b": "x"}
+
+
+# ---------------------------------------------------------------------------
+# labels in the local store, the Prometheus info series, the Influx info line
+# ---------------------------------------------------------------------------
+
+def test_append_stores_labels_in_l(proj_dev):
+    p, d = proj_dev
+    _append_local_metrics(p, d, "sensors", {"temp": 22.4}, _NOW, labels={"site": "hall2"})
+    rec = read_local_metrics(p, d)[0]
+    assert rec["v"] == {"temp": 22.4}
+    assert rec["l"] == {"site": "hall2"}
+
+
+def test_append_without_labels_omits_l(proj_dev):
+    p, d = proj_dev
+    _append_local_metrics(p, d, "sensors", {"temp": 1.0}, _NOW)
+    assert "l" not in read_local_metrics(p, d)[0]
+
+
+def _series_by_name(wr):
+    def _name(ts):
+        return next(lbl.value for lbl in ts.labels if lbl.name == "__name__")
+    return {_name(ts): ts for ts in wr.timeseries}
+
+
+def _labels_of(ts):
+    return {lbl.name: lbl.value for lbl in ts.labels}
+
+
+def test_prometheus_emits_clean_numeric_and_info_series():
+    be = PrometheusBackend("myproj", PrometheusConfig())
+    wr = be._build_write_request(
+        "dev1", {"temp": 22.4}, "system", 1000,
+        {"firmware_version": "1.4.0", "site": "hall2"},
+    )
+    prefix = metric_prefix("myproj")
+    series = _series_by_name(wr)
+    assert f"{prefix}_temp" in series
+    assert f"{prefix}_{INFO_METRIC_KEY}" in series
+    # numeric series stays clean — no label churn
+    num_labels = _labels_of(series[f"{prefix}_temp"])
+    assert "firmware_version" not in num_labels and "site" not in num_labels
+    assert num_labels["device"] == "dev1" and num_labels["kind"] == "system"
+    # info series carries all labels, value 1
+    info = series[f"{prefix}_{INFO_METRIC_KEY}"]
+    info_labels = _labels_of(info)
+    assert info_labels["firmware_version"] == "1.4.0"
+    assert info_labels["site"] == "hall2"
+    assert info.samples[0].value == 1
+
+
+def test_prometheus_no_info_series_without_labels():
+    be = PrometheusBackend("myproj", PrometheusConfig())
+    wr = be._build_write_request("dev1", {"temp": 1.0}, "system", 1000, {})
+    prefix = metric_prefix("myproj")
+    assert f"{prefix}_{INFO_METRIC_KEY}" not in _series_by_name(wr)
+
+
+def test_influx_info_line():
+    be = InfluxLineBackend("myproj", InfluxLineConfig())
+    line = be._build_info_line("dev1", {"firmware_version": "1.4.0", "site": "hall2"}, "system", 1234)
+    assert line.startswith(f"myproj_{INFO_METRIC_KEY},")
+    assert "device=dev1" in line and "kind=system" in line
+    assert "firmware_version=1.4.0" in line and "site=hall2" in line
+    assert line.endswith("value=1i 1234")
+
+
+def test_influx_no_info_line_without_labels():
+    be = InfluxLineBackend("myproj", InfluxLineConfig())
+    assert be._build_info_line("dev1", {}, "system", 1) is None
+
+
+def test_write_telemetry_splits_and_passes_labels_to_backend(proj_dev, monkeypatch):
+    """write_telemetry sends only numerics as metrics and the string fields as labels."""
+    p, d = proj_dev
+    captured: dict = {}
+
+    class _FakeBackend:
+        async def write(self, device_name, values, kind, timestamp, labels=None):
+            captured['values'] = values
+            captured['labels'] = labels
+
+        async def read_series(self, *a, **k):
+            return []
+
+    monkeypatch.setattr(telemetry_backend, '_get_active_backend', lambda pn: _FakeBackend())
+    asyncio.run(write_telemetry(p, d, {"temp": 22.4, "site": "hall2"}, kind="sensors"))
+    assert captured['values'] == {"temp": 22.4}
+    assert captured['labels'] == {"site": "hall2"}

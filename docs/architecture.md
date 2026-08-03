@@ -130,6 +130,18 @@ and `weatherstation,device=sensor_garden,kind=sensors temperature=22.4,humidity=
 in InfluxDB. `device` and `kind` are always *dimensions* (labels/tags); `field`
 is always the measured quantity; a `_total` suffix marks a Prometheus counter.
 
+**String fields are labels, carried by a synthetic info series.** A device may
+also send *string* fields (`firmware_version`, `site`, …). Rather than attach
+these as labels to every numeric series — which would rotate all of them on each
+change — every write emits **one** synthetic `<project>_target_info{…} 1` series
+(OpenMetrics `target_info` convention; an InfluxDB `<project>_target_info`
+measurement; an `l{}` object in the local record) that carries all of that write's
+labels. Numeric series stay clean and churn-free; a label is joined back at query
+time with `* on(device) group_left(<label>) <project>_target_info`. Labels must be
+low-cardinality and slowly changing (bounded name/value, ≤ 8 per write); a numeric
+field named `target_info` is reserved and dropped. See
+[Device API → String fields become labels](device-api.md#string-fields-become-labels).
+
 **project is the namespace, not a label — a deliberate trade-off.** Idiomatic
 Prometheus would make `project` a label (`iot_temperature{project="…"}`) to allow
 cross-project aggregation. We instead bake it into the metric name / measurement:

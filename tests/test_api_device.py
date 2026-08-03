@@ -192,8 +192,26 @@ def test_telemetry_body_firmware_updates_runtime(client, provisioned):
     records = read_local_metrics(provisioned['project_name'], provisioned['device_name'])
     keys = {k for r in records for k in r['v'].keys()}
     assert 'battery_V' in keys                  # numeric field still stored
-    assert 'firmware_version' not in keys        # reserved field is not a metric
+    assert 'firmware_version' not in keys        # string field is a label, not a metric
     assert 'firmware_commit' not in keys
+    # ...and it is stored as a label in the record's `l` object
+    labels = {k: v for r in records for k, v in r.get('l', {}).items()}
+    assert labels.get('firmware_version') == '2.5.0'
+    assert labels.get('firmware_commit') == 'abc123'
+
+
+def test_telemetry_body_string_becomes_label(client, provisioned):
+    """Any string field (not just firmware_*) becomes a label in the local store."""
+    from app.core.telemetry.backend import read_local_metrics
+    resp = client.post(
+        f"/api/telemetry/{provisioned['project_name']}/{provisioned['device_name']}/sensors",
+        headers={"Authorization": f"bearer {provisioned['device_token']}"},
+        json={"site": "hall2", "temperature": 21.5},
+    )
+    assert resp.status_code == 200
+    rec = read_local_metrics(provisioned['project_name'], provisioned['device_name'])[0]
+    assert rec['v'] == {"temperature": 21.5}
+    assert rec['l'] == {"site": "hall2"}
 
 
 def test_telemetry_invalid_kind_rejected(client, provisioned):

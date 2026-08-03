@@ -5,6 +5,7 @@ import time
 import httpx
 import asyncio
 
+from app.core.telemetry.models import INFO_METRIC_KEY
 from app.core.telemetry.influxdb.models import InfluxLineConfig
 from app.util import logger
 
@@ -87,16 +88,29 @@ class InfluxLineBackend:
         tags = f'device={_escape_tag(device_name)},kind={_escape_tag(kind)}'
         return f'{measurement},{tags} {",".join(fields)} {timestamp_ns}'
 
+    def _build_info_line(self, device_name: str, labels: dict, kind: str, timestamp_ns: int) -> str | None:
+        """Line for the synthetic info point: measurement ``<project>_target_info``,
+        the write's string labels as tags, a constant ``value=1i`` field."""
+        if not labels:
+            return None
+        measurement = f'{_escape_measurement(self.project_name)}_{INFO_METRIC_KEY}'
+        tag_parts = [f'device={_escape_tag(device_name)}', f'kind={_escape_tag(kind)}']
+        tag_parts += [f'{_escape_tag(lk)}={_escape_tag(labels[lk])}' for lk in sorted(labels)]
+        return f'{measurement},{",".join(tag_parts)} value=1i {timestamp_ns}'
+
     async def write(self, device_name: str, values: dict, kind: str = 'default',
-                    timestamp: datetime.datetime | None = None) -> None:
+                    timestamp: datetime.datetime | None = None,
+                    labels: dict | None = None) -> None:
         timestamp_ns = int(timestamp.timestamp() * 1e9) if timestamp else time.time_ns()
-        line = self._build_line(device_name, values, kind, timestamp_ns)
-        if not line:
+        lines = [self._build_line(device_name, values, kind, timestamp_ns),
+                 self._build_info_line(device_name, labels or {}, kind, timestamp_ns)]
+        body = '\n'.join(line for line in lines if line)
+        if not body:
             return
         try:
             async with httpx.AsyncClient() as client:
                 async with asyncio.timeout(self.config.timeout):
-                    resp = await client.post(self._build_url(), content=line.encode(),
+                    resp = await client.post(self._build_url(), content=body.encode(),
                                              headers=self._build_headers())
             if resp.status_code >= 400:
                 raise RuntimeError(f"InfluxDB returned HTTP {resp.status_code}: {resp.text[:200]}")
