@@ -12,6 +12,7 @@ from app.core.firmware.backend import (
     _pick_asset,
     _should_pull,
     _validate_repo,
+    github_release_url,
     load_firmware_source,
     load_firmware_state,
     save_firmware_state,
@@ -66,6 +67,19 @@ def test_validate_repo_helper():
     assert _validate_repo(' owner/name ') == 'owner/name'
     with pytest.raises(FirmwareError):
         _validate_repo('not-a-repo')
+
+
+def test_github_release_url():
+    assert github_release_url(FirmwareSource(repo='')) == ''
+    assert github_release_url(FirmwareSource(repo='a/b', channel='stable')) == \
+        'https://github.com/a/b/releases/latest'
+    assert github_release_url(FirmwareSource(repo='a/b', channel='prerelease')) == \
+        'https://github.com/a/b/releases'
+    assert github_release_url(FirmwareSource(repo='a/b', channel='pinned', pinned_tag='v1.2')) == \
+        'https://github.com/a/b/releases/tag/v1.2'
+    # pinned without a tag falls back to the releases list
+    assert github_release_url(FirmwareSource(repo='a/b', channel='pinned')) == \
+        'https://github.com/a/b/releases'
 
 
 # ---------------------------------------------------------------------------

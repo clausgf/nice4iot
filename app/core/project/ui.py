@@ -12,6 +12,8 @@ from app.core.logging.ui import LoggingCard
 from app.core.telemetry.ui import TelemetryCard
 from app.core.forwarding.ui import ForwardingCard
 from app.core.device.files_ui import project_files_panel
+from app.core.firmware.ui import firmware_source_card
+from app.paths import project_dir
 from app.mqtt.ui import MqttStatusCard
 from app.core.file.ui import FileConfigCard
 from app.routes import device_url, project_url, projects_url
@@ -233,6 +235,10 @@ async def general_panel(project_id: str):
         with ui.card().classes('w-full dense'):
             with config_expansion('Files'):
                 FileConfigCard(project_id)
+        with ui.card().classes('w-full dense'):
+            with config_expansion('Firmware'):
+                firmware_source_card(project_dir(project_id),
+                                     project_name=project_id, device_name=None)
         with ui.card().classes('w-full dense'):
             with config_expansion('Alarms'):
                 await AlarmConfigCard(project_id)

@@ -6,6 +6,15 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-08-03
+
+### Changed
+
+- **Firmware source card moved to the General tab.** It is now a foldable
+  configuration card (matching Forwarding/Telemetry/Logging/Files) instead of
+  living on the Files tab, shows the resolved GitHub Releases URL as a link, and
+  no longer renders the internal `updated_at` timestamp.
+
 ## [0.16.0] - 2026-08-03
 
 ### Added

@@ -5,8 +5,8 @@ can be configured as a firmware source, and a release asset (default
 `firmware.bin`) pulled into the file store, manually or on a schedule. This also
 documents the companion mechanism by which devices
 [report the version they run](#reporting-the-running-version). Implementation:
-`app/core/firmware/` (backend + UI) and `app/core/device/files_ui.py` (card
-placement).
+`app/core/firmware/` (backend + UI); the card is placed on the General tab by
+`app/core/project/ui.py` and `app/core/device/ui.py`.
 
 [← Documentation index](README.md) · [Core Concepts](concepts.md) · [Architecture](architecture.md)
 
@@ -14,10 +14,12 @@ placement).
 
 ## Scope
 
-The **Files** tabs (`app/core/device/files_ui.py`) gain a small **Firmware
-source** card that lets an operator point a project or device at a public GitHub
-repo and pull a release asset into the corresponding directory. The pulled file
-is an ordinary file in the store from that point on.
+The project/device **General** tab gains a foldable **Firmware** card
+(alongside Forwarding, Telemetry, Logging, Files, …) that lets an operator point
+a project or device at a public GitHub repo and pull a release asset into the
+corresponding directory. The pulled file is an ordinary file in the store from
+that point on — visible on the Files tab like any other. The card shows the
+resolved GitHub Releases URL as a link and the last-pulled tag.
 
 **The device API does not change.** Devices keep fetching `firmware.bin` via
 `GET /api/file/{project}/{device}/{filename}` with the existing device→project

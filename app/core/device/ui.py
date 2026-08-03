@@ -12,6 +12,8 @@ from app.core.device.backend import (
     is_device_online, rename_device,
 )
 from app.core.device.files_ui import device_files_panel
+from app.core.firmware.ui import firmware_source_card
+from app.paths import device_dir
 from app.core.device.data_ui import device_data_panel
 from app.core.device.logs_ui import device_logs_panel
 from app.core.project.backend import get_project
@@ -186,6 +188,12 @@ async def device_general_panel(project_name: str, device_name: str) -> None:
             _device_general_card(project_name, device_name)
         with ui.card().classes('w-full'):
             _device_tokens_card(project_name, device_name)
+        with ui.card().classes('w-full'):
+            with config_expansion('Firmware', level='subtitle1'):
+                # Device-level firmware source pulls into the device dir (overrides
+                # the project copy via the normal file-serving fallback).
+                firmware_source_card(device_dir(project_name, device_name),
+                                     project_name=project_name, device_name=device_name)
         for title, render_fn in await anyio.to_thread.run_sync(lambda: get_device_general_cards(project_name)):
             with ui.card().classes('w-full'):
                 # Match the device page's built-in expansions (subtitle1), not the

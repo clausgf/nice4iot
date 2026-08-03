@@ -115,6 +115,21 @@ class PullResult:
     message: str
 
 
+def github_release_url(src: FirmwareSource) -> str:
+    """Human-facing GitHub Releases URL the current config resolves to, for display
+    in the UI. Empty when no repo is configured."""
+    repo = src.repo.strip()
+    if not repo:
+        return ''
+    base = f'https://github.com/{repo}/releases'
+    if src.channel == 'pinned':
+        tag = src.pinned_tag.strip()
+        return f'{base}/tag/{tag}' if tag else base
+    if src.channel == 'stable':
+        return f'{base}/latest'
+    return base  # prerelease → the releases list
+
+
 def _validate_repo(repo: str) -> str:
     repo = repo.strip()
     if not REPO_RE.match(repo):
