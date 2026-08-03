@@ -101,6 +101,15 @@ async def post_telemetry_with_names(
     a warning is logged server-side. This allows mixed payloads without
     failing the entire measurement batch.
 
+    **Reserved metadata fields.** Two top-level string keys are recognised as
+    device metadata rather than metrics and are removed before numeric
+    processing: ``firmware_version`` and ``firmware_commit``. When present they
+    update the device's reported firmware (the same runtime state as the
+    ``X-Firmware-Version`` / ``X-Firmware-Commit`` headers), so a device may
+    report its version in the telemetry body instead of via a header::
+
+        {"firmware_version": "1.4.0", "temperature": 22.4, "battery_V": 3.71}
+
     The measurement **timestamp** is always the server arrival time (UTC).
     Devices cannot supply their own timestamp in the payload.
 
@@ -138,6 +147,22 @@ async def post_telemetry_with_names(
     except json.JSONDecodeError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                             detail='Request body is not valid JSON')
+
+    # Reserved metadata fields: a device may report its running firmware in the
+    # telemetry body (as an alternative to the X-Firmware-Version header). These
+    # are string, not numeric — pull them out before numeric processing and route
+    # them to the runtime sidecar, exactly like the header path.
+    if isinstance(measurements, dict):
+        raw_version = measurements.pop('firmware_version', None)
+        raw_commit = measurements.pop('firmware_commit', None)
+        fw_version = raw_version.strip() if isinstance(raw_version, str) and raw_version.strip() else None
+        fw_commit = raw_commit.strip() if isinstance(raw_commit, str) and raw_commit.strip() else None
+        if fw_version is not None or fw_commit is not None:
+            from app.core.device.backend import write_runtime
+            await anyio.to_thread.run_sync(
+                lambda: write_runtime(project_name, device_name,
+                                      firmware_version=fw_version, firmware_commit=fw_commit))
+
     await write_telemetry(project_name, device_name, values=measurements, kind=kind)
     return Response(status_code=200)
 

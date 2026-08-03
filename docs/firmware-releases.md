@@ -171,10 +171,13 @@ it self-reports; the server never guesses.
 
 - **Transport.** On any authenticated device API request — and at
   `POST /api/provision` — the device sends the running version in an
-  `X-Firmware-Version` header (plus an optional `X-Firmware-Commit`). Reporting
+  `X-Firmware-Version` header (plus an optional `X-Firmware-Commit`).
+  Equivalently, it may report the same values as the reserved `firmware_version` /
+  `firmware_commit` string keys **in the telemetry body** (pulled out before
+  numeric processing) — handy when a JSON field is easier than a header. Reporting
   on every request keeps the value fresh; reporting at provisioning guarantees a
-  known value at least at each token refresh even if the header is otherwise
-  omitted. See [Device API → Reporting firmware version](device-api.md#reporting-firmware-version-optional).
+  known value at least at each token refresh even if omitted elsewhere. See
+  [Device API → Reporting firmware version](device-api.md#reporting-firmware-version-optional).
 - **Storage.** The value is captured server-side at the same point that updates
   `last_seen_at`, and written to a per-device `.runtime.json` sidecar — **not**
   `device.json`, which is managed by the UI's optimistic-locked autosave adapter

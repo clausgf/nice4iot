@@ -6,6 +6,16 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-08-03
+
+### Added
+
+- **Firmware version in the telemetry body.** `POST /api/telemetry` now recognises
+  the reserved string keys `firmware_version` and `firmware_commit` as device
+  metadata (removed before numeric processing) and routes them to the same runtime
+  state as the `X-Firmware-*` headers — so a device may report its version in the
+  telemetry body instead of via a header. Body wins if both are present.
+
 ## [0.16.1] - 2026-08-03
 
 ### Changed

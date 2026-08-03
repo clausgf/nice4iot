@@ -173,6 +173,29 @@ def test_telemetry_accepted_writes_local_metrics(client, provisioned):
     assert set(records[0]['v'].keys()) == set(TELEMETRY_PAYLOAD.keys())
 
 
+def test_telemetry_body_firmware_updates_runtime(client, provisioned):
+    """A firmware_version/commit in the telemetry body updates the runtime sidecar
+    and is not treated as a metric."""
+    from app.core.device.backend import read_runtime
+    from app.core.telemetry.backend import read_local_metrics
+    resp = client.post(
+        f"/api/telemetry/{provisioned['project_name']}/{provisioned['device_name']}/system",
+        headers={"Authorization": f"bearer {provisioned['device_token']}"},
+        json={"firmware_version": " 2.5.0 ", "firmware_commit": "abc123", "battery_V": 3.7},
+    )
+    assert resp.status_code == 200
+
+    rt = read_runtime(provisioned['project_name'], provisioned['device_name'])
+    assert rt.firmware_version == "2.5.0"       # trimmed
+    assert rt.firmware_commit == "abc123"
+
+    records = read_local_metrics(provisioned['project_name'], provisioned['device_name'])
+    keys = {k for r in records for k in r['v'].keys()}
+    assert 'battery_V' in keys                  # numeric field still stored
+    assert 'firmware_version' not in keys        # reserved field is not a metric
+    assert 'firmware_commit' not in keys
+
+
 def test_telemetry_invalid_kind_rejected(client, provisioned):
     """Kind must be a valid filename — path traversal characters are rejected."""
     resp = client.post(

@@ -36,6 +36,12 @@ server stores the latest value per device (capped at 64 characters, whitespace
 trimmed) and shows it in the management UI (Device Dashboard, Devices table). The
 value is *reported*, not verified — it reflects what the device claims to run.
 
+Alternatively, a device may report the same values **in the telemetry body** as
+the reserved string keys `firmware_version` / `firmware_commit` (see
+[Telemetry metric names](#telemetry-metric-names)) — useful when adding a JSON
+field is easier than a custom header. Body and header are equivalent; if both are
+present on one request, the body value wins.
+
 Reporting on **every** request keeps the shown version fresh; reporting **at
 provisioning** guarantees a known value at least at each token refresh. Bake the
 version into the firmware image at build time so it can be reported (see
@@ -64,6 +70,11 @@ well — they are recommendations for device firmware, not enforced by the serve
   under `kind=battery`, both must mean the same measured quantity. Use distinct
   names (`supply_voltage`, `battery_voltage`) when they don't — otherwise the two
   kinds collide on one Prometheus series.
+
+**Reserved keys.** `firmware_version` and `firmware_commit` are treated as device
+metadata, not metrics: they are removed before numeric processing and update the
+device's reported firmware (equivalent to the `X-Firmware-*` headers). All other
+non-numeric values are silently ignored.
 
 ---
 
