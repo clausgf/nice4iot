@@ -6,6 +6,8 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-08-04
+
 ### Added
 
 - **Firmware and Forwarding health tracking.** `pull_firmware()` and `forward()`

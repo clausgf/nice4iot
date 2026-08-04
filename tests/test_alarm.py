@@ -28,7 +28,6 @@ from app.core.alarm.backend import (
     acknowledge_all_alarms,
     get_pending_alarms,
     get_alarm_count,
-    get_project_alarm_count,
     BUILTIN_DEVICE_OFFLINE,
 )
 from app.health import set_health, get_health, get_project_health
@@ -373,7 +372,7 @@ def test_get_project_alarm_count(project, device, rule):
     create_device(Device(name='sensor2', project_name=PROJECT))
     evaluate_metric_rules(PROJECT, DEVICE, 'sensors', {'temperature': 2.0})
     evaluate_metric_rules(PROJECT, 'sensor2', 'sensors', {'temperature': 2.0})
-    assert get_project_alarm_count(PROJECT) == 2
+    assert get_alarm_count(PROJECT) == 2
 
 
 # ---------------------------------------------------------------------------

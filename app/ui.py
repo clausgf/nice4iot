@@ -1,6 +1,6 @@
 """Shared NiceGUI presentation helpers used across nice4iot's own UI and by extensions."""
 from contextlib import contextmanager
-from typing import Generator, Literal
+from typing import Generator
 
 from nicegui import ui
 
@@ -40,7 +40,7 @@ def config_expansion(title: str, *, value: bool = False) -> Generator[ui.expansi
     """
     with ui.card().classes('w-full dense'):
         with ui.expansion(title, value=value).classes('w-full q-mb-none').props(
-            f'dense header-class="text-h6 font-bold"'
+            'dense header-class="text-h6 font-bold"'
         ) as expansion:
             yield expansion
 
