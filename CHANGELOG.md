@@ -6,6 +6,19 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+### Added
+
+- **Firmware and Forwarding health tracking.** `pull_firmware()` and `forward()`
+  now record outcomes via `app.health.set_health()`. The project System Health
+  card shows an aggregated Firmware row (only once a repo is configured for the
+  project or one of its devices) and one row per forwarding rule that has been
+  used at least once, alongside the existing MQTT/Telemetry/Logging rows.
+
+### Changed
+
+- `forward()` in `app.core.forwarding.backend` now requires a keyword-only
+  `project_name` argument.
+
 ## [0.20.0] - 2026-08-04
 
 ### Added
@@ -57,7 +70,7 @@ API change must be recorded. Format loosely follows
   JSONL record. Query with `metric * on(device) group_left(firmware_version)
   <project>_target_info`. Guards: valid label names, values trimmed/capped at 64,
   ≤ 8 labels/write, `device`/`kind`/`__name__` protected, and a **numeric** field
-  named `target_info` is dropped (reserved). `firmware_version`/`firmware_commit`
+  named `target_info` is dropped (reserved). `firmware_version`
   are labels **and** still update the reported-firmware runtime state. See
   [docs/device-api.md](docs/device-api.md#string-fields-become-labels).
 
@@ -66,7 +79,7 @@ API change must be recorded. Format loosely follows
 ### Added
 
 - **Firmware version in the telemetry body.** `POST /api/telemetry` now recognises
-  the reserved string keys `firmware_version` and `firmware_commit` as device
+  the reserved string keys `firmware_version` as device
   metadata (removed before numeric processing) and routes them to the same runtime
   state as the `X-Firmware-*` headers — so a device may report its version in the
   telemetry body instead of via a header. Body wins if both are present.

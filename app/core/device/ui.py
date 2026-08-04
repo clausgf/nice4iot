@@ -5,7 +5,7 @@ import anyio
 from nicegui import PageArguments, ui
 
 from app.routes import device_url, project_url
-from app.ui import config_expansion
+from app.ui import config_expansion, refresh_breadcrumbs, status_avatar
 from app.core.device.models import Device
 from app.core.device.backend import (
     create_device, delete_device, device_adapter, get_device, get_devices,
@@ -40,14 +40,7 @@ async def device_subpage(
     tab: Optional[str] = None,
 ) -> None:
     """Render the device page: header nav path + tabbed panels."""
-    nav.clear()
-    with nav:
-        ui.label('/').classes('text-h6 text-white opacity-50')
-        ui.label(project_id).classes('text-h6 cursor-pointer text-white opacity-80') \
-            .on('click', lambda: ui.navigate.to(project_url(project_id)))
-        ui.label('/').classes('text-h6 text-white opacity-50')
-        ui.label(device_id).classes('text-h6 font-bold cursor-pointer text-white') \
-            .on('click', lambda: ui.navigate.to(device_url(project_id, device_id)))
+    refresh_breadcrumbs(nav, project_id=project_id, device_id=device_id)
 
     extension_tab_defs = await anyio.to_thread.run_sync(lambda: get_device_tabs(project_id))
     with ui.tabs().classes('w-full') as tabs:
@@ -56,23 +49,20 @@ async def device_subpage(
         files_tab     = ui.tab('Files')
         data_tab      = ui.tab('Data')
         logs_tab      = ui.tab('Logs')
-        alarms_tab    = ui.tab('Alarms')
         extension_tabs = [(ui.tab(label), render_fn) for label, render_fn in extension_tab_defs]
-    tab = tab or 'Dashboard'
+    tab = tab or dashboard_tab.label
+    tabs.on_value_change(lambda e: ui.navigate.history.replace(device_url(project_id, device_id, tab=cast(str, e.value))))
     with ui.tab_panels(tabs, value=tab).classes('w-full'):
         with ui.tab_panel(dashboard_tab):
             await device_dashboard_panel(project_id, device_id)
         with ui.tab_panel(general_tab):
             await device_general_panel(project_id, device_id)
         with ui.tab_panel(files_tab):
-            device_files_panel(project_id, device_id)
+            await device_files_panel(project_id, device_id)
         with ui.tab_panel(data_tab):
             await device_data_panel(project_id, device_id)
         with ui.tab_panel(logs_tab):
-            device_logs_panel(project_id, device_id)
-        with ui.tab_panel(alarms_tab):
-            from app.core.alarm.ui import DeviceAlarmsTab
-            DeviceAlarmsTab(project_id, device_id)
+            await device_logs_panel(project_id, device_id)
         for extension_tab, render_fn in extension_tabs:
             with ui.tab_panel(extension_tab):
                 await maybe_await(render_fn(project_id, device_id))
@@ -84,7 +74,7 @@ async def device_subpage(
 
 async def device_dashboard_panel(project_name: str, device_name: str) -> None:
     """Overview cards shown on the device Dashboard tab (auto-refreshes every 10 s)."""
-    from app.core.alarm.ui import DeviceAlarmPanel
+    from app.core.alarm.ui import dashboard_alarms_card
 
     @ui.refreshable
     async def _content() -> None:
@@ -93,15 +83,16 @@ async def device_dashboard_panel(project_name: str, device_name: str) -> None:
         project = get_project(project_name, check_active=False)
         labels = await anyio.to_thread.run_sync(lambda: latest_labels(project_name, device_name))
         now = datetime.datetime.now(datetime.timezone.utc)
+
         with ui.grid().classes('grid-cols-1 sm:grid-cols-2 gap-4 w-full'):
-            _status_card(device, project_name, project.device_online_threshold_s, now, labels)
-            _provisioning_card(device)
+            await _status_card(device, project_name, project.device_online_threshold_s, now, labels)
+            await _provisioning_card(device)
             for render_fn in await anyio.to_thread.run_sync(lambda: get_device_dashboard_cards(project_name)):
                 await maybe_await(render_fn(project_name, device_name))
 
     await _content()
     ui.timer(10.0, _content.refresh)
-    DeviceAlarmPanel(project_name, device_name)
+    await dashboard_alarms_card(project_name, device_name)
 
 
 def _ago(delta: datetime.timedelta) -> str:
@@ -115,79 +106,86 @@ def _ago(delta: datetime.timedelta) -> str:
     return f'{s // 86400}d ago'
 
 
-def _status_card(device: Device, project_name: str, online_threshold_s: int,
+async def _status_card(device: Device, project_name: str, online_threshold_s: int,
                  now: datetime.datetime, labels: dict[str, str] | None = None) -> None:
-    from app.core.alarm.backend import get_device_alarm_count
+    from app.core.alarm.backend import get_alarm_count
     online = is_device_online(device, online_threshold_s)
-    alarm_count = get_device_alarm_count(project_name, device.name)
-    with ui.card().classes('w-full'):
-        with ui.row().classes('items-center w-full'):
-            ui.label('Status').classes('text-subtitle1 font-bold')
-            ui.space()
-            if alarm_count:
-                ui.chip(str(alarm_count)).props('dense color=red text-color=white icon=notifications_active') \
-                    .tooltip(f'{alarm_count} active alarm(s)')
-            color = 'green' if device.is_active else 'grey'
-            ui.chip('Active' if device.is_active else 'Inactive').props(f'dense color={color} text-color=white')
-            ui.chip('Online' if online else 'Offline').props(
-                f'dense color={"green" if online else "grey"} text-color=white'
-            )
-        # Only separate the header from the location/description block when that
-        # block has content — otherwise this separator and the one below it
-        # (before "Last seen") would stack directly on top of each other.
-        if device.location or device.description:
-            ui.separator()
-        if device.location:
-            with ui.row().classes('items-center gap-1 q-mt-xs'):
-                ui.icon('place').classes('text-grey-6 text-sm')
-                ui.label(device.location).classes('text-body2')
-        if device.description:
-            ui.label(device.description).classes('text-body2 q-mt-xs text-grey-8')
-        ui.separator().classes('q-mt-sm')
-        ui.label('Last seen').classes('text-caption text-grey-6')
-        if device.last_seen_at:
-            delta = now - device.last_seen_at
-            ui.label(f'{render_datetime(device.last_seen_at)}  ({_ago(delta)})').classes('text-body2')
-        else:
-            ui.label('Never').classes('text-body2 text-grey-6')
-        ui.label('Firmware').classes('text-caption text-grey-6 q-mt-xs')
-        if device.firmware_version:
-            fw = device.firmware_version
-            if device.firmware_commit:
-                fw += f'  ({device.firmware_commit})'
-            ui.label(fw).classes('text-body2')
-        else:
-            ui.label('Unknown').classes('text-body2 text-grey-6')
-        # Reported labels (firmware_version/commit already shown above as Firmware).
-        extra = {k: v for k, v in (labels or {}).items()
-                 if k not in ('firmware_version', 'firmware_commit')}
-        if extra:
-            ui.separator().classes('q-mt-sm')
-            ui.label('Labels').classes('text-caption text-grey-6')
-            with ui.grid().classes('grid-cols-2 gap-x-4 gap-y-0 q-mt-xs'):
+    alarm_count = get_alarm_count(project_name, device.name)
+
+    with ui.card().tight().classes('w-full'):
+        with ui.card_section().props('dense').classes('w-full'):
+            # Row 0: card name - icons for alarms, active, online
+            with ui.row().classes('w-full gap-1 items-center'):
+                ui.label('Device status').classes('text-subtitle1 font-bold')
+                ui.space()
+                if alarm_count:
+                    ui.chip(str(alarm_count)).props('dense color=negative text-color=white icon=notifications_active') \
+                        .tooltip(f'{alarm_count} active alarm(s)')
+                status_avatar(True if device.is_active else None, ['toggle_off', 'toggle_on'], 'Device')
+                status_avatar(True if online else None, ['cloud_off', 'cloud'], ['Offline', 'Online'])
+            ui.separator().classes('q-mt-xs q-mb-xs')
+
+            # Row 1: device name, tags
+            with ui.row().classes('w-full gap-0 q-mt-sm items-center'):
+                ui.label(device.name).classes('text-subtitle1 font-bold')
+                ui.space()
+                if device.tags:
+                    for tag in device.tags[:4]:
+                        ui.chip(tag).props('dense color=primary text-color=white')
+                    if len(device.tags) > 4:
+                        ui.chip(f'+{len(device.tags) - 4}').props('dense color=grey text-color=white')
+
+            # Row 2-: location, description, last seen, firmware, labels
+            if device.location:
+                with ui.row().classes('items-center gap-1 q-mt-xs'):
+                    ui.icon('place').classes('text-grey-6 text-sm')
+                    ui.label(device.location).classes('text-body2')
+            if device.description:
+                ui.label(device.description).classes('text-body2 q-mt-xs text-grey-8')
+            if device.location or device.description:
+                ui.separator().classes('q-mt-xs q-mb-xs')
+
+            with ui.grid(columns='auto 1fr').classes('grid-cols-2 gap-y-1 q-mt-sm'):
+                ui.label('Last seen').classes('text-caption text-grey-6')
+                if device.last_seen_at:
+                    delta = now - device.last_seen_at
+                    ui.label(f'{render_datetime(device.last_seen_at)}  ({_ago(delta)})').classes('text-body2')
+                else:
+                    ui.label('Never').classes('text-body2')
+                ui.label('Firmware').classes('text-caption text-grey-6')
+                if device.firmware_version:
+                    fw = device.firmware_version
+                    ui.label(fw).classes('text-body2')
+                else:
+                    ui.label('Unknown').classes('text-body2 text-grey-6')
+                # Reported labels (firmware_version already shown above).
+                extra = {k: v for k, v in (labels or {}).items()
+                        if k not in ('firmware_version')}
                 for k, v in sorted(extra.items()):
                     ui.label(k).classes('text-caption text-grey-7')
                     ui.label(v).classes('text-body2')
 
 
-def _provisioning_card(device: Device) -> None:
-    prov_color = 'green' if device.is_provisioning_approved else 'orange'
-    prov_text = 'Approved' if device.is_provisioning_approved else 'Pending'
-    with ui.card().classes('w-full'):
-        with ui.row().classes('items-center w-full'):
-            ui.label('Provisioning').classes('text-subtitle1 font-bold')
-            ui.space()
-            ui.chip(prov_text).props(f'dense color={prov_color} text-color=white')
-        ui.separator()
-        with ui.grid().classes('grid-cols-2 gap-y-1 q-mt-sm'):
-            ui.label('Last provisioned').classes('text-caption text-grey-6')
-            ui.label(render_datetime(device.last_provisioned_at)).classes('text-caption')
-            ui.label('Last request').classes('text-caption text-grey-6')
-            ui.label(render_datetime(device.last_provisioning_request_at)).classes('text-caption')
-            ui.label('Created').classes('text-caption text-grey-6')
-            ui.label(render_datetime(device.created_at)).classes('text-caption')
-            ui.label('Updated').classes('text-caption text-grey-6')
-            ui.label(render_datetime(device.updated_at)).classes('text-caption')
+async def _provisioning_card(device: Device) -> None:
+    with ui.card().tight().classes('w-full'):
+        with ui.card_section().props('dense').classes('w-full'):
+            # Row 0: card name - icons for alarms, active, online
+            with ui.row().classes('items-center w-full gap-0'):
+                ui.label('Timeline').classes('text-subtitle1 font-bold')
+                ui.space()
+                prov_color = 'positive' if device.is_provisioning_approved else 'negative'
+                prov_text = 'Provisioning approved' if device.is_provisioning_approved else 'Provisioning pending'
+                ui.chip(prov_text).props(f'dense color={prov_color} text-color=white')
+            ui.separator().classes('q-mt-xs q-mb-xs')
+            with ui.grid(columns='auto 1fr').classes('grid-cols-2 gap-y-1 q-mt-sm'):
+                ui.label('Created').classes('text-caption text-grey-6')
+                ui.label(render_datetime(device.created_at)).classes('text-body2')
+                ui.label('Updated').classes('text-caption text-grey-6')
+                ui.label(render_datetime(device.updated_at)).classes('text-body2')
+                ui.label('Last provisioned').classes('text-caption text-grey-6')
+                ui.label(render_datetime(device.last_provisioned_at)).classes('text-body2')
+                ui.label('Last provisioning request').classes('text-caption text-grey-6')
+                ui.label(render_datetime(device.last_provisioning_request_at)).classes('text-body2')
 
 
 # ***************************************************************************
@@ -197,79 +195,74 @@ def _provisioning_card(device: Device) -> None:
 async def device_general_panel(project_name: str, device_name: str) -> None:
     """Content of the General tab — device settings, tokens, danger zone."""
     with ui.grid().classes('grid-cols-1 lg:grid-cols-2 gap-4 w-full'):
-        with ui.card().classes('w-full'):
+        with config_expansion('Device'):
             _device_general_card(project_name, device_name)
-        with ui.card().classes('w-full'):
+        with config_expansion('Authentication Tokens'):
             _device_tokens_card(project_name, device_name)
-        with ui.card().classes('w-full'):
-            with config_expansion('Firmware', level='subtitle1'):
-                # Device-level firmware source pulls into the device dir (overrides
-                # the project copy via the normal file-serving fallback).
-                firmware_source_card(device_dir(project_name, device_name),
-                                     project_name=project_name, device_name=device_name)
+        with config_expansion('Firmware'):
+            # Device-level firmware source pulls into the device dir (overrides
+            # the project copy via the normal file-serving fallback).
+            await firmware_source_card(device_dir(project_name, device_name),
+                                 project_name=project_name, device_name=device_name)
         for title, render_fn in await anyio.to_thread.run_sync(lambda: get_device_general_cards(project_name)):
-            with ui.card().classes('w-full'):
-                # Match the device page's built-in expansions (subtitle1), not the
-                # config_expansion default (h6, used on the project page).
-                with config_expansion(title, level='subtitle1'):
-                    await maybe_await(render_fn(project_name, device_name))
+            # Match the device page's built-in expansions (subtitle1), not the
+            # config_expansion default (h6, used on the project page).
+            with config_expansion(title):
+                await maybe_await(render_fn(project_name, device_name))
         # Danger Zone always last, after any extension cards (matches the project page).
-        with ui.card().classes('w-full'):
+        with config_expansion('Danger Zone'):
             await _device_danger_card(project_name, device_name)
 
 
 def _device_general_card(project_name: str, device_name: str) -> None:
-    with ui.expansion('Device', value=True).classes('w-full').props('dense header-class="text-subtitle1 font-bold"'):
-        form = ModelForm.from_adapter(
-            Device,
-            device_adapter(project_name, device_name),
-            include=['name', 'description', 'location', 'tags', 'is_active', 'is_provisioning_approved'],
-            autosave=True,
-        )
-        form.render_field('name', editable=False).props('outlined dense').classes('w-full')
-        form.render_field('description').props('outlined dense hide-bottom-space').classes('w-full')
-        form.render_field('location').props('outlined dense hide-bottom-space').classes('w-full')
-        form.render_field('tags').props('outlined dense hide-bottom-space').classes('w-full')
-        with ui.row().classes('w-full gap-4 q-mt-xs'):
-            form.render_field('is_active')
-            form.render_field('is_provisioning_approved')
-        d = cast(Device, form.item)  # niceview types form.item as Any; cast enables attribute access for bind_text_from
-        ui.label().classes('text-caption text-grey-7 q-mt-xs').bind_text_from(
-            d, 'updated_at',
-            backward=lambda v: f'Created {render_datetime(d.created_at)}, updated {render_datetime(v)}'
-        )
+    form = ModelForm.from_adapter(
+        Device,
+        device_adapter(project_name, device_name),
+        include=['name', 'description', 'location', 'tags', 'is_active', 'is_provisioning_approved'],
+        autosave=True,
+    )
+    form.render_field('name', editable=False).props('outlined dense').classes('w-full')
+    form.render_field('description').props('outlined dense hide-bottom-space').classes('w-full')
+    form.render_field('location').props('outlined dense hide-bottom-space').classes('w-full')
+    form.render_field('tags').props('outlined dense hide-bottom-space').classes('w-full')
+    with ui.row().classes('w-full gap-4 q-mt-xs'):
+        form.render_field('is_active')
+        form.render_field('is_provisioning_approved')
+    d = cast(Device, form.item)  # niceview types form.item as Any; cast enables attribute access for bind_text_from
+    ui.label().classes('text-caption text-grey-7 q-mt-xs').bind_text_from(
+        d, 'updated_at',
+        backward=lambda v: f'Created {render_datetime(d.created_at)}, updated {render_datetime(v)}'
+    )
 
 
 def _device_tokens_card(project_name: str, device_name: str) -> None:
     project = get_project(project_name, check_active=False)
-    with ui.expansion('Authentication Tokens', value=True).classes('w-full').props('dense header-class="text-subtitle1 font-bold"'):
-        TokenListCard(
-            get_device_token_adapter(project_name, device_name),
-            show_name=False,
-            allow_add=True,
-            token_length=project.device_token_length,
-            expires_in=datetime.timedelta(days=project.device_tokens_expire_in),
-        )
+    TokenListCard(
+        get_device_token_adapter(project_name, device_name),
+        show_name=False,
+        allow_add=True,
+        token_length=project.device_token_length,
+        expires_in=datetime.timedelta(days=project.device_tokens_expire_in),
+    )
 
 
 async def _device_danger_card(project_name: str, device_name: str) -> None:
-    with ui.expansion('Danger Zone', value=False).classes('w-full').props('dense header-class="text-subtitle1 font-bold"'):
-        with ui.row().classes('w-full gap-4 q-mt-xs'):
-            val_rules = {
-                "Invalid name: letters, digits, underscore only; must not start with a digit.": is_valid_name
-            }
-            name_widget = ui.input(
-                label='New Device Name',
-                value=device_name,
-                validation=val_rules,
-            ).classes('grow').props('dense outlined')
-            async def _on_rename() -> None:
-                await _rename_device(project_name, device_name, name_widget.value)
-            ui.button('Rename').props('color=negative').on_click(_on_rename)
+    with ui.row().classes('w-full gap-4 q-mt-xs'):
+        val_rules = {
+            "Invalid name: letters, digits, underscore only; must not start with a digit.": is_valid_name
+        }
+        name_widget = ui.input(
+            label='New Device Name',
+            value=device_name,
+            validation=val_rules,
+        ).classes('grow').props('dense outlined')
+        async def _on_rename() -> None:
+            await _rename_device(project_name, device_name, name_widget.value)
+        ui.button('Rename').props('color=negative').on_click(_on_rename)
 
-        async def _on_delete() -> None:
-            await _delete_device(project_name, device_name)
-        ui.button('Delete Device').props('color=negative w-full').on_click(_on_delete)
+    async def _on_delete() -> None:
+        await _delete_device(project_name, device_name)
+    ui.button('Delete Device').props('color=negative w-full').on_click(_on_delete)
 
 
 async def _rename_device(project_name: str, old_name: str, new_name: str) -> None:
@@ -318,7 +311,7 @@ class ProjectDevicesTable:
     """Table of all devices in a project."""
 
     def __init__(self, project_name: str):
-        from app.core.alarm.backend import get_device_alarm_count
+        from app.core.alarm.backend import get_alarm_count
         self.project_name = project_name
         self.devices = get_devices(project_name)
 
@@ -335,7 +328,7 @@ class ProjectDevicesTable:
             {
                 'id': d.name,
                 'name': d.name,
-                'alarms': get_device_alarm_count(project_name, d.name),
+                'alarms': get_alarm_count(project_name, d.name),
                 'is_active': d.is_active,
                 'location': d.location or '',
                 'last_seen_at': render_datetime(d.last_seen_at),
@@ -377,5 +370,5 @@ class ProjectDevicesTable:
                     .props('color=primary dense') \
                     .on_click(_new_device)
         self.table.on('row-dblclick', lambda msg: (
-            ui.navigate.to(device_url(self.project_name, msg.args[1]['id'], tab='General')),
+            ui.navigate.to(device_url(self.project_name, msg.args[1]['id'])),
         ))

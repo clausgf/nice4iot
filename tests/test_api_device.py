@@ -181,23 +181,20 @@ def test_telemetry_body_firmware_updates_runtime(client, provisioned):
     resp = client.post(
         f"/api/telemetry/{provisioned['project_name']}/{provisioned['device_name']}/system",
         headers={"Authorization": f"bearer {provisioned['device_token']}"},
-        json={"firmware_version": " 2.5.0 ", "firmware_commit": "abc123", "battery_V": 3.7},
+        json={"firmware_version": " 2.5.0 ", "battery_V": 3.7},
     )
     assert resp.status_code == 200
 
     rt = read_runtime(provisioned['project_name'], provisioned['device_name'])
     assert rt.firmware_version == "2.5.0"       # trimmed
-    assert rt.firmware_commit == "abc123"
 
     records = read_local_metrics(provisioned['project_name'], provisioned['device_name'])
     keys = {k for r in records for k in r['v'].keys()}
     assert 'battery_V' in keys                  # numeric field still stored
     assert 'firmware_version' not in keys        # string field is a label, not a metric
-    assert 'firmware_commit' not in keys
     # ...and it is stored as a label in the record's `l` object
     labels = {k: v for r in records for k, v in r.get('l', {}).items()}
     assert labels.get('firmware_version') == '2.5.0'
-    assert labels.get('firmware_commit') == 'abc123'
 
 
 def test_telemetry_body_string_becomes_label(client, provisioned):

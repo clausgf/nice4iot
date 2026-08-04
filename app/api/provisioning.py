@@ -163,11 +163,10 @@ async def provision(request: Request, provisioning_request: ProvisioningRequest 
                             detail="HTTP API is disabled for this project.")
 
     fw_version = (request.headers.get("X-Firmware-Version") or '').strip() or None
-    fw_commit = (request.headers.get("X-Firmware-Commit") or '').strip() or None
     try:
         token = await anyio.to_thread.run_sync(
             lambda: device_provision(project, provisioning_request.deviceName,
-                                     firmware_version=fw_version, firmware_commit=fw_commit)
+                                     firmware_version=fw_version)
         )
     except NotFoundError as e:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(e))

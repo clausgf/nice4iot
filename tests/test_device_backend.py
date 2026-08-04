@@ -218,10 +218,9 @@ def test_last_seen_falls_back_to_device_json_during_migration(device, project):
 # ---------------------------------------------------------------------------
 
 def test_write_runtime_records_firmware(device, project):
-    write_runtime(project, device.name, firmware_version='v1.2.3', firmware_commit='abc123')
+    write_runtime(project, device.name, firmware_version='v1.2.3')
     rt = read_runtime(project, device.name)
     assert rt.firmware_version == 'v1.2.3'
-    assert rt.firmware_commit == 'abc123'
     assert rt.firmware_reported_at is not None
 
 
@@ -242,10 +241,9 @@ def test_firmware_string_is_stripped_and_capped(device, project):
 
 
 def test_get_device_populates_firmware(device, project):
-    write_runtime(project, device.name, firmware_version='v9.9', firmware_commit='deadbeef')
+    write_runtime(project, device.name, firmware_version='v9.9')
     d = get_device(project, device.name)
     assert d.firmware_version == 'v9.9'
-    assert d.firmware_commit == 'deadbeef'
     assert d.firmware_reported_at is not None
 
 
@@ -263,13 +261,11 @@ def test_auth_records_reported_firmware(provisioned):
     p = provisioned
     _, d = get_auth_project_device(
         p["project_name"], p["device_name"], p["device_token"],
-        firmware_version=' v1.4.0 ', firmware_commit='c0ffee',
+        firmware_version=' v1.4.0 ',
     )
     assert d.firmware_version == 'v1.4.0'
-    assert d.firmware_commit == 'c0ffee'
     rt = read_runtime(p["project_name"], p["device_name"])
     assert rt.firmware_version == 'v1.4.0'
-    assert rt.firmware_commit == 'c0ffee'
 
 
 def test_auth_without_firmware_preserves_previous(provisioned):

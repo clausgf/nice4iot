@@ -758,7 +758,7 @@ _PROJECT_DESC = ('Shared files in the project directory. '
                  'Served to devices as a fallback when no device-specific copy exists.')
 
 
-def device_files_panel(project_name: str, device_name: str) -> None:
+async def device_files_panel(project_name: str, device_name: str) -> None:
     """Content of the device Files tab (device files + project-file fallback)."""
     from app.core.project.backend import get_project
     try:
@@ -779,7 +779,7 @@ def device_files_panel(project_name: str, device_name: str) -> None:
                         title='Project Files', description=_PROJECT_DESC, ctx=ctx)
 
 
-def project_files_panel(project_name: str) -> None:
+async def project_files_panel(project_name: str) -> None:
     """Content of the project Files tab (single card, full width)."""
     with ui.card().classes('w-full'):
         _files_card(get_project_dir(project_name),

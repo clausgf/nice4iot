@@ -94,13 +94,6 @@ class Device(BaseModel):
             niceview.Field(editable=False)
         ] = ''
 
-    firmware_commit: Annotated[str,
-            Field(default='',
-                  description='Firmware commit/build identifier the device last reported '
-                              '(via the X-Firmware-Commit header). Optional companion to firmware_version.'),
-            niceview.Field(editable=False)
-        ] = ''
-
     firmware_reported_at: Annotated[datetime.datetime | None,
             Field(default=None,
                   description='Timestamp when the device last reported its firmware version (UTC).'),
@@ -132,5 +125,4 @@ class DeviceRuntime(BaseModel):
 
     last_seen_at: datetime.datetime | None = None
     firmware_version: str = ''
-    firmware_commit: str = ''
     firmware_reported_at: datetime.datetime | None = None

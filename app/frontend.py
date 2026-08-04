@@ -5,13 +5,16 @@ import anyio
 from nicegui import context, PageArguments, ui
 from fastapi.responses import RedirectResponse
 
-from app.core.project.ui import all_projects_subpage, preferences_subpage, project_subpage
+from app.core.project.ui import all_projects_subpage, project_subpage
 from app.core.device.ui import device_subpage
+from app.extensions import get_global_cards, maybe_await
+from app.mqtt.ui import MqttStatusCard
 from app.routes import (
     about_url, login_url, preferences_url, project_url, projects_url,
     UI_PREFIX, ROUTE_ABOUT, ROUTE_DEVICE, ROUTE_PREFERENCES, ROUTE_PROJECT, ROUTE_PROJECTS,
 )
 from app.auth import get_auth_provider, PasswordAuthProvider
+from app.ui import config_expansion
 from app.util import app_version
 
 import logging
@@ -134,6 +137,26 @@ def page_login():
         ui.button('Log in', on_click=try_login).classes('w-full')
 
 
+# ***************************************************************************
+
+async def preferences_subpage(args: PageArguments, nav: ui.element):
+    """Global preferences (User menu → Preferences): MQTT broker status and any
+    extension-registered global cards. Kept off the project list so /ui stays a
+    pure list of projects."""
+    nav.clear()
+    with nav:
+        ui.label('Preferences').classes('text-h6 text-white')
+
+    with ui.column().classes('w-full max-w-3xl mx-auto p-4 gap-4'):
+        ui.label('Preferences').classes('text-h5')
+        with config_expansion('MQTT Broker'):
+            MqttStatusCard()
+        for title, render_fn in get_global_cards():
+            with config_expansion(title):
+                await maybe_await(render_fn())
+
+# ***************************************************************************
+
 async def about_subpage(args: PageArguments, nav: ui.element):
     """About / Software Bill of Materials, as a client-side sub-page so it routes
     through ui.sub_pages like the rest of the app (a standalone @ui.page is not
@@ -144,8 +167,7 @@ async def about_subpage(args: PageArguments, nav: ui.element):
     """
     nav.clear()
     with nav:
-        ui.label('/').classes('text-h6 text-white opacity-50')
-        ui.label('About').classes('text-h6 font-bold text-white')
+        ui.label('About').classes('text-h6 text-white')
 
     from app.sbom import app_commit_date, app_revision, collect_sbom, package_version
     packages = await anyio.to_thread.run_sync(collect_sbom)

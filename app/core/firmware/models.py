@@ -93,7 +93,7 @@ class FirmwareSource(BaseModel):
         return v or 'firmware.bin'
 
     class Meta:
-        description = ('Pull a firmware asset from a **public** GitHub release into this directory. '
+        description = ('Pull a firmware asset from a **public** GitHub release into the project or device directory. '
                        'The pulled file is served to devices via the normal file path (device copy '
                        'overrides the project copy).')
 

@@ -262,17 +262,10 @@ def get_pending_alarms(project_name: str,
     ]
 
 
-def get_device_alarm_count(project_name: str, device_name: str) -> int:
+def get_alarm_count(project_name: str, 
+                    device_name: str | None = None) -> int:
     """Count active unacknowledged alarms for one device."""
     return sum(
         1 for e in load_alarm_events(project_name)
-        if e.device_name == device_name and e.is_active and not e.is_acknowledged
-    )
-
-
-def get_project_alarm_count(project_name: str) -> int:
-    """Count active unacknowledged alarms for all devices in a project."""
-    return sum(
-        1 for e in load_alarm_events(project_name)
-        if e.is_active and not e.is_acknowledged
+        if e.is_active and not e.is_acknowledged and (device_name is None or e.device_name == device_name)
     )

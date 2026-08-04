@@ -83,8 +83,7 @@ def read_runtime(project_name: str, device_name: str) -> DeviceRuntime:
 
 def write_runtime(project_name: str, device_name: str, *,
                   last_seen_at: datetime.datetime | None = None,
-                  firmware_version: str | None = None,
-                  firmware_commit: str | None = None) -> DeviceRuntime:
+                  firmware_version: str | None = None) -> DeviceRuntime:
     """Merge-update the device runtime sidecar and write it atomically.
 
     Only the provided (non-None) fields are changed; the rest are preserved. Passing
@@ -96,8 +95,6 @@ def write_runtime(project_name: str, device_name: str, *,
     if firmware_version is not None:
         rt.firmware_version = firmware_version.strip()[:_FW_MAX_LEN]
         rt.firmware_reported_at = datetime.datetime.now(datetime.timezone.utc)
-    if firmware_commit is not None:
-        rt.firmware_commit = firmware_commit.strip()[:_FW_MAX_LEN]
     path = device_dir(project_name, device_name) / _RUNTIME_FILE
     tmp = path.with_name(path.name + '.tmp')
     tmp.write_text(rt.model_dump_json(indent=2))
@@ -228,7 +225,6 @@ def get_device(project_name: str, device_name: str, check_active: bool = False) 
     if rt.last_seen_at is not None:
         device.last_seen_at = rt.last_seen_at
     device.firmware_version = rt.firmware_version
-    device.firmware_commit = rt.firmware_commit
     device.firmware_reported_at = rt.firmware_reported_at
     if check_active and not device.is_active:
         raise ForbiddenError(f"Device {project_name}/{device_name} is not active.")
@@ -293,12 +289,11 @@ def get_devices(project_name: str) -> list[Device]:
 ###############################################################################
 
 def get_auth_project_device(project_name: str, device_name: str, device_token: str,
-                            firmware_version: str | None = None,
-                            firmware_commit: str | None = None) -> tuple[Project, Device]:
+                            firmware_version: str | None = None) -> tuple[Project, Device]:
     """Authenticate device and return (project, device).
 
-    firmware_version/firmware_commit are the values the device optionally reports via
-    the X-Firmware-Version / X-Firmware-Commit request headers; when present they are
+    firmware_version are the values the device optionally reports via
+    the X-Firmware-Version request headers; when present they are
     recorded in the runtime sidecar alongside last_seen_at.
 
     Raises:
@@ -330,10 +325,9 @@ def get_auth_project_device(project_name: str, device_name: str, device_token: s
 
     now = datetime.datetime.now(datetime.timezone.utc)
     rt = write_runtime(project_name, device_name, last_seen_at=now,
-                       firmware_version=firmware_version, firmware_commit=firmware_commit)
+                       firmware_version=firmware_version)
     device.last_seen_at = now
     device.firmware_version = rt.firmware_version
-    device.firmware_commit = rt.firmware_commit
     device.firmware_reported_at = rt.firmware_reported_at
 
     return project, device
@@ -342,12 +336,11 @@ def get_auth_project_device(project_name: str, device_name: str, device_token: s
 MAX_DEVICE_TOKENS = 32
 
 def device_provision(project: Project, device_name: str,
-                     firmware_version: str | None = None,
-                     firmware_commit: str | None = None):
+                     firmware_version: str | None = None):
     """Provision a device and return the new bearer AuthToken.
 
-    firmware_version/firmware_commit are optionally reported by the device at
-    provisioning (X-Firmware-Version / X-Firmware-Commit headers); when present they
+    firmware_version are optionally reported by the device at
+    provisioning (X-Firmware-Version header); when present they
     are recorded in the runtime sidecar. This guarantees a known version at least at
     every token refresh, even if a device omits the header on regular requests.
 
@@ -405,9 +398,9 @@ def device_provision(project: Project, device_name: str,
     device.last_provisioned_at = now
     update_device(device)
 
-    if firmware_version is not None or firmware_commit is not None:
+    if firmware_version is not None:
         write_runtime(project.name, device_name,
-                      firmware_version=firmware_version, firmware_commit=firmware_commit)
+                      firmware_version=firmware_version)
 
     return token
 

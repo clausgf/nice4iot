@@ -71,6 +71,17 @@ def load_firmware_source(dir_path: Path) -> FirmwareSource:
     return lenient_model_load(FirmwareSource, text, str(path))
 
 
+def project_has_firmware_source(project_name: str) -> bool:
+    """True if the project or any of its devices has a firmware repo configured."""
+    if load_firmware_source(project_dir(project_name)).repo.strip():
+        return True
+    from app.core.device.backend import get_devices
+    return any(
+        load_firmware_source(device_dir(project_name, device.name)).repo.strip()
+        for device in get_devices(project_name)
+    )
+
+
 def load_firmware_state(dir_path: Path) -> FirmwareState | None:
     path = dir_path / FIRMWARE_STATE_FILE
     try:
@@ -258,6 +269,22 @@ async def pull_firmware(dir_path: Path, src: FirmwareSource, *, project_name: st
 
     Raises FirmwareError on any failure; nothing is written on failure.
     """
+    from app.health import set_health
+    key = f'{project_name}:firmware'
+    try:
+        result = await _pull_firmware(dir_path, src, project_name=project_name,
+                                      device_name=device_name, force=force,
+                                      use_conditional=use_conditional)
+    except Exception as e:
+        set_health(key, False, f'{device_name or "(project)"}: {e}')
+        raise
+    set_health(key, True)
+    return result
+
+
+async def _pull_firmware(dir_path: Path, src: FirmwareSource, *, project_name: str,
+                         device_name: str | None = None, force: bool = False,
+                         use_conditional: bool = False) -> PullResult:
     if not src.repo.strip():
         raise FirmwareError('no repository configured')
 

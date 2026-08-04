@@ -171,9 +171,9 @@ it self-reports; the server never guesses.
 
 - **Transport.** On any authenticated device API request — and at
   `POST /api/provision` — the device sends the running version in an
-  `X-Firmware-Version` header (plus an optional `X-Firmware-Commit`).
-  Equivalently, it may report the same values as the reserved `firmware_version` /
-  `firmware_commit` string keys **in the telemetry body** (pulled out before
+  `X-Firmware-Version` header.
+  Equivalently, it may report the same values as the reserved `firmware_version` 
+  string key **in the telemetry body** (pulled out before
   numeric processing) — handy when a JSON field is easier than a header. Reporting
   on every request keeps the value fresh; reporting at provisioning guarantees a
   known value at least at each token refresh even if omitted elsewhere. See
@@ -182,7 +182,7 @@ it self-reports; the server never guesses.
   `last_seen_at`, and written to a per-device `.runtime.json` sidecar — **not**
   `device.json`, which is managed by the UI's optimistic-locked autosave adapter
   and must not be rewritten on every request. `.runtime.json` holds
-  `last_seen_at`, `firmware_version`, `firmware_commit`, `firmware_reported_at`;
+  `last_seen_at`, `firmware_version`, `firmware_reported_at`;
   `get_device()` copies them onto the in-memory `Device`. (It supersedes the old
   bare-timestamp `.last_seen` file, still read as a migration fallback.)
 - **UI.** Shown in the **Device → Dashboard** Status card and the
@@ -218,8 +218,7 @@ server side) and consumes pulled firmware (the design above):
   `${{ github.ref_name }}` on a `v*` tag build.
   - **PlatformIO:** an `extra_scripts` / `build_flags` entry, e.g.
     `-D FIRMWARE_VERSION='"${sysenv.FIRMWARE_VERSION}"'` (CI sets the env var
-    from `github.ref_name`), and optionally
-    `-D FIRMWARE_COMMIT='"'$(git rev-parse --short HEAD)'"'`.
+    from `github.ref_name`).
   - **Arduino CLI:** `--build-property "build.extra_flags=-DFIRMWARE_VERSION=\"$TAG\""`.
 - Provide a small fallback (`#ifndef FIRMWARE_VERSION #define FIRMWARE_VERSION "dev"`)
   so local (non-CI) builds still compile and report a sensible value.

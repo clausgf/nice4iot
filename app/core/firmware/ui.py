@@ -24,7 +24,7 @@ from app.util import render_datetime
 log = logging.getLogger('uvicorn')
 
 
-def firmware_source_card(dir_path: Path, *, project_name: str, device_name: str | None) -> None:
+async def firmware_source_card(dir_path: Path, *, project_name: str, device_name: str | None) -> None:
     """Render the firmware-source config form + pull controls (no outer card/header;
     the caller wraps this in a config_expansion)."""
     adapter = get_firmware_adapter(dir_path)
@@ -32,14 +32,19 @@ def firmware_source_card(dir_path: Path, *, project_name: str, device_name: str 
 
     ui.markdown(FirmwareSource.Meta.description).classes('text-caption q-ma-none')
 
-    def _save() -> None:
+    async def _save() -> None:
         try:
             adapter.save(config)
         except (ConflictError, StorageError) as e:
             ui.notify(str(e), color='negative')
 
-    def _on_change(_e) -> None:
-        _save()
+    async def _set_visibility() -> None:
+        form.widgets['pinned_tag'].set_visibility(config.channel == 'pinned')
+        form.widgets['auto_pull_interval_min'].set_visibility(config.auto_pull_enabled)
+
+    async def _on_change(_e) -> None:
+        await _save()
+        await _set_visibility()
         github_path.refresh()  # repo/channel/tag edits change the resolved URL
 
     # updated_at is the config's optimistic-lock timestamp (last save), not a
@@ -48,6 +53,8 @@ def firmware_source_card(dir_path: Path, *, project_name: str, device_name: str 
     form.render()
     for widget in form.widgets.values():
         widget.props('outlined dense hide-bottom-space').classes('w-full')
+    form.widgets['pinned_tag'].set_visibility(config.channel == 'pinned')
+    form.widgets['auto_pull_interval_min'].set_visibility(config.auto_pull_enabled)
 
     @ui.refreshable
     def github_path() -> None:

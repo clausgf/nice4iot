@@ -112,7 +112,7 @@ async def post_telemetry_with_names(
 
         {"firmware_version": "1.4.0", "site": "hall2", "temperature": 22.4}
 
-    **firmware_version / firmware_commit** additionally update the device's reported
+    **firmware_version** additionally update the device's reported
     firmware (the same runtime state as the ``X-Firmware-*`` headers), so a device
     may report its version in the telemetry body instead of via a header.
 
@@ -154,20 +154,18 @@ async def post_telemetry_with_names(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                             detail='Request body is not valid JSON')
 
-    # firmware_version / firmware_commit in the telemetry body additionally update
+    # firmware_version in the telemetry body additionally update
     # the device's reported firmware (runtime sidecar), like the X-Firmware-* headers.
     # They are left in the payload so they also flow as string labels on the info
     # series (dual purpose: nice4iot UI + Grafana).
     if isinstance(measurements, dict):
         raw_version = measurements.get('firmware_version')
-        raw_commit = measurements.get('firmware_commit')
         fw_version = raw_version.strip() if isinstance(raw_version, str) and raw_version.strip() else None
-        fw_commit = raw_commit.strip() if isinstance(raw_commit, str) and raw_commit.strip() else None
-        if fw_version is not None or fw_commit is not None:
+        if fw_version is not None:
             from app.core.device.backend import write_runtime
             await anyio.to_thread.run_sync(
                 lambda: write_runtime(project_name, device_name,
-                                      firmware_version=fw_version, firmware_commit=fw_commit))
+                                      firmware_version=fw_version))
 
     await write_telemetry(project_name, device_name, values=measurements, kind=kind)
     return Response(status_code=200)
@@ -345,7 +343,7 @@ async def get_forward_with_names(
     data = await request.body()
     url_params = request.query_params
     try:
-        forward_response = await forward(forwarding, remaining_url, data, headers, url_params, 10)
+        forward_response = await forward(forwarding, remaining_url, data, headers, url_params, 10, project_name=project_name)
     except TimeoutError:
         raise HTTPException(status.HTTP_504_GATEWAY_TIMEOUT, detail='Upstream request timed out')
 

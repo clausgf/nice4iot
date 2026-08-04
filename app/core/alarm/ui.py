@@ -13,12 +13,11 @@ from app.util import render_datetime
 from app.core.alarm.backend import (
     get_alarm_config_adapter,
     get_pending_alarms,
-    get_project_alarm_count,
-    get_device_alarm_count,
+    get_alarm_count,
     acknowledge_alarm,
     acknowledge_all_alarms,
 )
-from app.core.alarm.models import MetricAlarmRule, DeviceOfflineConfig
+from app.core.alarm.models import AlarmEvent, AlarmEvent, MetricAlarmRule, DeviceOfflineConfig
 from app.core.telemetry.backend import observed_metrics
 from niceview import ModelForm
 
@@ -43,7 +42,7 @@ class _DeviceOfflineAdapter:
         return item
 
 
-async def AlarmConfigCard(project_name: str) -> None:
+async def alarm_config_card(project_name: str) -> None:
     """Content for the alarm rules card, rendered inside Project/General (caller provides the card/header)."""
     adapter = get_alarm_config_adapter(project_name)
     # Observed (kind -> metric names) from the local store, to seed the rule
@@ -74,7 +73,7 @@ async def AlarmConfigCard(project_name: str) -> None:
         for i, rule in enumerate(config.rules):
             with ui.card().classes('w-full q-mb-xs'):
                 with ui.row().classes('items-center gap-2 w-full'):
-                    status_color = 'green' if rule.is_active else 'grey'
+                    status_color = 'positive' if rule.is_active else 'grey'
                     ui.chip('ON' if rule.is_active else 'OFF').props(
                         f'dense color={status_color} text-color=white'
                     )
@@ -158,147 +157,72 @@ async def AlarmConfigCard(project_name: str) -> None:
 # Alarm event list (shared by project and device panels)
 # ---------------------------------------------------------------------------
 
-def _alarm_event_row(project_name: str, event, on_ack) -> None:
+def _alarm_event_row(project_name: str, event: AlarmEvent, on_ack) -> None:
     """Render a single alarm event row."""
-    active_color = 'red' if event.is_active else 'orange'
-    status_text = 'ACTIVE' if event.is_active else 'RESOLVED'
+    active_color = 'negative' if event.is_active else 'warning'
+    active_text = 'ACTIVE' if event.is_active else 'INACTIVE'
     with ui.row().classes('items-center gap-2 w-full q-py-xs'):
-        ui.chip(status_text).props(f'dense color={active_color} text-color=white')
+        ui.chip(active_text).props(f'dense color={active_color} text-color=white')
         with ui.column().classes('gap-0 grow'):
             ui.label(f'{event.device_name} — {event.rule_name}').classes('text-body2 font-bold')
             ui.label(event.message).classes('text-caption text-grey-7')
-            ui.label(f'Since {render_datetime(event.triggered_at)}').classes('text-caption text-grey-6')
+            ui.label(f'Since {render_datetime(event.triggered_at)}, last seen at {render_datetime(event.last_seen_at)} ({event.last_value})') \
+                .classes('text-caption text-grey-6')
         if event.is_acknowledged:
             # Already acknowledged — static green icon, not interactive
-            ui.icon('check_circle').classes('text-positive text-xl').tooltip('Acknowledged')
+            ui.icon('check_circle').classes('text-positive text-xl') \
+                .tooltip(f'Acknowledged at {render_datetime(event.acknowledged_at)}')
         else:
             # Needs acknowledgment — clickable button
-            ui.button(icon='notification_important', on_click=lambda e=event: on_ack(e.id)) \
-                .props('flat dense color=negative').tooltip('Acknowledge')
+            ui.button('Acknowledge', icon='notification_important', on_click=lambda e=event: on_ack(e.id)) \
+                .props('dense color=negative').tooltip('Acknowledge')
 
 
 # ---------------------------------------------------------------------------
-# Project Dashboard — alarm summary
+# Dashboard — alarm mini-card
 # ---------------------------------------------------------------------------
 
-def ProjectAlarmPanel(project_name: str) -> None:
-    """Panel showing active/pending alarms for all devices in the project."""
-
-    @ui.refreshable
-    def _content() -> None:
-        events = get_pending_alarms(project_name)
-        total = get_project_alarm_count(project_name)
-        with ui.card().classes('w-full'):
-            with ui.row().classes('items-center w-full'):
-                ui.label('Alarms').classes('text-subtitle1 font-bold')
-                ui.space()
-                if total:
-                    ui.chip(str(total)).props('dense color=red text-color=white')
-                    async def _ack_all() -> None:
-                        await anyio.to_thread.run_sync(
-                            lambda: acknowledge_all_alarms(project_name)
-                        )
-                        _content.refresh()
-                    ui.button('Acknowledge All', icon='done_all', on_click=_ack_all) \
-                        .props('flat dense color=positive')
-                else:
-                    ui.chip('OK').props('dense color=green text-color=white')
-            ui.separator()
-            if not events:
-                ui.label('No active alarms.').classes('text-body2 text-grey-6 q-mt-xs')
-            else:
-                async def _ack(event_id: str) -> None:
-                    await anyio.to_thread.run_sync(
-                        lambda eid=event_id: acknowledge_alarm(project_name, eid)
-                    )
-                    _content.refresh()
-                for event in events[:10]:
-                    _alarm_event_row(project_name, event, _ack)
-                if len(events) > 10:
-                    ui.label(f'… and {len(events) - 10} more').classes('text-caption text-grey-7')
-
-    _content()
-    ui.timer(30.0, _content.refresh)
-
-
-# ---------------------------------------------------------------------------
-# Device Dashboard — alarm mini-panel
-# ---------------------------------------------------------------------------
-
-def DeviceAlarmPanel(project_name: str, device_name: str) -> None:
+async def dashboard_alarms_card(project_name: str, device_name: str | None = None) -> None:
     """Compact alarm panel for the device dashboard card."""
 
     @ui.refreshable
     def _content() -> None:
-        events = get_pending_alarms(project_name, device_name=device_name)
-        count = get_device_alarm_count(project_name, device_name)
-        with ui.card().classes('w-full'):
-            with ui.row().classes('items-center w-full'):
-                ui.label('Alarms').classes('text-subtitle1 font-bold')
-                ui.space()
-                if count:
-                    ui.chip(str(count)).props('dense color=red text-color=white')
-                    async def _ack_all() -> None:
+        events: list[AlarmEvent] = get_pending_alarms(project_name, device_name)
+        count = get_alarm_count(project_name, device_name)
+
+        with ui.card().tight().classes('w-full'):
+            with ui.card_section().props('dense').classes('w-full'):
+                # Row 0: title + total count + "ack all" button
+                with ui.row().classes('items-center w-full'):
+                    ui.label('Alarms').classes('text-subtitle1 font-bold')
+                    ui.space()
+                    if count:
+                        ui.chip(str(count)).props('dense color=negative text-color=white')
+                        async def _ack_all() -> None:
+                            await anyio.to_thread.run_sync(
+                                lambda: acknowledge_all_alarms(project_name, device_name)
+                            )
+                            _content.refresh()
+                        ui.button('Ack All', icon='done_all', on_click=_ack_all) \
+                            .props('flat dense color=positive')
+                    else:
+                        ui.chip('OK').props('dense color=positive text-color=white')
+                ui.separator()
+
+                # Row 1: list of events (or "no active alarms" if empty)
+                if not events:
+                    ui.label('No alarms.').classes('text-body2 text-grey-6 q-mt-xs')
+                else:
+                    async def _ack(event_id: str) -> None:
                         await anyio.to_thread.run_sync(
-                            lambda: acknowledge_all_alarms(project_name, device_name)
+                            lambda eid=event_id: acknowledge_alarm(project_name, eid)
                         )
                         _content.refresh()
-                    ui.button('Ack All', icon='done_all', on_click=_ack_all) \
-                        .props('flat dense color=positive')
-                else:
-                    ui.chip('OK').props('dense color=green text-color=white')
-            ui.separator()
-            if not events:
-                ui.label('No alarms.').classes('text-body2 text-grey-6 q-mt-xs')
-            else:
-                async def _ack(event_id: str) -> None:
-                    await anyio.to_thread.run_sync(
-                        lambda eid=event_id: acknowledge_alarm(project_name, eid)
-                    )
-                    _content.refresh()
-                for event in events[:5]:
-                    _alarm_event_row(project_name, event, _ack)
+                    for event in events[:10]:
+                        _alarm_event_row(project_name, event, _ack)
+                    if len(events) > 10:
+                        ui.label(f'… and {len(events) - 10} more').classes('text-caption text-grey-7')
 
     _content()
     ui.timer(30.0, _content.refresh)
 
-
-# ---------------------------------------------------------------------------
-# Device Alarms Tab — full list
-# ---------------------------------------------------------------------------
-
-def DeviceAlarmsTab(project_name: str, device_name: str) -> None:
-    """Full alarm panel shown in the Device 'Alarms' tab."""
-
-    @ui.refreshable
-    def _content() -> None:
-        events = get_pending_alarms(project_name, device_name=device_name)
-        count = get_device_alarm_count(project_name, device_name)
-
-        with ui.row().classes('items-center w-full gap-2 q-mb-sm'):
-            if count:
-                ui.chip(f'{count} unacknowledged').props('dense color=red text-color=white')
-                async def _ack_all() -> None:
-                    await anyio.to_thread.run_sync(
-                        lambda: acknowledge_all_alarms(project_name, device_name)
-                    )
-                    _content.refresh()
-                ui.button('Acknowledge All', icon='done_all', on_click=_ack_all) \
-                    .props('flat dense color=positive')
-            else:
-                ui.chip('No active alarms').props('dense color=green text-color=white')
-
-        if not events:
-            ui.label('No alarm events for this device.').classes('text-body2 text-grey-6')
-        else:
-            async def _ack(event_id: str) -> None:
-                await anyio.to_thread.run_sync(
-                    lambda eid=event_id: acknowledge_alarm(project_name, eid)
-                )
-                _content.refresh()
-            for event in events:
-                with ui.card().classes('w-full q-mb-xs'):
-                    _alarm_event_row(project_name, event, _ack)
-
-    _content()
-    ui.timer(30.0, _content.refresh)

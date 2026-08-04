@@ -27,7 +27,7 @@ from app.core.alarm.backend import (
     acknowledge_alarm,
     acknowledge_all_alarms,
     get_pending_alarms,
-    get_device_alarm_count,
+    get_alarm_count,
     get_project_alarm_count,
     BUILTIN_DEVICE_OFFLINE,
 )
@@ -362,11 +362,11 @@ def test_get_pending_alarms_by_device(project, device, rule):
 
 
 def test_get_device_alarm_count(project, device, rule):
-    assert get_device_alarm_count(PROJECT, DEVICE) == 0
+    assert get_alarm_count(PROJECT, DEVICE) == 0
     evaluate_metric_rules(PROJECT, DEVICE, 'sensors', {'temperature': 2.0})
-    assert get_device_alarm_count(PROJECT, DEVICE) == 1
+    assert get_alarm_count(PROJECT, DEVICE) == 1
     acknowledge_alarm(PROJECT, load_alarm_events(PROJECT)[0].id)
-    assert get_device_alarm_count(PROJECT, DEVICE) == 0
+    assert get_alarm_count(PROJECT, DEVICE) == 0
 
 
 def test_get_project_alarm_count(project, device, rule):

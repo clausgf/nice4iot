@@ -18,7 +18,7 @@ _DEFAULT_LINES = 200
 _REFRESH_INTERVAL = 5.0   # seconds
 
 
-def device_logs_panel(project_name: str, device_name: str) -> None:
+async def device_logs_panel(project_name: str, device_name: str) -> None:
     """Content of the Logs tab."""
     device_path = get_device_path(project_name, device_name)
     log_file = device_path / '.device.log'

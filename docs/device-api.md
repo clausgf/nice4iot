@@ -37,7 +37,7 @@ trimmed) and shows it in the management UI (Device Dashboard, Devices table). Th
 value is *reported*, not verified — it reflects what the device claims to run.
 
 Alternatively, a device may report the same values **in the telemetry body** as
-the reserved string keys `firmware_version` / `firmware_commit` (see
+the reserved string keys `firmware_version` (see
 [Telemetry metric names](#telemetry-metric-names)) — useful when adding a JSON
 field is easier than a custom header. Body and header are equivalent; if both are
 present on one request, the body value wins.
@@ -98,7 +98,7 @@ capped at 64 chars; at most 8 labels per write; `device`/`kind`/`__name__` are
 protected; a **numeric** field named `target_info` is dropped (reserved). Other
 value types are ignored.
 
-**Reserved keys.** `firmware_version` and `firmware_commit` are ordinary labels but
+**Reserved keys.** `firmware_version` are ordinary labels but
 additionally update the device's reported firmware (equivalent to the `X-Firmware-*`
 headers) — so they show up both in Grafana (as labels) and in the nice4iot UI.
 

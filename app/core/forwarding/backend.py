@@ -48,12 +48,15 @@ def get_forwarding(project_name: str, forwarding_name: str) -> ForwardingConfig:
 
 ###############################################################################
 
-async def forward(forwarding: ForwardingConfig, remaining_url: str, data: bytes, headers: dict, query_params: dict, timeout: int) -> httpx.Response:
+async def forward(forwarding: ForwardingConfig, remaining_url: str, data: bytes, headers: dict, query_params: dict, timeout: int, *, project_name: str) -> httpx.Response:
     """Forward a request to the configured upstream URL.
 
     Raises:
         TimeoutError: upstream did not respond within *timeout* seconds.
     """
+    from app.health import set_health
+    key = f'{project_name}:forwarding:{forwarding.name}'
+
     # Strip trailing slash from base; only append a separator when there is a suffix.
     # remaining_url must not contain '..' path segments (path traversal guard).
     base = forwarding.forward_url.rstrip('/')
@@ -61,16 +64,28 @@ async def forward(forwarding: ForwardingConfig, remaining_url: str, data: bytes,
     if query_params:
         fwd_url = fwd_url + f'?{query_params}'
 
-    async with httpx.AsyncClient() as client:
-        async with asyncio.timeout(timeout):
-            match forwarding.forward_method:
-                case "GET":
-                    return await client.get(fwd_url, headers=headers)
-                case "POST":
-                    return await client.post(fwd_url, headers=headers, data=data)
-                case "PUT":
-                    return await client.put(fwd_url, headers=headers, data=data)
-                case "HEAD":
-                    return await client.head(fwd_url, headers=headers)
-                case "DELETE":
-                    return await client.delete(fwd_url, headers=headers, data=data)
+    try:
+        async with httpx.AsyncClient() as client:
+            async with asyncio.timeout(timeout):
+                match forwarding.forward_method:
+                    case "GET":
+                        response = await client.get(fwd_url, headers=headers)
+                    case "POST":
+                        response = await client.post(fwd_url, headers=headers, data=data)
+                    case "PUT":
+                        response = await client.put(fwd_url, headers=headers, data=data)
+                    case "HEAD":
+                        response = await client.head(fwd_url, headers=headers)
+                    case "DELETE":
+                        response = await client.delete(fwd_url, headers=headers, data=data)
+    except TimeoutError:
+        set_health(key, False, 'timed out')
+        raise
+    except httpx.HTTPError as e:
+        set_health(key, False, str(e))
+        raise
+
+    # Non-2xx upstream responses are forwarded verbatim (see caller docstring);
+    # that's not a forwarding failure, so any received response counts as healthy.
+    set_health(key, True)
+    return response

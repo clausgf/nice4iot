@@ -127,5 +127,7 @@ The *Project Dashboard* includes a **System Health** card showing the last known
 | MQTT | `connection_status` from `app/mqtt/backend.py` |
 | Telemetry | Last write attempt to the configured remote backend (Prometheus / InfluxDB) |
 | Logging | Last write attempt to the configured log backend (Loki / file) |
+| Firmware | Last `pull_firmware()` attempt, aggregated across the project and all its devices; only shown once a repo is configured somewhere in the project (`project_has_firmware_source()`) |
+| Forwarding: *&lt;rule&gt;* | Last `forward()` attempt for that rule; one row per rule that has been used at least once (key `<project>:forwarding:<rule>`) |
 
-External-call errors are caught and recorded via `app/health.py` (`set_health(key, ok, message)`) instead of propagating exceptions. The dashboard card shows a green check or red error icon with the last error message.
+External-call errors are caught and recorded via `app/health.py` (`set_health(key, ok, message)`) instead of propagating exceptions. The dashboard card shows a green check or red error icon with the last error message. Non-2xx upstream responses from a forwarding rule are not treated as failures — they are forwarded verbatim to the device — only network-level errors (timeout, connection failure) mark a rule unhealthy.
