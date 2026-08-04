@@ -88,11 +88,13 @@ async def device_dashboard_panel(project_name: str, device_name: str) -> None:
 
     @ui.refreshable
     async def _content() -> None:
+        from app.core.telemetry.backend import latest_labels
         device = get_device(project_name, device_name)
         project = get_project(project_name, check_active=False)
+        labels = await anyio.to_thread.run_sync(lambda: latest_labels(project_name, device_name))
         now = datetime.datetime.now(datetime.timezone.utc)
         with ui.grid().classes('grid-cols-1 sm:grid-cols-2 gap-4 w-full'):
-            _status_card(device, project_name, project.device_online_threshold_s, now)
+            _status_card(device, project_name, project.device_online_threshold_s, now, labels)
             _provisioning_card(device)
             for render_fn in await anyio.to_thread.run_sync(lambda: get_device_dashboard_cards(project_name)):
                 await maybe_await(render_fn(project_name, device_name))
@@ -113,7 +115,8 @@ def _ago(delta: datetime.timedelta) -> str:
     return f'{s // 86400}d ago'
 
 
-def _status_card(device: Device, project_name: str, online_threshold_s: int, now: datetime.datetime) -> None:
+def _status_card(device: Device, project_name: str, online_threshold_s: int,
+                 now: datetime.datetime, labels: dict[str, str] | None = None) -> None:
     from app.core.alarm.backend import get_device_alarm_count
     online = is_device_online(device, online_threshold_s)
     alarm_count = get_device_alarm_count(project_name, device.name)
@@ -155,6 +158,16 @@ def _status_card(device: Device, project_name: str, online_threshold_s: int, now
             ui.label(fw).classes('text-body2')
         else:
             ui.label('Unknown').classes('text-body2 text-grey-6')
+        # Reported labels (firmware_version/commit already shown above as Firmware).
+        extra = {k: v for k, v in (labels or {}).items()
+                 if k not in ('firmware_version', 'firmware_commit')}
+        if extra:
+            ui.separator().classes('q-mt-sm')
+            ui.label('Labels').classes('text-caption text-grey-6')
+            with ui.grid().classes('grid-cols-2 gap-x-4 gap-y-0 q-mt-xs'):
+                for k, v in sorted(extra.items()):
+                    ui.label(k).classes('text-caption text-grey-7')
+                    ui.label(v).classes('text-body2')
 
 
 def _provisioning_card(device: Device) -> None:

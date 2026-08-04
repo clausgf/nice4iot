@@ -23,7 +23,7 @@ import anyio
 import plotly.graph_objects as go
 from nicegui import ui
 
-from app.core.telemetry.backend import read_data_view, read_series, save_data_view
+from app.core.telemetry.backend import label_history, read_data_view, read_series, save_data_view
 from app.core.telemetry.models import DataTrace, DataView, MetricSeries
 
 import logging
@@ -45,6 +45,9 @@ _TRACE_COLOR_HEX = {
 }
 
 _AUTO_REFRESH_INTERVAL = 30.0  # seconds
+
+# Colours for label change-markers (vertical lines), distinct from the trace hues above.
+_MARKER_COLORS = ['#7f7f7f', '#8c564b', '#bcbd22', '#17becf', '#e377c2', '#9467bd']
 
 
 async def device_data_panel(project_name: str, device_name: str) -> None:
@@ -76,8 +79,10 @@ class _DataExplorer:
             [t.model_dump() for t in view.traces] if view and view.traces
             else [{'color': 'Blue', 'kind': None, 'metric': None}]
         )
+        self.marker_labels: list[str] = list(view.marker_labels) if view else []
         self._series: list[MetricSeries] = []
         self._source: str = 'local'
+        self._history: dict[str, list[tuple[datetime.datetime, str]]] = {}
         self._auto_refresh = False
 
         with ui.row().classes('w-full items-center gap-4 q-mt-xs flex-wrap'):
@@ -90,6 +95,7 @@ class _DataExplorer:
             )
 
         self._traces_ui()
+        self._markers_ui()
         self.summary_row = ui.row().classes('w-full items-center gap-4 q-mt-xs flex-wrap')
         self.chart = ui.plotly(go.Figure()).classes('w-full')
 
@@ -120,6 +126,19 @@ class _DataExplorer:
                 ).tooltip('Remove trace').on_click(lambda _, idx=i: self._remove_trace(idx))
         ui.button(icon='add').props('dense flat size=sm').tooltip('Add trace').on_click(self._add_trace).classes('q-mt-xs')
 
+    @ui.refreshable
+    def _markers_ui(self) -> None:
+        keys = self._label_keys()
+        value = [k for k in self.marker_labels if k in keys]
+        with ui.row().classes('w-full items-center gap-2 q-mt-xs flex-wrap'):
+            ui.select(
+                keys, value=value, multiple=True, label='Label markers',
+            ).props('dense outlined use-chips').classes('w-72').tooltip(
+                'Overlay vertical markers where the selected labels change'
+            ).on_value_change(lambda e: self._on_markers(e.value))
+            if not keys:
+                ui.label('no labels reported').classes('text-caption text-grey-6')
+
     async def initialize(self) -> None:
         await self._refresh()
 
@@ -130,6 +149,9 @@ class _DataExplorer:
     def _since(self) -> datetime.datetime | None:
         delta = _WINDOWS.get(self.window)
         return datetime.datetime.now(datetime.timezone.utc) - delta if delta else None
+
+    def _label_keys(self) -> list[str]:
+        return sorted(self._history.keys())
 
     def _kinds(self) -> list[str]:
         return sorted({s.kind for s in self._series})
@@ -154,7 +176,8 @@ class _DataExplorer:
         """Persist the current config off the event loop (fire-and-forget). Called
         on explicit user changes; rapid successive saves are fine (last wins)."""
         view = DataView(window=self.window,
-                        traces=[DataTrace(**t) for t in self.traces])
+                        traces=[DataTrace(**t) for t in self.traces],
+                        marker_labels=self.marker_labels)
         asyncio.create_task(anyio.to_thread.run_sync(
             lambda: save_data_view(self.project_name, self.device_name, view)))
 
@@ -163,8 +186,12 @@ class _DataExplorer:
     # ------------------------------------------------------------------
 
     async def _refresh(self, _=None) -> None:
+        since = self._since()
         self._series, self._source = await read_series(
-            self.project_name, self.device_name, since=self._since()
+            self.project_name, self.device_name, since=since
+        )
+        self._history = await anyio.to_thread.run_sync(
+            lambda: label_history(self.project_name, self.device_name, since=since)
         )
         kinds = self._kinds()
         for trace in self.traces:
@@ -174,6 +201,7 @@ class _DataExplorer:
             if trace['kind'] and trace['metric'] is None:
                 trace['metric'] = self._first_metric(trace['kind'])
         self._traces_ui.refresh()
+        self._markers_ui.refresh()
         self._draw_chart_ui()
 
     async def _on_window(self, value: str) -> None:
@@ -199,6 +227,11 @@ class _DataExplorer:
 
     def _on_trace_metric(self, trace: dict, metric: str | None) -> None:
         trace['metric'] = metric
+        self._save_view()
+        self._draw_chart_ui()
+
+    def _on_markers(self, value: list[str] | None) -> None:
+        self.marker_labels = list(value or [])
         self._save_view()
         self._draw_chart_ui()
 
@@ -256,8 +289,17 @@ class _DataExplorer:
                     .style(f'color: {color}').classes('text-caption')
 
         if has_data:
+            # B) Overlay a vertical marker wherever a selected label's value changed.
+            for i, key in enumerate([k for k in self.marker_labels if k in self._history]):
+                mcolor = _MARKER_COLORS[i % len(_MARKER_COLORS)]
+                for ts, value in self._history[key]:
+                    fig.add_vline(
+                        x=ts, line_width=1, line_dash='dot', line_color=mcolor,
+                        annotation_text=f'{key}: {value}', annotation_position='top',
+                        annotation_font_size=9, annotation_font_color=mcolor,
+                    )
             fig.update_layout(
-                margin={'l': 40, 'r': 10, 't': 10, 'b': 40},
+                margin={'l': 40, 'r': 10, 't': 20, 'b': 40},
                 xaxis_title='Time',
                 height=320,
                 legend={'orientation': 'h', 'y': -0.25},

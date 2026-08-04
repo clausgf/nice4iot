@@ -6,6 +6,20 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-08-04
+
+### Added
+
+- **Reported labels on the Device Dashboard.** The Status card shows the device's
+  reported labels (e.g. `site`) as a compact key/value block (firmware stays in its
+  own line).
+- **Label change-markers in the Data tab.** A *Label markers* multiselect lists the
+  reported label keys; selecting one overlays a vertical dotted marker on the chart
+  at every point where that label's value changed (annotated `key: value`) — so a
+  metric jump can be lined up with a firmware/config change. The selection is
+  persisted with the rest of the explorer config (`.data_view.json`). Backed by
+  `label_history()`.
+
 ## [0.19.0] - 2026-08-03
 
 ### Added

@@ -38,6 +38,7 @@ class DataView(BaseModel):
     """Persisted Data-tab explorer configuration, per device (``.data_view.json``)."""
     window: str = 'Last 24 h'
     traces: list[DataTrace] = Field(default_factory=lambda: [DataTrace()])
+    marker_labels: list[str] = Field(default_factory=list)  # label keys shown as chart markers
 
 
 class TelemetryBackend(Protocol):

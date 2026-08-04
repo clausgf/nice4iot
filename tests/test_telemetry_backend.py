@@ -18,6 +18,7 @@ from app.core.telemetry.backend import (
     LOCAL_METRICS_MAX_LINES,
     _append_local_metrics,
     flatten_metrics,
+    label_history,
     latest_labels,
     normalize_metrics,
     observed_metrics,
@@ -472,6 +473,20 @@ def test_latest_labels_empty_without_any(proj_dev):
     p, d = proj_dev
     _append_local_metrics(p, d, "system", {"t": 1.0}, _NOW)
     assert latest_labels(p, d) == {}
+
+
+def test_label_history_records_only_changes(proj_dev):
+    p, d = proj_dev
+    t0 = datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc)
+    _append_local_metrics(p, d, "system", {"t": 1.0}, t0,
+                          labels={"firmware_version": "1.0.0", "site": "a"})
+    _append_local_metrics(p, d, "system", {"t": 2.0}, t0 + datetime.timedelta(minutes=1),
+                          labels={"firmware_version": "1.0.0", "site": "a"})  # unchanged
+    _append_local_metrics(p, d, "system", {"t": 3.0}, t0 + datetime.timedelta(minutes=2),
+                          labels={"firmware_version": "1.1.0", "site": "a"})  # fw changed
+    hist = label_history(p, d)
+    assert [v for _, v in hist["firmware_version"]] == ["1.0.0", "1.1.0"]  # only transitions
+    assert [v for _, v in hist["site"]] == ["a"]                           # first occurrence only
 
 
 def test_data_view_roundtrip_and_default(proj_dev):

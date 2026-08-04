@@ -184,6 +184,28 @@ def latest_labels(project_name: str, device_name: str,
     return labels
 
 
+def label_history(project_name: str, device_name: str,
+                  since: datetime.datetime | None = None
+                  ) -> dict[str, list[tuple[datetime.datetime, str]]]:
+    """For each label key, the (timestamp, value) points where its value *changed*
+    (the first occurrence counts as a change), chronological. Feeds the Data tab's
+    change markers. Blocking file IO — wrap with ``anyio.to_thread.run_sync``."""
+    history: dict[str, list[tuple[datetime.datetime, str]]] = {}
+    last: dict[str, str] = {}
+    for rec in read_local_metrics(project_name, device_name, since=since):
+        labels = rec.get('l')
+        if not labels:
+            continue
+        ts = datetime.datetime.fromisoformat(rec['ts'])
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=datetime.timezone.utc)
+        for k, v in labels.items():
+            if v != last.get(k):
+                history.setdefault(k, []).append((ts, v))
+                last[k] = v
+    return history
+
+
 def observed_metrics(project_name: str) -> dict[str, list[str]]:
     """Collect the metric names seen in the local store, grouped by kind.
 
