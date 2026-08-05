@@ -6,6 +6,45 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+### Changed
+
+- **The file browser/editor moved into `app.core.file`,** which now holds the
+  whole file domain — transfer to devices *and* the admin-facing editor — instead
+  of having the UI half live under `app.core.device`. It was also split up:
+  `app.core.device.files_ui` had grown to 652 lines mixing the list, the detail
+  views, the form widgets and the file-type rules.
+
+  | was | is |
+  |---|---|
+  | `app.core.device.files_ui` | `app.core.file.browser_ui` — list half: rows, upload, new file, panel entry points |
+  | — | `app.core.file.detail_ui` — detail half: `file_detail()` plus the shared `save_text`/`maybe_publish`/`download_file` actions |
+  | — | `app.core.file.form_ui` — the `FormField` → widget switch, via `render_form_fields()` (renders the fields, returns a validating collector) |
+  | `app.core.device.file_form` | `app.core.file.form` |
+  | `app.core.device.file_overlay` | `app.core.file.overlay` |
+
+  `app.core.file.backend`, `models` and `ui` (the FileConfig card) are unchanged.
+  No module is over ~310 lines and the dependency chain runs one way.
+- **`OverlayDirectoryAdapter` resolves each entry itself.** It now yields
+  `OverlayFileEntry` — niceview's `FileEntry` plus `read_path`, `save_path`,
+  `inherited` and `overrides` — so the UI reads the device-over-project
+  precedence off the item instead of re-deriving it at three call sites.
+  `FileRef` and `resolve_ref()` are gone; `read()` follows the same precedence
+  and therefore resolves inherited names too. `_Ctx` became the public
+  `FileCtx` and moved to `app.core.file.overlay`.
+- **`plan_json_view()`** in `app.core.file.form` decides which JSON editor
+  a file gets — Form tab or not, which tab leads, schema approval pending — as a
+  pure function returning a `JsonView`. The decision table in
+  `docs/file-forms.md` is now unit-tested directly instead of only through a
+  rendered panel.
+- **"New JSON" asks for a filename only.** It uses `niceview.util.input_dialog`,
+  writes an empty object and drills straight into the file's editor, replacing
+  the hand-built dialog with its own CodeMirror. When the new device file hides a
+  project file of the same name, the confirmation says so.
+- **Inline field validation.** Form widgets that support it (input, number,
+  select, input_chips) show their validation message under the field instead of
+  only as a notification on save. The save-time check stays authoritative.
+- **`app.util.human_size(n)`** replaces the private formatter in the Files card.
+
 ## [0.22.0] - 2026-08-05
 
 ### Added

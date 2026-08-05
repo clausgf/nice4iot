@@ -20,6 +20,11 @@ def shadow_merge[T](own: list[T], under: list[T], key: Callable[[T], str]) -> li
     return own + [item for item in under if key(item) not in shadowed]
 
 
+def human_size(n: int) -> str:
+    """A file size for display: KB below a megabyte, MB above."""
+    return f'{n / 1024:.1f} KB' if n < 1024 * 1024 else f'{n / 1024 / 1024:.1f} MB'
+
+
 def atomic_write(path: Path, data: str | bytes, *, suffix: str = '.tmp') -> None:
     """Write *data* to *path* via a temp file and a rename.
 

@@ -1,8 +1,8 @@
 """Unit tests for the device-over-project file overlay behind the unified Files
-card (app.core.device.file_overlay)."""
+card (app.core.file.overlay)."""
 import pytest
 
-from app.core.device.file_overlay import OverlayDirectoryAdapter, resolve_ref
+from app.core.file.overlay import OverlayDirectoryAdapter
 from app.util import is_valid_upload_filename
 
 
@@ -25,50 +25,64 @@ def _names(adapter):
 
 
 # ---------------------------------------------------------------------------
-# resolve_ref
+# Per-entry resolution — every listed entry carries its own paths and flags
 # ---------------------------------------------------------------------------
 
-def test_resolve_ref_own_file_wins(dirs):
+def test_entry_for_an_own_file_that_shadows_a_project_file(dirs):
     device, project = dirs
     (device / 'config.json').write_text('{"own": 1}')
     (project / 'config.json').write_text('{"shared": 1}')
-    ref = resolve_ref('config.json', device, project)
-    assert ref.read_path == device / 'config.json'
-    assert ref.save_path == device / 'config.json'
-    assert ref.inherited is False
-    assert ref.overrides is True          # it hides the project file
+    entry = _adapter(device, project).read('config.json')
+    assert entry.read_path == device / 'config.json'
+    assert entry.save_path == device / 'config.json'
+    assert entry.inherited is False
+    assert entry.overrides is True          # it hides the project file
 
 
-def test_resolve_ref_inherited_reads_project_saves_device(dirs):
+def test_entry_for_an_inherited_file_reads_project_saves_device(dirs):
     device, project = dirs
     (project / 'config.json').write_text('{"shared": 1}')
-    ref = resolve_ref('config.json', device, project)
-    assert ref.read_path == project / 'config.json'
-    assert ref.save_path == device / 'config.json'   # copy-on-write target
-    assert ref.inherited is True
-    assert ref.overrides is False
+    entry = _adapter(device, project).read('config.json')
+    assert entry.read_path == project / 'config.json'
+    assert entry.save_path == device / 'config.json'   # copy-on-write target
+    assert entry.inherited is True
+    assert entry.overrides is False
 
 
-def test_resolve_ref_own_file_without_project_counterpart(dirs):
+def test_entry_for_an_own_file_without_project_counterpart(dirs):
     device, project = dirs
     (device / 'only.json').write_text('{}')
-    ref = resolve_ref('only.json', device, project)
-    assert ref.inherited is False and ref.overrides is False
+    entry = _adapter(device, project).read('only.json')
+    assert entry.inherited is False and entry.overrides is False
 
 
-def test_resolve_ref_missing_file_points_at_the_write_dir(dirs):
+def test_entries_from_the_listing_carry_the_same_flags(dirs):
+    """render_list_item reads the flags off the item, so iteration must set them
+    just like read() does."""
     device, project = dirs
-    ref = resolve_ref('new.json', device, project)
-    assert ref.read_path == ref.save_path == device / 'new.json'
-    assert ref.inherited is False and ref.overrides is False
+    (device / 'own.json').write_text('{}')
+    (project / 'shared.json').write_text('{}')
+    flags = {e.name: (e.inherited, e.overrides) for e in _adapter(device, project)}
+    assert flags == {'own.json': (False, False), 'shared.json': (True, False)}
 
 
-def test_resolve_ref_without_underlay_never_inherits(dirs):
+def test_a_name_in_neither_layer_resolves_to_the_write_dir(dirs):
+    """The write target for a file about to be created — create() and the "New
+    JSON" dialog must never land in the underlay."""
+    device, project = dirs
+    read_path, save_path, inherited, overrides = _adapter(device, project)._resolve('new.json')
+    assert read_path == save_path == device / 'new.json'
+    assert inherited is False and overrides is False
+
+
+def test_without_underlay_nothing_is_ever_inherited(dirs):
     device, project = dirs
     (project / 'config.json').write_text('{}')
-    ref = resolve_ref('config.json', project, None)
-    assert ref.read_path == ref.save_path == project / 'config.json'
-    assert ref.inherited is False and ref.overrides is False
+    adapter = OverlayDirectoryAdapter(project, None, suffix=None,
+                                      name_filter=is_valid_upload_filename)
+    entry = adapter.read('config.json')
+    assert entry.read_path == entry.save_path == project / 'config.json'
+    assert entry.inherited is False and entry.overrides is False
 
 
 # ---------------------------------------------------------------------------
@@ -194,8 +208,8 @@ def test_overrides_only_niceview_internals_that_still_exist():
     """
     from niceview import DirectoryAdapter
 
-    for name in ('_scan', '_path'):
+    for name in ('_scan', '_path', '_entry_from'):
         assert callable(getattr(DirectoryAdapter, name, None)), (
             f'niceview DirectoryAdapter no longer has {name}(); '
-            f'OverlayDirectoryAdapter overrides it — adjust file_overlay.py'
+            f'OverlayDirectoryAdapter overrides it — adjust overlay.py'
         )

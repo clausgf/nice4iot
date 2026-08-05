@@ -1,9 +1,16 @@
 # File Editing & Schema-Driven Forms
 
 Status: **implemented in 0.14.0.** This documents the feature and the design
-decisions behind it. The rendering lives in `app/core/device/files_ui.py`; the
-form logic it builds on (field inference, the schema subset, schema approval)
-lives in `app/core/device/file_form.py`, which is free of NiceGUI.
+decisions behind it. It is spread over five modules in `app/core/file/`, split
+so that everything decidable without a browser stays free of NiceGUI:
+
+| Module | Role |
+|---|---|
+| `overlay.py` | the device-over-project merge; hands the UI a resolved entry per file |
+| `form.py` | field inference, the schema subset, schema approval, and `plan_json_view()` — the decision table below, in code |
+| `form_ui.py` | one `FormField` → one widget, plus the value collector |
+| `detail_ui.py` | the detail half of the card: JSON/text editors, image preview, save/publish/download |
+| `browser_ui.py` | the list half: rows, upload, new file, and the panel entry points |
 
 [← Documentation index](README.md) · [Architecture](architecture.md)
 
@@ -11,11 +18,11 @@ lives in `app/core/device/file_form.py`, which is free of NiceGUI.
 
 ## Scope
 
-Evolves the existing **Files** tabs (`app/core/device/files_ui.py`) for both
-project files (`<project>/<file>`) and device files (`<project>/<device>/<file>`)
-from a set of modal dialogs into a browse-and-drill-down editor, adds image
-preview and editable text, and introduces an optional **form view** for JSON
-files driven by a minimal JSON-Schema subset.
+Evolves the existing **Files** tabs for both project files (`<project>/<file>`)
+and device files (`<project>/<device>/<file>`) from a set of modal dialogs into a
+browse-and-drill-down editor, adds image preview and editable text, and
+introduces an optional **form view** for JSON files driven by a minimal
+JSON-Schema subset.
 
 What already exists and stays: per-directory file list, upload, download,
 delete, "New JSON", CodeMirror JSON editor with validation and atomic save,
@@ -27,7 +34,7 @@ The device Files tab lists the device's **effective** file set: its own files
 layered over the project's, with the same precedence the device-facing API
 (`get_file_path()`) and the MQTT publisher (`check_and_publish_project()`) apply.
 An entry served from the project directory carries a `project` chip. The merge
-lives in `app/core/device/file_overlay.py`.
+lives in `app/core/file/overlay.py`.
 
 Writes never reach the project directory from here. Saving an inherited file is a
 **copy-on-write**: the content is written to the device directory, the project
@@ -121,6 +128,11 @@ schema:
 "Flat JSON" = top-level object whose values are all scalars/string-arrays.
 Anything else is raw-only.
 
+This table is `plan_json_view()` in `form.py`: it reads the file, resolves
+and checks the schema, and returns which tabs to build and which one leads. The
+detail view only switches on the result, so the table is unit-tested directly
+rather than through a rendered panel.
+
 ## Save semantics — merge
 
 Saving the **form** writes back only the schema's fields and **preserves any
@@ -194,6 +206,15 @@ one predicate covers device-uploaded, edited, and UI-created cases.
 - **Validation scope:** UI-only. The server does **not** reject device-uploaded
   data that violates a schema; the schema drives the form and in-UI validation,
   not API ingest. (Server-side validation is a possible later addition.)
+- **Where validation shows:** widgets that carry NiceGUI's own validation
+  (input, number, select, input_chips) display the message inline, under the
+  field; switch and textarea have none, so they are reported on save. Either way
+  the save-time check over all fields stays authoritative — inline errors inform,
+  they do not block.
+- **"New JSON"** asks for a filename only (`niceview.util.input_dialog`), writes
+  an empty object and drills straight into its editor, instead of carrying a
+  second CodeMirror inside a dialog. Creating a device file that hides a project
+  file of the same name is allowed; the confirmation says so.
 - **Async I/O:** the large upload write is pushed to a worker thread
   (`anyio.to_thread.run_sync`), like the device-facing `PUT /api/file`. The
   remaining reads (editor content, image bytes, the directory listing, the schema

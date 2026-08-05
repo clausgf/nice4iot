@@ -1,7 +1,7 @@
 """
 File forms — the logic behind the JSON Form tab, without any UI.
 
-Three concerns, all synchronous and free of NiceGUI so they stay easy to test:
+Four concerns, all synchronous and free of NiceGUI so they stay easy to test:
 
 * **Inference** — a flat JSON object's values are mapped to field kinds, so a
   file without a schema still gets a form.
@@ -11,10 +11,12 @@ Three concerns, all synchronous and free of NiceGUI so they stay easy to test:
   `pattern` (untrusted regex, ReDoS). See docs/file-forms.md.
 * **Approval** — a schema is inert until its content hash is approved, so a
   device-uploaded schema cannot drive the admin's form on its own.
+* **View plan** — `plan_json_view()` combines the three into the decision the
+  detail view needs: Form tab or not, which tab is default, approval pending.
 
-Rendering lives in `files_ui.py`; the field specs produced here are never fed
-to `pydantic.create_model` or niceview, which keeps the untrusted-input path
-small.
+Rendering lives in `form_ui.py` / `detail_ui.py`; the field specs
+produced here are never fed to `pydantic.create_model` or niceview, which keeps
+the untrusted-input path small.
 """
 import contextlib
 import hashlib
@@ -245,3 +247,64 @@ def validate_field(field: FormField, value: Any) -> str | None:
     if field.kind == 'string_list' and field.max_items is not None and len(value) > field.max_items:
         return f'{name}: at most {field.max_items} items'
     return None
+
+
+# ---------------------------------------------------------------------------
+# View plan — which JSON editor a file gets
+# ---------------------------------------------------------------------------
+
+@dataclass
+class JsonView:
+    """What the JSON detail view shows for one file, decided without any NiceGUI.
+
+    This is the decision table from docs/file-forms.md in code: whether there is a
+    Form tab at all, which tab is default, and whether a schema is waiting for
+    approval. The renderer only switches on the result.
+    """
+    text: str                               # raw-editor content: pretty JSON, or the file verbatim
+    data: dict                              # parsed object the form merges its values into
+    fields: list[FormField] | None = None   # None → raw editor only, no Form tab
+    form_default: bool = False              # show the Form tab first
+    pending_schema: Path | None = None      # unapproved schema → approval banner, raw only
+    note: str | None = None                 # one line of explanation above the editor
+
+
+def _read_verbatim(path: Path) -> str:
+    """The file as text for the raw editor, whatever is in it. Undecodable bytes
+    are replaced rather than raising — the alternative is showing nothing at all."""
+    try:
+        return path.read_text(encoding='utf-8', errors='replace')
+    except OSError:
+        return ''
+
+
+def plan_json_view(path: Path, project_name: str, fallback_dir: Path | None) -> JsonView:
+    """Decide how *path* should be presented, following the schema first and the
+    file's own shape second.
+
+    *fallback_dir* is where a schema sidecar is looked up when the file's own
+    directory has none (device dir → project dir).
+    """
+    try:
+        parsed = json.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}
+    except (OSError, json.JSONDecodeError):
+        return JsonView(text=_read_verbatim(path) if path.is_file() else '{}', data={})
+    if not isinstance(parsed, dict):
+        return JsonView(text=json.dumps(parsed, indent=2, ensure_ascii=False), data={})
+
+    pretty = json.dumps(parsed, indent=2, ensure_ascii=False)
+    note = None
+
+    schema_path = resolve_schema_path(path, fallback_dir)
+    if schema_path is not None:
+        if not is_schema_approved(schema_path, project_name):
+            return JsonView(text=pretty, data=parsed, pending_schema=schema_path)
+        schema = load_schema(schema_path)
+        schema_fields = fields_from_schema(schema, parsed) if schema is not None else None
+        if schema_fields is not None:
+            return JsonView(text=pretty, data=parsed, fields=schema_fields, form_default=True)
+        # An approved but unusable schema falls back to inference, with a note —
+        # silently ignoring it would look like the schema had no effect.
+        note = 'Schema present but not a usable flat-object schema; editing raw.'
+
+    return JsonView(text=pretty, data=parsed, fields=infer_flat_fields(parsed), note=note)

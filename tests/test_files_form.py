@@ -1,14 +1,15 @@
 """Unit tests for the flat-JSON form inference, schema subset and approval
-store (app.core.device.file_form)."""
+store (app.core.file.form)."""
 import pytest
 
-from app.core.device.file_form import (
+from app.core.file.form import (
     FormField,
     approve_schema,
     fields_from_schema,
     infer_flat_fields,
     infer_kind,
     is_schema_approved,
+    plan_json_view,
     resolve_schema_path,
     schema_kind,
     validate_field,
@@ -155,3 +156,92 @@ def test_schema_approval_is_hash_bound(projects_dir):
     # a device edit changes the content hash -> approval is revoked automatically
     schema.write_text('{"type":"object","properties":{"a":{"type":"string"}}}')
     assert is_schema_approved(schema, 'proj') is False
+
+
+# ---------------------------------------------------------------------------
+# View plan — the decision table from docs/file-forms.md
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def proj(projects_dir):
+    """A project directory, so schema approval has somewhere to store its hashes."""
+    from app.core.project.backend import create_project
+    from app.paths import project_dir
+    create_project('proj')
+    return project_dir('proj')
+
+
+def _write(path, text):
+    path.write_text(text, encoding='utf-8')
+    return path
+
+
+def test_plan_flat_json_without_schema_offers_the_form_second(proj):
+    view = plan_json_view(_write(proj / 'a.json', '{"n": 3, "s": "x"}'), 'proj', None)
+    assert [f.key for f in view.fields] == ['n', 's']
+    assert view.form_default is False          # raw stays the default without a schema
+    assert view.data == {'n': 3, 's': 'x'}
+    assert view.pending_schema is None and view.note is None
+
+
+@pytest.mark.parametrize("content", [
+    '{"nested": {"a": 1}}',   # not a flat object
+    '{"a": null}',            # null is not representable as a widget
+])
+def test_plan_non_flat_json_is_raw_only(proj, content):
+    view = plan_json_view(_write(proj / 'a.json', content), 'proj', None)
+    assert view.fields is None
+
+
+def test_plan_invalid_json_keeps_the_text_for_the_raw_editor(proj):
+    view = plan_json_view(_write(proj / 'a.json', '{broken'), 'proj', None)
+    assert view.fields is None
+    assert view.text == '{broken'              # shown verbatim, not swallowed
+    assert view.data == {}
+
+
+def test_plan_toplevel_array_is_raw_only(proj):
+    view = plan_json_view(_write(proj / 'a.json', '[1, 2]'), 'proj', None)
+    assert view.fields is None and view.data == {}
+
+
+def test_plan_approved_schema_drives_the_form_and_makes_it_default(proj):
+    _write(proj / 'a.json', '{"mode": "eco"}')
+    schema = _write(proj / 'a.schema.json',
+                    '{"type":"object","properties":{"mode":{"type":"string","enum":["eco","turbo"]}}}')
+    approve_schema(schema, 'proj')
+    view = plan_json_view(proj / 'a.json', 'proj', None)
+    assert [f.kind for f in view.fields] == ['enum']
+    assert view.form_default is True
+    assert view.pending_schema is None
+
+
+def test_plan_unapproved_schema_is_inert_and_asks_for_approval(proj):
+    _write(proj / 'a.json', '{"mode": "eco"}')
+    schema = _write(proj / 'a.schema.json',
+                    '{"type":"object","properties":{"mode":{"type":"string"}}}')
+    view = plan_json_view(proj / 'a.json', 'proj', None)
+    assert view.fields is None                 # no form until approved
+    assert view.pending_schema == schema
+
+
+def test_plan_approved_but_unusable_schema_falls_back_to_inference_with_a_note(proj):
+    _write(proj / 'a.json', '{"n": 1}')
+    schema = _write(proj / 'a.schema.json', '{"type":"string"}')   # not an object schema
+    approve_schema(schema, 'proj')
+    view = plan_json_view(proj / 'a.json', 'proj', None)
+    assert [f.key for f in view.fields] == ['n']   # inferred instead
+    assert view.form_default is False
+    assert view.note is not None                   # and the user is told why
+
+
+def test_plan_finds_the_schema_in_the_fallback_directory(proj, tmp_path):
+    """A device file with no schema of its own uses the project's."""
+    device = proj / 'dev'
+    device.mkdir()
+    _write(device / 'a.json', '{"mode": "eco"}')
+    schema = _write(proj / 'a.schema.json',
+                    '{"type":"object","properties":{"mode":{"type":"string"}}}')
+    approve_schema(schema, 'proj')
+    view = plan_json_view(device / 'a.json', 'proj', proj)
+    assert view.form_default is True and [f.key for f in view.fields] == ['mode']

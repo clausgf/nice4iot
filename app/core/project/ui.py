@@ -11,7 +11,7 @@ from app.core.device.ui import ProjectDevicesTable
 from app.core.logging.ui import LoggingCard
 from app.core.telemetry.ui import TelemetryCard
 from app.core.forwarding.ui import ForwardingCard
-from app.core.device.files_ui import project_files_panel
+from app.core.file.browser_ui import project_files_panel
 from app.core.firmware.ui import firmware_source_card
 from app.paths import project_dir
 from app.core.file.ui import file_config_card

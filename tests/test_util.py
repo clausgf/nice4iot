@@ -100,3 +100,15 @@ def test_atomic_write_suffix_keeps_concurrent_writers_apart(tmp_path):
     atomic_write(target, b'a', suffix='.upload.tmp')
     assert target.read_bytes() == b'a'
     assert not (tmp_path / 'f.bin.upload.tmp').exists()
+
+
+@pytest.mark.parametrize("size,text", [
+    (0, '0.0 KB'),
+    (1536, '1.5 KB'),
+    (1024 * 1024 - 1, '1024.0 KB'),   # KB right up to the megabyte boundary
+    (1024 * 1024, '1.0 MB'),
+    (3 * 1024 * 1024, '3.0 MB'),
+])
+def test_human_size(size, text):
+    from app.util import human_size
+    assert human_size(size) == text

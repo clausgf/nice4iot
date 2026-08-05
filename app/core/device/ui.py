@@ -11,7 +11,7 @@ from app.core.device.backend import (
     create_device, delete_device, device_adapter, get_device, get_devices,
     is_device_online, rename_device,
 )
-from app.core.device.files_ui import device_files_panel
+from app.core.file.browser_ui import device_files_panel
 from app.core.device.data_ui import device_data_panel
 from app.core.device.logs_ui import device_logs_panel
 from app.core.project.backend import get_project

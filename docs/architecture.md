@@ -29,15 +29,17 @@ app/
     │   ├── backend.py      # Device CRUD, device_adapter(), last_seen helpers
     │   ├── models.py       # Device Pydantic model
     │   ├── ui.py           # device_subpage, Dashboard + General panel, DevicesTable
-    │   ├── files_ui.py     # Files tab (browse, upload, download, edit, MQTT force-publish)
-    │   ├── file_form.py    # JSON form logic: inference, schema subset, schema approval
-    │   ├── file_overlay.py # device files layered over project files (FileRef, adapter)
     │   ├── data_ui.py      # Data tab (multi-trace Plotly time-series explorer)
     │   └── logs_ui.py      # Logs tab (live tail, archive download)
-    ├── file/
+    ├── file/               # the file domain: transfer to devices + the admin editor
     │   ├── backend.py      # file state tracking (.mqtt_file_state.json), watcher loop
     │   ├── models.py       # FileConfig (max_upload_size, check_interval, QoS, retain)
-    │   └── ui.py           # FileConfigCard (project settings)
+    │   ├── ui.py           # FileConfigCard (project settings)
+    │   ├── overlay.py      # device files layered over project files (FileCtx, entry, adapter)
+    │   ├── form.py         # JSON form logic: inference, schema subset, approval, view plan
+    │   ├── form_ui.py      # JSON Form tab: one FormField -> one widget
+    │   ├── detail_ui.py    # Files tab, detail half (JSON/text editors, image preview)
+    │   └── browser_ui.py   # Files tab, list half (rows, upload, new file, MQTT force-publish)
     ├── project/
     │   ├── backend.py      # Project CRUD, project_adapter()
     │   ├── models.py       # Project Pydantic model
