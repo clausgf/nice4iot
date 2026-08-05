@@ -20,7 +20,7 @@ jobs:
       packages: write   # push to GHCR under the repository owner
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Resolve commit date
         id: commit

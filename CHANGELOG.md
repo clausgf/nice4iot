@@ -6,6 +6,8 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-08-05
+
 ### Changed
 
 - **The file browser/editor moved into `app.core.file`,** which now holds the
@@ -44,6 +46,11 @@ API change must be recorded. Format loosely follows
   select, input_chips) show their validation message under the field instead of
   only as a notification on save. The save-time check stays authoritative.
 - **`app.util.human_size(n)`** replaces the private formatter in the Files card.
+- **CI actions updated** to the versions running on Node.js 24, which GitHub was
+  already forcing them onto: `actions/checkout` v5 → v7,
+  `astral-sh/setup-uv` v6 → v9, `actions/upload-artifact` v5 → v7. The docker
+  actions in the release workflow were already current. Note that setup-uv v9
+  defaults `prune-cache` to `false`, so the Actions cache may grow.
 
 ## [0.22.0] - 2026-08-05
 
