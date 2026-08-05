@@ -13,7 +13,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v9
+      # Pinned to a full version: setup-uv stopped publishing moving major tags
+      # in v8, so `@v9` does not resolve. Bump this by hand.
+      - uses: astral-sh/setup-uv@v9.0.0
         with:
           python-version: "3.12"
 

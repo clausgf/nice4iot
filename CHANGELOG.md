@@ -48,9 +48,11 @@ API change must be recorded. Format loosely follows
 - **`app.util.human_size(n)`** replaces the private formatter in the Files card.
 - **CI actions updated** to the versions running on Node.js 24, which GitHub was
   already forcing them onto: `actions/checkout` v5 → v7,
-  `astral-sh/setup-uv` v6 → v9, `actions/upload-artifact` v5 → v7. The docker
-  actions in the release workflow were already current. Note that setup-uv v9
-  defaults `prune-cache` to `false`, so the Actions cache may grow.
+  `astral-sh/setup-uv` v6 → v9.0.0, `actions/upload-artifact` v5 → v7. The docker
+  actions in the release workflow were already current. Two things to know:
+  setup-uv stopped publishing moving major tags in v8, so it has to be pinned to
+  a full version and bumped by hand; and its v9 defaults `prune-cache` to
+  `false`, so the Actions cache may grow.
 
 ## [0.22.0] - 2026-08-05
 
