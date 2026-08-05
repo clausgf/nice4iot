@@ -167,7 +167,7 @@ def _alarm_event_row(project_name: str, event: AlarmEvent, on_ack) -> None:
             ui.label(f'{event.device_name} — {event.rule_name}').classes('text-body2 font-bold')
             ui.label(event.message).classes('text-caption text-grey-7')
             ui.label(f'Since {render_datetime(event.triggered_at)}, last seen at {render_datetime(event.last_seen_at)} ({event.last_value})') \
-                .classes('text-caption text-grey-6')
+                .classes('text-caption text-grey-7')
         if event.is_acknowledged:
             # Already acknowledged — static green icon, not interactive
             ui.icon('check_circle').classes('text-positive text-xl') \
@@ -211,7 +211,7 @@ async def dashboard_alarms_card(project_name: str, device_name: str | None = Non
 
                 # Row 1: list of events (or "no active alarms" if empty)
                 if not events:
-                    ui.label('No alarms.').classes('text-body2 text-grey-6 q-mt-xs')
+                    ui.label('No alarms.').classes('text-body2 text-grey-7 q-mt-xs')
                 else:
                     async def _ack(event_id: str) -> None:
                         await anyio.to_thread.run_sync(

@@ -7,7 +7,7 @@ packages = ["app"]
 
 [project]
 name = "nice4iot"
-version = "0.21.0"
+version = "0.22.0"
 description = "IoT management platform built with NiceGUI and FastAPI"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -26,6 +26,13 @@ classifiers = [
 dependencies = [
     "nicegui",
     "uvicorn",
+    # fastapi, pydantic and httpx are imported directly by app/ (the REST API,
+    # every model, and the firmware/forwarding/telemetry/logging HTTP clients).
+    # nicegui happens to pull the first two in, but relying on that would break
+    # the moment it changes its own dependencies.
+    "fastapi",
+    "pydantic",
+    "httpx>=0.28.1",
     "anyio",
     "pydantic-settings",
     "protobuf>=6.33.5,<8",
@@ -56,7 +63,9 @@ epaper = [
 
 [dependency-groups]
 dev = [
-    "httpx>=0.28.1",
+    # Not imported by the tests directly: starlette's TestClient picks it up and
+    # warns (StarletteDeprecationWarning) when only the 1.x httpx is installed.
+    # The app itself still uses httpx — see [project] dependencies.
     "httpx2>=2.5.0",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",

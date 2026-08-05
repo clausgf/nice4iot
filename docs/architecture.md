@@ -12,7 +12,8 @@ app/
 ├── config.py               # pydantic-settings (env vars / .env)
 ├── exceptions.py           # domain exceptions: NotFoundError, ForbiddenError, AuthError, …
 ├── paths.py                # project_dir(), device_dir() helpers
-├── util.py                 # filename validation, render_datetime (configured timezone), …
+├── util.py                 # filename validation, render_datetime (configured timezone),
+│                           # atomic_write, shadow_merge, …
 ├── frontend.py             # NiceGUI page, header, sub-page routing, user menu
 ├── api/
 │   ├── provisioning.py     # POST /api/provision
@@ -29,6 +30,8 @@ app/
     │   ├── models.py       # Device Pydantic model
     │   ├── ui.py           # device_subpage, Dashboard + General panel, DevicesTable
     │   ├── files_ui.py     # Files tab (browse, upload, download, edit, MQTT force-publish)
+    │   ├── file_form.py    # JSON form logic: inference, schema subset, schema approval
+    │   ├── file_overlay.py # device files layered over project files (FileRef, adapter)
     │   ├── data_ui.py      # Data tab (multi-trace Plotly time-series explorer)
     │   └── logs_ui.py      # Logs tab (live tail, archive download)
     ├── file/

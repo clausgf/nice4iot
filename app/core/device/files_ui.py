@@ -5,6 +5,10 @@ Device files:  <projects_dir>/<project>/<device>/<filename>  (full read/write)
 Project files: <projects_dir>/<project>/<filename>           (full read/write;
                served to devices as a fallback when no device-specific copy exists)
 
+The device tab shows both in **one** list: the device's own files layered over the
+project's, with inherited entries marked by a chip (see `file_overlay.py`). Writes
+never reach the underlay — saving an inherited file copies it to the device.
+
 Built on niceview's DrillDownWrapper over a DirectoryAdapter in all-files mode
 (mixed extensions, keyed by full filename): the list drills down into a per-file
 detail view. JSON opens in a validating CodeMirror editor, recognised text files
@@ -14,20 +18,30 @@ docs/file-forms.md).
 """
 import asyncio
 import base64
-import hashlib
+from datetime import datetime
 import json
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, NamedTuple
 
 import anyio
 from nicegui import ui
-from niceview import DirectoryAdapter, DrillDownWrapper, FileEntry
+from niceview import DrillDownWrapper, FileEntry
 from niceview.util import confirm_dialog
 
 from app.core.device.backend import get_device_path
+from app.core.device.file_form import (
+    FormField,
+    approve_schema,
+    fields_from_schema,
+    infer_flat_fields,
+    is_schema_approved,
+    load_schema,
+    resolve_schema_path,
+    validate_field,
+)
+from app.core.device.file_overlay import FileRef, OverlayDirectoryAdapter, resolve_ref
 from app.paths import project_dir as get_project_dir
-from app.util import is_valid_upload_filename, render_datetime
+from app.util import atomic_write, is_valid_upload_filename, render_datetime
 
 import logging
 log = logging.getLogger("uvicorn")
@@ -54,42 +68,46 @@ _IMAGE_MIME: dict[str, str] = {
 }
 _MAX_IMAGE_SIZE: int = 2 * 1024 * 1024  # 2 MB
 
+_FILE_ICONS: dict[str, str] = {'.json': 'data_object'} | \
+    {e: 'image' for e in _IMAGE_MIME} | {e: 'article' for e in _TEXT_EXTENSIONS}
+
+
+def _human_size(n: int) -> str:
+    return f'{n / 1024:.1f} KB' if n < 1024 * 1024 else f'{n / 1024 / 1024:.1f} MB'
+
 
 class _Ctx(NamedTuple):
-    """Per-card context: which project/device and whether to publish over MQTT.
+    """Per-card context: constant for the lifetime of one Files card.
 
-    device_name is None for the project Files tab (no device to publish to).
+    device_name is None for the project Files tab (no device to publish to), and
+    underlay_dir is None wherever nothing is inherited — which is the same card.
     """
     project_name: str
     device_name: str | None
     mqtt_enabled: bool
+    underlay_dir: Path | None = None
 
-
-def _codemirror_language(path: Path) -> str | None:
-    ext = path.suffix.lower()
-    if ext == '.json':
-        return 'JSON'
-    return _LANG_MAP.get(ext)
+    @property
+    def can_publish(self) -> bool:
+        return bool(self.mqtt_enabled and self.project_name and self.device_name)
 
 
 # ---------------------------------------------------------------------------
 # Shared write / publish / download helpers
 # ---------------------------------------------------------------------------
 
-def _atomic_write_text(path: Path, text: str) -> bool:
-    tmp = path.with_name(path.name + '.tmp')
+def _save_text(path: Path, text: str) -> bool:
+    """Atomic write plus a notification when it fails. True if the file was written."""
     try:
-        tmp.write_text(text, encoding='utf-8')
-        tmp.rename(path)
+        atomic_write(path, text)
         return True
     except OSError as exc:
-        tmp.unlink(missing_ok=True)
         ui.notify(f'Save failed: {exc}', type='negative')
         return False
 
 
 def _maybe_publish(path: Path, ctx: _Ctx) -> None:
-    if ctx.mqtt_enabled and ctx.project_name and ctx.device_name:
+    if ctx.can_publish:
         from app.core.file.backend import publish_file_now
         asyncio.create_task(publish_file_now(ctx.project_name, ctx.device_name, path))
 
@@ -105,196 +123,7 @@ def _download_file(path: Path) -> None:
 # Detail view (render_detail) — one file, dispatched by type
 # ---------------------------------------------------------------------------
 
-@dataclass
-class _FormField:
-    """One form field. Phase 2 infers key/kind/value from a flat JSON object's
-    values; phase 3 builds the same shape from a schema, adding the metadata
-    below (title/enum/min/max/…)."""
-    key: str
-    kind: str        # string | integer | number | boolean | string_list | enum | textarea | date
-    value: Any
-    label: str | None = None
-    description: str | None = None
-    enum: list | None = None
-    minimum: float | None = None
-    maximum: float | None = None
-    max_length: int | None = None
-    max_items: int | None = None
-    required: bool = False
-
-
-def _infer_kind(v: Any) -> str | None:
-    if isinstance(v, bool):        # bool is a subclass of int — check it first
-        return 'boolean'
-    if isinstance(v, int):
-        return 'integer'
-    if isinstance(v, float):
-        return 'number'
-    if isinstance(v, str):
-        return 'string'
-    if isinstance(v, list) and all(isinstance(x, str) for x in v):
-        return 'string_list'
-    return None
-
-
-def _infer_flat_fields(obj: dict) -> list[_FormField] | None:
-    """Field specs for a flat object, or None if any value isn't representable
-    (nested object, mixed/other list, null) — then no form tab is offered."""
-    fields: list[_FormField] = []
-    for key, value in obj.items():
-        kind = _infer_kind(value)
-        if kind is None:
-            return None
-        fields.append(_FormField(key, kind, value))
-    return fields
-
-
-# --- schema-driven form (phase 3): a minimal JSON-Schema subset -------------
-# Deliberately NOT a JSON Schema implementation: flat object only, a fixed set of
-# types, unknown keywords ignored, and no $ref (SSRF) / pattern (untrusted regex,
-# ReDoS). Rendered by _render_form_field below — never fed to pydantic.create_model
-# or niceview — so the untrusted-input path stays small. See docs/file-forms.md.
-
-_SCHEMA_MAX_BYTES = 256 * 1024
-_SCHEMA_MAX_FIELDS = 500
-
-
-def _num(v: Any) -> float | None:
-    return v if isinstance(v, (int, float)) and not isinstance(v, bool) else None
-
-
-def _int(v: Any) -> int | None:
-    return v if isinstance(v, int) and not isinstance(v, bool) else None
-
-
-def _empty_for(kind: str) -> Any:
-    return {'boolean': False, 'string_list': []}.get(kind, None if kind in ('integer', 'number') else '')
-
-
-def _schema_kind(spec: dict) -> str | None:
-    t = spec.get('type')
-    if t == 'string':
-        if isinstance(spec.get('enum'), list):
-            return 'enum'
-        if spec.get('format') == 'date':
-            return 'date'
-        if spec.get('x-multiline') is True:
-            return 'textarea'
-        return 'string'
-    if t == 'integer':
-        return 'integer'
-    if t == 'number':
-        return 'number'
-    if t == 'boolean':
-        return 'boolean'
-    if t == 'array' and isinstance(spec.get('items'), dict) and spec['items'].get('type') == 'string':
-        return 'string_list'
-    return None  # unknown/unsupported type — ignored (field editable via raw only)
-
-
-def _fields_from_schema(schema: dict, data: dict) -> list[_FormField] | None:
-    """Build form fields from the schema subset, or None if it is not a usable
-    flat object schema. Values come from *data*, then the field's ``default``."""
-    if not isinstance(schema, dict) or schema.get('type') != 'object':
-        return None
-    props = schema.get('properties')
-    if not isinstance(props, dict):
-        return None
-    required = set(schema.get('required') or [])
-    fields: list[_FormField] = []
-    for name, spec in list(props.items())[:_SCHEMA_MAX_FIELDS]:
-        if not isinstance(spec, dict):
-            continue
-        kind = _schema_kind(spec)
-        if kind is None:
-            continue
-        default = spec.get('default')
-        value = data.get(name, default if default is not None else _empty_for(kind))
-        fields.append(_FormField(
-            key=name, kind=kind, value=value,
-            label=spec.get('title') if isinstance(spec.get('title'), str) else None,
-            description=spec.get('description') if isinstance(spec.get('description'), str) else None,
-            enum=spec.get('enum') if isinstance(spec.get('enum'), list) else None,
-            minimum=_num(spec.get('minimum')), maximum=_num(spec.get('maximum')),
-            max_length=_int(spec.get('maxLength')), max_items=_int(spec.get('maxItems')),
-            required=name in required,
-        ))
-    return fields
-
-
-def _resolve_schema_path(data_path: Path, fallback_dir: Path | None) -> Path | None:
-    """The '<name>.schema.json' sibling of a '<name>.json' data file, resolved in
-    the file's own directory first, then *fallback_dir* (device dir → project dir).
-    Schema files themselves get no schema."""
-    if data_path.suffix.lower() != '.json' or data_path.name.endswith('.schema.json'):
-        return None
-    schema_name = f'{data_path.name[:-len(".json")]}.schema.json'
-    here = data_path.with_name(schema_name)
-    if here.is_file():
-        return here
-    if fallback_dir is not None:
-        there = fallback_dir / schema_name
-        if there.is_file():
-            return there
-    return None
-
-
-def _load_schema(schema_path: Path) -> dict | None:
-    try:
-        if schema_path.stat().st_size > _SCHEMA_MAX_BYTES:
-            return None
-        parsed = json.loads(schema_path.read_text(encoding='utf-8'))
-    except (OSError, json.JSONDecodeError):
-        return None
-    return parsed if isinstance(parsed, dict) else None
-
-
-# --- schema approval (device-uploaded schemas are inert until approved) ------
-
-def _approvals_path(project_name: str) -> Path:
-    return get_project_dir(project_name) / '.schema_approvals.json'
-
-
-def _schema_key(schema_path: Path, project_name: str) -> str:
-    try:
-        return schema_path.relative_to(get_project_dir(project_name)).as_posix()
-    except ValueError:
-        return schema_path.name
-
-
-def _file_sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-def _load_approvals(project_name: str) -> dict:
-    path = _approvals_path(project_name)
-    try:
-        return json.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}
-    except (OSError, json.JSONDecodeError):
-        return {}
-
-
-def _is_schema_approved(schema_path: Path, project_name: str) -> bool:
-    try:
-        current = _file_sha256(schema_path)
-    except OSError:
-        return False
-    return _load_approvals(project_name).get(_schema_key(schema_path, project_name)) == current
-
-
-def _approve_schema(schema_path: Path, project_name: str) -> None:
-    """Record the schema's current content hash as approved. Called when a user
-    approves an uploaded schema, or saves/edits one in the UI (admin provenance)."""
-    try:
-        digest = _file_sha256(schema_path)
-    except OSError:
-        return
-    approvals = _load_approvals(project_name)
-    approvals[_schema_key(schema_path, project_name)] = digest
-    _atomic_write_text(_approvals_path(project_name), json.dumps(approvals, indent=2) + '\n')
-
-
-def _render_widget(field: _FormField, label: str) -> Callable[[], Any]:
+def _render_widget(field: FormField, label: str) -> Callable[[], Any]:
     """Render the input widget for *field*; return a getter for its value.
 
     Only text goes into text-rendering widgets (labels, options) — schema-supplied
@@ -331,65 +160,83 @@ def _render_widget(field: _FormField, label: str) -> Callable[[], Any]:
     return lambda: w.value
 
 
-def _render_form_field(field: _FormField) -> Callable[[], Any]:
+def _render_form_field(field: FormField) -> Callable[[], Any]:
     label = (field.label or field.key) + (' *' if field.required else '')
     with ui.column().classes('w-full gap-0'):
         getter = _render_widget(field, label)
         if field.description:
-            ui.label(field.description).classes('text-caption text-grey-6')
+            ui.label(field.description).classes('text-caption text-grey-7')
     return getter
 
 
-def _validate_field(field: _FormField, value: Any) -> str | None:
-    """Enforce the subset's constraints with plain checks (no regex). Returns the
-    first error message for *field*, or None if the value is acceptable."""
-    name = field.label or field.key
-    empty = value is None or value == '' or value == []
-    if field.required and empty:
-        return f'{name}: required'
-    if empty:
-        return None
-    if field.kind in ('integer', 'number'):
-        if field.minimum is not None and value < field.minimum:
-            return f'{name}: must be ≥ {field.minimum}'
-        if field.maximum is not None and value > field.maximum:
-            return f'{name}: must be ≤ {field.maximum}'
-    if field.kind in ('string', 'textarea') and field.max_length and len(value) > field.max_length:
-        return f'{name}: at most {field.max_length} characters'
-    if field.kind == 'enum' and field.enum and value not in [str(x) for x in field.enum]:
-        return f'{name}: not an allowed value'
-    if field.kind == 'string_list' and field.max_items is not None and len(value) > field.max_items:
-        return f'{name}: at most {field.max_items} items'
-    return None
+def _commit(ref: FileRef, ctx: _Ctx, text: str, on_saved: Callable[[], Any]) -> None:
+    """Write *text* to the file's save path and follow up.
+
+    For an inherited file the save path is the device copy, so this is the
+    copy-on-write: the project file stays untouched and the view is re-rendered
+    afterwards, now showing the device's own file.
+    """
+    if not _save_text(ref.save_path, text):
+        return
+    ui.notify(f'Saved {ref.key}', type='positive')
+    _maybe_publish(ref.save_path, ctx)
+    if ref.save_path.name.endswith('.schema.json'):
+        # Editing/creating a schema in the UI is admin provenance → auto-approved.
+        approve_schema(ref.save_path, ctx.project_name)
+    if ref.inherited:
+        on_saved()
 
 
-def _json_form(path: Path, ctx: _Ctx, original: dict, fields: list[_FormField]) -> None:
+def _save_button(ref: FileRef, on_click: Callable[[], None]) -> None:
+    """The save button. Its label spells out the copy-on-write for inherited files."""
+    label = 'Save as device file' if ref.inherited else 'Save'
+    with ui.row().classes('w-full justify-end q-mt-sm'):
+        ui.button(label, on_click=on_click).props('color=primary')
+
+
+def _banner(icon: str, colour: str, tint: str, text: str):
+    """A tinted notice strip above a detail view. Returns the row, so a caller can
+    reopen it to append an action button."""
+    row = ui.row().classes('w-full items-center gap-2 q-pa-sm rounded-borders') \
+        .style(f'background: {tint}')
+    with row:
+        ui.icon(icon).classes(colour)
+        ui.label(text).classes('grow text-body2')
+    return row
+
+
+def _inherited_banner(ctx: _Ctx) -> None:
+    _banner('folder_shared', 'text-blue', 'rgba(66,165,245,0.15)',
+            f'Inherited from the project. Saving creates a copy for '
+            f'{ctx.device_name}; the project file stays unchanged.')
+
+
+def _json_form(ref: FileRef, ctx: _Ctx, original: dict, fields: list[FormField],
+               on_saved: Callable[[], Any]) -> None:
     getters: dict[str, Callable[[], Any]] = {}
     with ui.column().classes('w-full gap-3'):
         if not fields:
-            ui.label('Empty object — nothing to edit as a form.').classes('text-caption text-grey-6')
+            ui.label('Empty object — nothing to edit as a form.').classes('text-caption text-grey-7')
         for field in fields:
             getters[field.key] = _render_form_field(field)
 
     def _save() -> None:
         values = {f.key: getters[f.key]() for f in fields}
         for f in fields:
-            if (err := _validate_field(f, values[f.key])) is not None:
+            if (err := validate_field(f, values[f.key])) is not None:
                 ui.notify(err, type='negative')
                 return
         # Merge into the existing object: overwrite only the form's keys, keep the
         # rest (a schema may cover only part of the file).
         merged = dict(original)
         merged.update(values)
-        if _atomic_write_text(path, json.dumps(merged, indent=2, ensure_ascii=False) + '\n'):
-            ui.notify(f'Saved {path.name}', type='positive')
-            _maybe_publish(path, ctx)
+        _commit(ref, ctx, json.dumps(merged, indent=2, ensure_ascii=False) + '\n', on_saved)
 
-    with ui.row().classes('w-full justify-end q-mt-sm'):
-        ui.button('Save', on_click=_save).props('color=primary')
+    _save_button(ref, _save)
 
 
-def _json_raw_editor(path: Path, ctx: _Ctx, content: str) -> None:
+def _json_raw_editor(ref: FileRef, ctx: _Ctx, content: str,
+                     on_saved: Callable[[], Any]) -> None:
     editor = (
         ui.codemirror(value=content, language='JSON', line_wrapping=True)
         .classes('w-full border rounded').style('height: clamp(240px, 55vh, 640px)')
@@ -401,33 +248,25 @@ def _json_raw_editor(path: Path, ctx: _Ctx, content: str) -> None:
         except json.JSONDecodeError as exc:
             ui.notify(f'Invalid JSON: {exc}', type='negative')
             return
-        if _atomic_write_text(path, json.dumps(parsed, indent=2, ensure_ascii=False) + '\n'):
-            ui.notify(f'Saved {path.name}', type='positive')
-            _maybe_publish(path, ctx)
-            if path.name.endswith('.schema.json'):
-                # Editing/creating a schema in the UI is admin provenance → auto-approved.
-                _approve_schema(path, ctx.project_name)
+        _commit(ref, ctx, json.dumps(parsed, indent=2, ensure_ascii=False) + '\n', on_saved)
 
-    with ui.row().classes('w-full justify-end q-mt-sm'):
-        ui.button('Save', on_click=_save).props('color=primary')
+    _save_button(ref, _save)
 
 
-def _schema_pending_banner(schema_path: Path, ctx: _Ctx, on_approve: Callable[[], None]) -> None:
-    with ui.row().classes('w-full items-center gap-2 q-pa-sm rounded-borders') \
-            .style('background: rgba(255,167,38,0.15)'):
-        ui.icon('warning').classes('text-orange')
-        ui.label(f'The schema "{schema_path.name}" was uploaded and needs your approval '
-                 'before it drives the form.').classes('grow text-body2')
-
+def _schema_pending_banner(schema_path: Path, ctx: _Ctx, on_approve: Callable[[], Any]) -> None:
+    with _banner('warning', 'text-orange', 'rgba(255,167,38,0.15)',
+                 f'The schema "{schema_path.name}" was uploaded and needs your approval '
+                 'before it drives the form.'):
         def _approve() -> None:
-            _approve_schema(schema_path, ctx.project_name)
+            approve_schema(schema_path, ctx.project_name)
             ui.notify(f'Approved {schema_path.name}', type='positive')
             on_approve()
         ui.button('Approve', icon='verified', on_click=_approve).props('dense color=primary')
 
 
-def _json_with_form(path: Path, ctx: _Ctx, parsed: dict, pretty: str,
-                    fields: list[_FormField], *, form_default: bool) -> None:
+def _json_with_form(ref: FileRef, ctx: _Ctx, parsed: dict, pretty: str,
+                    fields: list[FormField], on_saved: Callable[[], Any], *,
+                    form_default: bool) -> None:
     """Form + Raw tabs; *form_default* selects which is shown first. No live sync
     between the tabs — each renders from the on-disk content read by the caller."""
     with ui.tabs().classes('w-full') as tabs:
@@ -435,73 +274,88 @@ def _json_with_form(path: Path, ctx: _Ctx, parsed: dict, pretty: str,
         raw_tab = ui.tab('Raw')
     with ui.tab_panels(tabs, value=(form_tab if form_default else raw_tab)).classes('w-full'):
         with ui.tab_panel(form_tab):
-            _json_form(path, ctx, parsed, fields)
+            _json_form(ref, ctx, parsed, fields, on_saved)
         with ui.tab_panel(raw_tab):
-            _json_raw_editor(path, ctx, pretty)
+            _json_raw_editor(ref, ctx, pretty, on_saved)
 
 
-def _render_json_detail(path: Path, ctx: _Ctx, fallback_dir: Path | None = None) -> None:
-    """JSON detail. With an approved sibling schema the schema-driven form is the
-    default tab; without one, a flat object still gets an inferred Form tab (raw
-    default). An unapproved uploaded schema shows an approval banner and raw only.
-    Wrapped in a local refreshable so approving re-renders the view in place."""
+def _editor_view(ref: FileRef, ctx: _Ctx,
+                 body: Callable[[FileRef, Callable[[], Any]], None]) -> None:
+    """Render *body* inside a local refreshable that re-resolves the file first.
 
+    Both editors need this: a copy-on-write save turns an inherited file into the
+    device's own, and the view — banner and save-button label included — has to
+    follow without navigating away from the detail page.
+    """
     @ui.refreshable
     def detail() -> None:
+        cur = resolve_ref(ref.key, ref.save_path.parent, ctx.underlay_dir)
+        if cur.inherited:
+            _inherited_banner(ctx)
+        body(cur, detail.refresh)
+
+    detail()
+
+
+def _render_json_detail(ref: FileRef, ctx: _Ctx) -> None:
+    """JSON detail. With an approved sibling schema the schema-driven form is the
+    default tab; without one, a flat object still gets an inferred Form tab (raw
+    default). An unapproved uploaded schema shows an approval banner and raw only."""
+
+    def body(cur: FileRef, refresh: Callable[[], Any]) -> None:
+        path = cur.read_path
         try:
             parsed = json.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}
             pretty = json.dumps(parsed, indent=2, ensure_ascii=False)
         except (OSError, json.JSONDecodeError):
             content = path.read_text(encoding='utf-8', errors='replace') if path.is_file() else '{}'
-            _json_raw_editor(path, ctx, content)
+            _json_raw_editor(cur, ctx, content, refresh)
             return
         if not isinstance(parsed, dict):
-            _json_raw_editor(path, ctx, pretty)
+            _json_raw_editor(cur, ctx, pretty, refresh)
             return
 
-        schema_path = _resolve_schema_path(path, fallback_dir)
+        schema_path = resolve_schema_path(path, ctx.underlay_dir)
         if schema_path is not None:
-            if not _is_schema_approved(schema_path, ctx.project_name):
-                _schema_pending_banner(schema_path, ctx, on_approve=detail.refresh)
-                _json_raw_editor(path, ctx, pretty)
+            if not is_schema_approved(schema_path, ctx.project_name):
+                _schema_pending_banner(schema_path, ctx, on_approve=refresh)
+                _json_raw_editor(cur, ctx, pretty, refresh)
                 return
-            schema = _load_schema(schema_path)
-            schema_fields = _fields_from_schema(schema, parsed) if schema is not None else None
+            schema = load_schema(schema_path)
+            schema_fields = fields_from_schema(schema, parsed) if schema is not None else None
             if schema_fields is not None:
-                _json_with_form(path, ctx, parsed, pretty, schema_fields, form_default=True)
+                _json_with_form(cur, ctx, parsed, pretty, schema_fields, refresh,
+                                form_default=True)
                 return
             ui.label('Schema present but not a usable flat-object schema; editing raw.') \
-                .classes('text-caption text-grey-6')
+                .classes('text-caption text-grey-7')
 
-        inferred = _infer_flat_fields(parsed)
+        inferred = infer_flat_fields(parsed)
         if inferred is None:
-            _json_raw_editor(path, ctx, pretty)
+            _json_raw_editor(cur, ctx, pretty, refresh)
             return
-        _json_with_form(path, ctx, parsed, pretty, inferred, form_default=False)
+        _json_with_form(cur, ctx, parsed, pretty, inferred, refresh, form_default=False)
 
-    detail()
+    _editor_view(ref, ctx, body)
 
 
-def _render_text_editor(path: Path, ctx: _Ctx) -> None:
-    try:
-        content = path.read_text(encoding='utf-8', errors='replace')
-    except OSError as exc:
-        ui.notify(f'Cannot read file: {exc}', type='negative')
-        return
+def _render_text_editor(ref: FileRef, ctx: _Ctx) -> None:
+    """Plain-text detail. Text is saved verbatim (no reformatting, unlike JSON)."""
 
-    editor = (
-        ui.codemirror(value=content, language=_codemirror_language(path), line_wrapping=True)
-        .classes('w-full border rounded').style('height: clamp(240px, 55vh, 640px)')
-    )
+    def body(cur: FileRef, refresh: Callable[[], Any]) -> None:
+        try:
+            content = cur.read_path.read_text(encoding='utf-8', errors='replace')
+        except OSError as exc:
+            ui.notify(f'Cannot read file: {exc}', type='negative')
+            return
+        editor = (
+            ui.codemirror(value=content, line_wrapping=True,
+                          language=_LANG_MAP.get(cur.read_path.suffix.lower()))
+            .classes('w-full border rounded').style('height: clamp(240px, 55vh, 640px)')
+        )
+        _save_button(cur, lambda: _commit(cur, ctx, editor.value, refresh))
 
-    def _save() -> None:
-        # Text is saved verbatim (no reformatting, unlike JSON).
-        if _atomic_write_text(path, editor.value):
-            ui.notify(f'Saved {path.name}', type='positive')
-            _maybe_publish(path, ctx)
-
-    with ui.row().classes('w-full justify-end q-mt-sm'):
-        ui.button('Save', on_click=_save).props('color=primary')
+    _editor_view(ref, ctx, body)
 
 
 def _render_image_preview(path: Path) -> None:
@@ -523,27 +377,32 @@ def _render_download_only(path: Path, reason: str) -> None:
                   on_click=lambda: _download_file(path)).props('outline')
 
 
-def _file_detail(dir_path: Path, key: str, ctx: _Ctx,
-                 schema_fallback_dir: Path | None = None) -> None:
+def _file_detail(ref: FileRef, ctx: _Ctx) -> None:
     """render_detail body for one file, dispatched on type and size."""
-    path = dir_path / key
+    path = ref.read_path
     if not path.is_file():
-        ui.label(f'{key!r} not found.').classes('text-negative')
+        ui.label(f'{ref.key!r} not found.').classes('text-negative')
         return
     ext = path.suffix.lower()
-    size = path.stat().st_size
+    # The editors re-resolve and draw their own banner, because a save can turn an
+    # inherited file into the device's own one. The static views below cannot.
     if ext == '.json':
-        _render_json_detail(path, ctx, schema_fallback_dir)
-    elif ext in _IMAGE_MIME:
+        _render_json_detail(ref, ctx)
+        return
+    size = path.stat().st_size
+    if ext in _TEXT_EXTENSIONS and size <= _MAX_VIEWER_SIZE:
+        _render_text_editor(ref, ctx)
+        return
+
+    if ref.inherited:
+        _inherited_banner(ctx)
+    if ext in _IMAGE_MIME:
         if size <= _MAX_IMAGE_SIZE:
             _render_image_preview(path)
         else:
-            _render_download_only(path, f'Image too large to preview ({size / 1024 / 1024:.1f} MB).')
+            _render_download_only(path, f'Image too large to preview ({_human_size(size)}).')
     elif ext in _TEXT_EXTENSIONS:
-        if size <= _MAX_VIEWER_SIZE:
-            _render_text_editor(path, ctx)
-        else:
-            _render_download_only(path, f'File too large to edit ({size / 1024:.0f} KB).')
+        _render_download_only(path, f'File too large to edit ({_human_size(size)}).')
     else:
         _render_download_only(path, 'Binary file — download to view.')
 
@@ -552,36 +411,36 @@ def _file_detail(dir_path: Path, key: str, ctx: _Ctx,
 # List view (render_list_item) — one row
 # ---------------------------------------------------------------------------
 
-def _file_list_row(dir_path: Path, key: str, item: FileEntry, select: Callable[[], None],
-                   ctx: _Ctx, refresh: Callable[[], None], state: dict) -> None:
-    path = dir_path / key
-    ext = path.suffix.lower()
-    is_json = ext == '.json'
-    is_image = ext in _IMAGE_MIME
-    is_text = ext in _TEXT_EXTENSIONS
-    icon = ('data_object' if is_json else 'image' if is_image
-            else 'article' if is_text else 'insert_drive_file')
-    size = item.size
-    size_str = f'{size / 1024:.1f} KB' if size < 1024 * 1024 else f'{size / 1024 / 1024:.1f} MB'
-    published_at = state.get(key, {}).get('published_at') if ctx.mqtt_enabled else None
+def _file_list_row(ref: FileRef, item: FileEntry, select: Callable[[], None],
+                   ctx: _Ctx, refresh: Callable[[], Any], state: dict) -> None:
+    path = ref.read_path
+    # State is keyed by basename per device, so inherited files are covered too.
+    published_at = state.get(ref.key, {}).get('published_at') if ctx.mqtt_enabled else None
 
-    with ui.row().classes('w-full items-center gap-2 q-py-xs'):
-        ui.icon(icon).classes('text-grey-6 text-sm')
-        with ui.column().classes('grow gap-0'):
-            ui.label(key).classes('text-body2 cursor-pointer').on('click', select)
+    with ui.row().classes('w-full items-center gap-0 q-py-xs'):
+        ui.icon(_FILE_ICONS.get(path.suffix.lower(), 'insert_drive_file')) \
+            .classes('text-grey-7 text-sm q-mr-sm')
+        with ui.column().classes('grow gap-0 cursor-pointer').on('click', select):
+            with ui.row().classes('items-center gap-2 no-wrap'):
+                ui.label(ref.key).classes('text-body2')
+                if ref.inherited:
+                    ui.chip('project', icon='folder_shared') \
+                        .props('dense outline size=sm color=grey-7') \
+                        .tooltip('Served from the project directory — this device has no own copy')
+            ui.label(f'{render_datetime(item.mtime)}, {_human_size(item.size)}') \
+                .classes('text-caption text-grey-7')
             if published_at:
                 try:
-                    from datetime import datetime
-                    ui.label(f'Published: {render_datetime(datetime.fromisoformat(published_at))}') \
-                        .classes('text-caption text-grey-6')
+                    ui.label(f'published {render_datetime(datetime.fromisoformat(published_at))}') \
+                        .classes('text-caption text-grey-7')
                 except (ValueError, TypeError):
                     pass
-        ui.label(size_str).classes('text-caption text-grey-7')
-        ui.button(icon='chevron_right').props('flat dense size=sm').tooltip('Open').on_click(select)
         ui.button(icon='download').props('flat dense size=sm').tooltip('Download') \
             .on_click(lambda _, p=path: _download_file(p))
 
-        if ctx.mqtt_enabled and ctx.project_name and ctx.device_name:
+        if ctx.can_publish:
+            # Inherited files are publishable too — the watcher sends them to the
+            # device anyway, so this only forces what would happen on its own.
             async def _publish(p=path) -> None:
                 from app.core.file.backend import publish_file_now
                 ok = await publish_file_now(ctx.project_name, ctx.device_name, p)
@@ -593,25 +452,33 @@ def _file_list_row(dir_path: Path, key: str, item: FileEntry, select: Callable[[
             ui.button(icon='cloud_upload').props('flat dense size=sm') \
                 .tooltip('Force publish to device via MQTT').on_click(_publish)
 
-        async def _delete(p=path) -> None:
-            if not await confirm_dialog('Delete File', f'Delete **{p.name}**? This is irreversible.',
-                                        ok_label='Delete', ok_color='negative'):
-                return
-            try:
-                p.unlink()
-                ui.notify(f'Deleted {p.name}', type='positive')
-                refresh()
-            except OSError as e:
-                ui.notify(f'Delete failed: {e}', type='negative')
-        ui.button(icon='delete').props('flat dense size=sm color=negative') \
-            .tooltip('Delete').on_click(_delete)
+        # No delete for inherited files: there is no device copy to remove, and the
+        # project file belongs to every other device as well.
+        if not ref.inherited:
+            question = (f'Delete this device\'s copy of **{ref.key}**? '
+                        'The project file will be used again.'
+                        if ref.overrides
+                        else f'Delete **{ref.key}**? This is irreversible.')
+
+            async def _delete(p=path, q=question) -> None:
+                if not await confirm_dialog('Delete File', q,
+                                            ok_label='Delete', ok_color='negative'):
+                    return
+                try:
+                    p.unlink()
+                    ui.notify(f'Deleted {p.name}', type='positive')
+                    refresh()
+                except OSError as e:
+                    ui.notify(f'Delete failed: {e}', type='negative')
+            ui.button(icon='delete').props('flat dense size=sm color=negative') \
+                .tooltip('Delete').on_click(_delete)
 
 
 # ---------------------------------------------------------------------------
 # New file / upload
 # ---------------------------------------------------------------------------
 
-async def _new_json_dialog(directory: Path, refresh: Callable[[], None], ctx: _Ctx) -> None:
+async def _new_json_dialog(directory: Path, refresh: Callable[[], Any], ctx: _Ctx) -> None:
     """Create a new JSON file using a CodeMirror editor."""
     with ui.dialog() as dialog, ui.card().style('width: min(95vw, 900px); overflow: hidden'):
         ui.label('New JSON File').classes('text-subtitle1 font-bold')
@@ -619,12 +486,16 @@ async def _new_json_dialog(directory: Path, refresh: Callable[[], None], ctx: _C
         with ui.row().classes('w-full items-center gap-2 q-mt-xs'):
             filename_input = ui.input(label='Filename', placeholder='config') \
                 .props('outlined dense').classes('grow')
-            filename_preview = ui.label('').classes('text-caption text-grey-6 text-no-wrap')
+            filename_preview = ui.label('').classes('text-caption text-grey-7 text-no-wrap')
 
         def _update_preview(e) -> None:
             raw = (e.value or '').strip()
             effective = raw if raw.endswith('.json') else (f'{raw}.json' if raw else '')
-            filename_preview.text = f'→ {effective}' if effective else ''
+            if effective and ctx.underlay_dir is not None and (ctx.underlay_dir / effective).is_file():
+                # Allowed, but say so: this hides the project file for this device.
+                filename_preview.text = f'→ {effective} (overrides the project file)'
+            else:
+                filename_preview.text = f'→ {effective}' if effective else ''
 
         filename_input.on_value_change(_update_preview)
         editor = ui.codemirror(value='{}', language='JSON', line_wrapping=True) \
@@ -651,7 +522,7 @@ async def _new_json_dialog(directory: Path, refresh: Callable[[], None], ctx: _C
                 if dest.exists():
                     ui.notify(f'{fname} already exists — open it to edit', type='warning')
                     return
-                if _atomic_write_text(dest, json.dumps(parsed, indent=2, ensure_ascii=False) + '\n'):
+                if _save_text(dest, json.dumps(parsed, indent=2, ensure_ascii=False) + '\n'):
                     ui.notify(f'Created {fname}', type='positive')
                     dialog.close()
                     refresh()
@@ -663,7 +534,7 @@ async def _new_json_dialog(directory: Path, refresh: Callable[[], None], ctx: _C
     await dialog
 
 
-def _make_upload_handler(directory: Path, refresh: Callable[[], None], ctx: _Ctx):
+def _make_upload_handler(directory: Path, refresh: Callable[[], Any], ctx: _Ctx):
     """Return an upload handler that writes uploaded files to *directory* atomically.
 
     An upload can be several MB, so the blocking write/rename is pushed to a
@@ -677,22 +548,15 @@ def _make_upload_handler(directory: Path, refresh: Callable[[], None], ctx: _Ctx
             e.sender.reset()
             return
         dest = directory / filename
-        tmp = dest.with_name(dest.name + '.tmp')
         content = await e.file.read()
-
-        def _write() -> None:
-            tmp.write_bytes(content)
-            tmp.rename(dest)
-
         try:
-            await anyio.to_thread.run_sync(_write)
+            await anyio.to_thread.run_sync(lambda: atomic_write(dest, content))
             ui.notify(f'Uploaded {filename}', type='positive')
             refresh()
             _maybe_publish(dest, ctx)
-        except Exception as exc:
+        except OSError as exc:
             log.exception(f'Upload failed: {exc}')
             ui.notify(f'Upload failed: {exc}', type='negative')
-            await anyio.to_thread.run_sync(lambda: tmp.unlink(missing_ok=True))
         finally:
             e.sender.reset()
     return _handle
@@ -702,10 +566,12 @@ def _make_upload_handler(directory: Path, refresh: Callable[[], None], ctx: _Ctx
 # Card = DrillDownWrapper(list <-> detail) + an always-visible upload footer
 # ---------------------------------------------------------------------------
 
-def _files_card(dir_path: Path, *, title: str, description: str, ctx: _Ctx,
-                schema_fallback_dir: Path | None = None) -> None:
+def _files_card(write_dir: Path, *, title: str, description: str, ctx: _Ctx) -> None:
+    """One Files card. Everything is written to *write_dir*; ctx.underlay_dir adds
+    a read-only layer beneath it (the project dir, for a device card), which also
+    serves as the fallback directory for schema sidecars."""
     from app.core.file.backend import get_file_config
-    dir_path.mkdir(parents=True, exist_ok=True)
+    write_dir.mkdir(parents=True, exist_ok=True)
     max_upload = get_file_config(ctx.project_name).max_upload_size
 
     @ui.refreshable
@@ -714,10 +580,12 @@ def _files_card(dir_path: Path, *, title: str, description: str, ctx: _Ctx,
         if ctx.mqtt_enabled and ctx.device_name:
             from app.core.file.backend import load_file_state
             state = load_file_state(ctx.project_name, ctx.device_name)
-        adapter = DirectoryAdapter(dir_path, suffix=None, name_filter=is_valid_upload_filename)
+        adapter = OverlayDirectoryAdapter(write_dir, ctx.underlay_dir, suffix=None,
+                                          name_filter=is_valid_upload_filename)
 
         def _list_item(key: str, item: FileEntry, select: Callable[[], None]) -> None:
-            _file_list_row(dir_path, key, item, select, ctx, wrapper_body.refresh, state)
+            _file_list_row(resolve_ref(key, write_dir, ctx.underlay_dir), item, select,
+                           ctx, wrapper_body.refresh, state)
 
         DrillDownWrapper.from_adapter(
             FileEntry, adapter,
@@ -725,7 +593,8 @@ def _files_card(dir_path: Path, *, title: str, description: str, ctx: _Ctx,
             item_title_field='name',
             add_button=None, delete_button=None,  # our own row/footer actions instead
             render_list_item=_list_item,
-            render_detail=lambda _a, key, _set: _file_detail(dir_path, key, ctx, schema_fallback_dir),
+            render_detail=lambda _a, key, _set: _file_detail(
+                resolve_ref(key, write_dir, ctx.underlay_dir), ctx),
         ).render()
 
     ui.markdown(description).classes('text-caption q-ma-none')
@@ -733,16 +602,17 @@ def _files_card(dir_path: Path, *, title: str, description: str, ctx: _Ctx,
 
     # Upload footer lives outside the wrapper so it is reachable even when the
     # directory is empty (DrillDownWrapper skips render_list_container then).
+    # Uploads and new files always land in write_dir, never in the underlay.
     ui.separator().classes('q-mt-sm')
     with ui.row().classes('w-full items-center gap-2 q-mt-xs flex-wrap'):
         ui.label('Upload').classes('text-caption text-grey-7')
 
         async def _new_json() -> None:
-            await _new_json_dialog(dir_path, wrapper_body.refresh, ctx)
+            await _new_json_dialog(write_dir, wrapper_body.refresh, ctx)
         ui.button('New JSON', icon='add', on_click=_new_json).props('dense flat size=sm')
 
     ui.upload(
-        on_upload=_make_upload_handler(dir_path, wrapper_body.refresh, ctx),
+        on_upload=_make_upload_handler(write_dir, wrapper_body.refresh, ctx),
         max_file_size=max_upload,
         auto_upload=True,
     ).props('flat dense').classes('w-full q-mt-xs')
@@ -752,36 +622,31 @@ def _files_card(dir_path: Path, *, title: str, description: str, ctx: _Ctx,
 # Public panel functions
 # ---------------------------------------------------------------------------
 
-_DEVICE_DESC = ('Files stored in the device directory. '
-                'Devices can upload (PUT) and download (GET) these via the API.')
+_DEVICE_DESC = ('Every file this device is served — its own plus the project files '
+                'it inherits, marked with a `project` chip. Editing an inherited file '
+                'saves a copy for this device; the project file stays unchanged.')
 _PROJECT_DESC = ('Shared files in the project directory. '
                  'Served to devices as a fallback when no device-specific copy exists.')
 
 
 async def device_files_panel(project_name: str, device_name: str) -> None:
-    """Content of the device Files tab (device files + project-file fallback)."""
+    """Content of the device Files tab: the device's effective file set — its own
+    files layered over the project's, exactly as the API and the MQTT publisher
+    resolve them."""
     from app.core.project.backend import get_project
     try:
         mqtt_enabled = get_project(project_name, check_active=False).is_mqtt_enabled
     except Exception:
         mqtt_enabled = False
-    # Both cards publish to this device when MQTT is on.
-    ctx = _Ctx(project_name, device_name, mqtt_enabled)
-    with ui.grid().classes('grid-cols-1 lg:grid-cols-2 gap-4 w-full'):
-        with ui.card().classes('w-full'):
-            # Device files fall back to the project dir for their schema, mirroring
-            # the data-file fallback.
-            _files_card(get_device_path(project_name, device_name),
-                        title='Device Files', description=_DEVICE_DESC, ctx=ctx,
-                        schema_fallback_dir=get_project_dir(project_name))
-        with ui.card().classes('w-full'):
-            _files_card(get_project_dir(project_name),
-                        title='Project Files', description=_PROJECT_DESC, ctx=ctx)
+    _files_card(get_device_path(project_name, device_name),
+                title='Files', description=_DEVICE_DESC,
+                ctx=_Ctx(project_name, device_name, mqtt_enabled,
+                         underlay_dir=get_project_dir(project_name)))
 
 
 async def project_files_panel(project_name: str) -> None:
-    """Content of the project Files tab (single card, full width)."""
-    with ui.card().classes('w-full'):
-        _files_card(get_project_dir(project_name),
-                    title='Project Files', description=_PROJECT_DESC,
-                    ctx=_Ctx(project_name, None, False))
+    """Content of the project Files tab — the project directory on its own, with
+    no underlay, so no file is ever inherited here."""
+    _files_card(get_project_dir(project_name),
+                title='Project Files', description=_PROJECT_DESC,
+                ctx=_Ctx(project_name, None, False))

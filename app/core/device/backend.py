@@ -18,7 +18,7 @@ from app.core.token.backend import (
 from app.core.device.models import Device, DeviceRuntime
 from app.core.project.backend import get_project, get_project_path
 from app.core.project.models import Project
-from app.util import logger, is_valid_name
+from app.util import atomic_write, logger, is_valid_name
 from niceview.dataadapter import lenient_model_load
 
 ###############################################################################
@@ -96,9 +96,7 @@ def write_runtime(project_name: str, device_name: str, *,
         rt.firmware_version = firmware_version.strip()[:_FW_MAX_LEN]
         rt.firmware_reported_at = datetime.datetime.now(datetime.timezone.utc)
     path = device_dir(project_name, device_name) / _RUNTIME_FILE
-    tmp = path.with_name(path.name + '.tmp')
-    tmp.write_text(rt.model_dump_json(indent=2))
-    tmp.rename(path)
+    atomic_write(path, rt.model_dump_json(indent=2))
     return rt
 
 
@@ -181,9 +179,7 @@ def create_device(device: Device) -> Device:
         now = datetime.datetime.now(datetime.timezone.utc)
         device.created_at = now
         device.updated_at = now
-        temp_file = device_file.with_name(device_file.name + '.tmp')
-        temp_file.write_text(device.model_dump_json(indent=2))
-        temp_file.rename(device_file)
+        atomic_write(device_file, device.model_dump_json(indent=2))
     except Exception:
         shutil.rmtree(device_path, ignore_errors=True)
         raise
@@ -241,9 +237,7 @@ def update_device(device: Device) -> Device:
     """
     device_file = get_device_path(device.project_name, device.name) / DEVICE_FILE_NAME
     device.updated_at = datetime.datetime.now(datetime.timezone.utc)
-    temp_file = device_file.with_name(device_file.name + '.tmp')
-    temp_file.write_text(device.model_dump_json(indent=2))
-    temp_file.rename(device_file)
+    atomic_write(device_file, device.model_dump_json(indent=2))
     return device
 
 
@@ -433,7 +427,5 @@ def rename_device(project_name: str, old_device_name: str, new_device_name: str)
     if device_json.is_file():
         device = lenient_model_load(Device, device_json.read_text(), str(device_json))
         device.name = new_device_name
-        temp = device_json.with_name(device_json.name + '.tmp')
-        temp.write_text(device.model_dump_json(indent=2))
-        temp.rename(device_json)
+        atomic_write(device_json, device.model_dump_json(indent=2))
     _invalidate_device_list_cache(project_name)

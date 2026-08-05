@@ -1,7 +1,9 @@
 # File Editing & Schema-Driven Forms
 
 Status: **implemented in 0.14.0.** This documents the feature and the design
-decisions behind it. Implementation lives in `app/core/device/files_ui.py`.
+decisions behind it. The rendering lives in `app/core/device/files_ui.py`; the
+form logic it builds on (field inference, the schema subset, schema approval)
+lives in `app/core/device/file_form.py`, which is free of NiceGUI.
 
 [← Documentation index](README.md) · [Architecture](architecture.md)
 
@@ -18,6 +20,22 @@ files driven by a minimal JSON-Schema subset.
 What already exists and stays: per-directory file list, upload, download,
 delete, "New JSON", CodeMirror JSON editor with validation and atomic save,
 read-only text viewer, MQTT force-publish, project→device fallback.
+
+## One list per device
+
+The device Files tab lists the device's **effective** file set: its own files
+layered over the project's, with the same precedence the device-facing API
+(`get_file_path()`) and the MQTT publisher (`check_and_publish_project()`) apply.
+An entry served from the project directory carries a `project` chip. The merge
+lives in `app/core/device/file_overlay.py`.
+
+Writes never reach the project directory from here. Saving an inherited file is a
+**copy-on-write**: the content is written to the device directory, the project
+file is untouched, and the chip disappears. Uploads and "New JSON" behave the
+same way — always device-local, overriding a project file of that name if one
+exists. Inherited entries therefore have no delete button; deleting a device
+override makes the inherited entry reappear. Project files are edited in the
+project's own Files tab, where nothing is inherited.
 
 ## Goals
 

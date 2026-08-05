@@ -6,6 +6,52 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-08-05
+
+### Added
+
+- **Unified device Files tab.** The device Files tab now shows one list — the
+  device's own files layered over the project files it inherits, matching how
+  `get_file_path()` and the MQTT publisher already resolve them. Inherited
+  entries carry a `project` chip. The separate "Project Files" card on the device
+  page is gone; project files are edited in the project's Files tab.
+  Editing an inherited file is a **copy-on-write**: it saves a copy for that
+  device and leaves the project file unchanged (the save button reads *Save as
+  device file*). Uploads and "New JSON" always write to the device directory.
+  Inherited entries have no delete button; deleting a device override brings the
+  inherited file back. Force-publish over MQTT works for inherited files too.
+  New module `app.core.device.file_overlay` (`FileRef`, `resolve_ref`,
+  `OverlayDirectoryAdapter`); `_files_card` takes `underlay_dir` in place of
+  `schema_fallback_dir`.
+
+### Changed
+
+- **`app.util.atomic_write(path, data, *, suffix='.tmp')`** replaces eleven
+  hand-rolled temp-file-plus-rename implementations across `app/` (firmware,
+  token, device, telemetry, file and alarm backends, the device upload API, the
+  MQTT upload handler and the Files card). It takes `str` or `bytes`, removes the
+  temp file before re-raising `OSError`, and keeps the distinct temp suffixes the
+  upload/MQTT paths rely on to avoid colliding on one target.
+- **`app.util.shadow_merge(own, under, key)`** holds the device-over-project
+  precedence rule that the Files listing and `check_and_publish_project()` both
+  need, so the two cannot drift apart.
+- **UI polish.** Secondary text and icons use `text-grey-7` throughout (several
+  places still had the lighter `text-grey-6`), cards and expansions are tighter,
+  and the device Dashboard's provisioning card became a timeline card. The
+  relative-age formatter moved from `app.core.device.ui` to
+  `app.util.render_datetime_age`.
+- **Dependencies.** `fastapi`, `pydantic` and `httpx` are now declared as runtime
+  dependencies. All three are imported directly by `app/`; the first two were only
+  reaching the install transitively via `nicegui`, and `httpx` was declared in the
+  dev group only, so a plain install of the package could fail at import.
+- **Files tab refactored.** The JSON form logic (field inference, the JSON-Schema
+  subset, schema approval, validation, atomic write) moved out of
+  `app.core.device.files_ui` into the new NiceGUI-free module
+  `app.core.device.file_form`, where it is synchronous and directly testable.
+  The moved helpers lost their leading underscore now that they are a
+  cross-module API (`_FormField` → `FormField`, `_validate_field` →
+  `validate_field`, …). No behaviour or UI change.
+
 ## [0.21.0] - 2026-08-04
 
 ### Added

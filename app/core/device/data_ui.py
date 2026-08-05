@@ -137,7 +137,7 @@ class _DataExplorer:
                 'Overlay vertical markers where the selected labels change'
             ).on_value_change(lambda e: self._on_markers(e.value))
             if not keys:
-                ui.label('no labels reported').classes('text-caption text-grey-6')
+                ui.label('no labels reported').classes('text-caption text-grey-7')
 
     async def initialize(self) -> None:
         await self._refresh()
@@ -309,6 +309,6 @@ class _DataExplorer:
                 ui.label(
                     'No telemetry yet. Push data via POST /api/telemetry/{project}/{device}/{kind} '
                     'or run: python tools/device_client.py cycle …'
-                ).classes('text-caption text-grey-6')
+                ).classes('text-caption text-grey-7')
 
         self.chart.update_figure(fig)

@@ -25,7 +25,7 @@ from niceview.dataadapter import JsonAdapter, lenient_model_load
 
 from app.core.firmware.models import REPO_RE, FirmwareSource, FirmwareState
 from app.paths import device_dir, project_dir
-from app.util import logger
+from app.util import atomic_write, logger
 
 FIRMWARE_CONFIG_FILE = '.firmware.json'
 FIRMWARE_STATE_FILE = '.firmware.state.json'
@@ -92,19 +92,7 @@ def load_firmware_state(dir_path: Path) -> FirmwareState | None:
 
 
 def save_firmware_state(dir_path: Path, state: FirmwareState) -> None:
-    _atomic_write_text(dir_path / FIRMWARE_STATE_FILE, state.model_dump_json(indent=2))
-
-
-def _atomic_write_text(path: Path, text: str) -> None:
-    tmp = path.with_name(path.name + '.tmp')
-    tmp.write_text(text)
-    tmp.rename(path)
-
-
-def _write_bytes_atomic(path: Path, data: bytes) -> None:
-    tmp = path.with_name(path.name + '.tmp')
-    tmp.write_bytes(data)
-    tmp.rename(path)
+    atomic_write(dir_path / FIRMWARE_STATE_FILE, state.model_dump_json(indent=2))
 
 
 # ---------------------------------------------------------------------------
@@ -311,7 +299,7 @@ async def _pull_firmware(dir_path: Path, src: FirmwareSource, *, project_name: s
         raise FirmwareError('asset digest mismatch — nothing written')
 
     dest = dir_path / src.dest_filename
-    await anyio.to_thread.run_sync(lambda: _write_bytes_atomic(dest, data))
+    await anyio.to_thread.run_sync(lambda: atomic_write(dest, data))
 
     new_state = FirmwareState(
         tag=resolved.tag, asset=resolved.asset_name,

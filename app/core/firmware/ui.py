@@ -60,11 +60,11 @@ async def firmware_source_card(dir_path: Path, *, project_name: str, device_name
     def github_path() -> None:
         url = github_release_url(config)
         with ui.row().classes('items-center gap-1 q-mt-xs'):
-            ui.label('GitHub:').classes('text-caption text-grey-6')
+            ui.label('GitHub:').classes('text-caption text-grey-7')
             if url:
                 ui.link(url, url, new_tab=True).classes('text-caption')
             else:
-                ui.label('— set a repository above').classes('text-caption text-grey-6')
+                ui.label('— set a repository above').classes('text-caption text-grey-7')
 
     github_path()
 
@@ -75,9 +75,9 @@ async def firmware_source_card(dir_path: Path, *, project_name: str, device_name
             if state and state.tag:
                 ui.icon('check_circle').classes('text-green-6')
                 ui.label(f'Pulled: {state.tag}').classes('text-body2')
-                ui.label(render_datetime(state.pulled_at)).classes('text-caption text-grey-6')
+                ui.label(render_datetime(state.pulled_at)).classes('text-caption text-grey-7')
             else:
-                ui.label('Nothing pulled yet').classes('text-body2 text-grey-6')
+                ui.label('Nothing pulled yet').classes('text-body2 text-grey-7')
 
     status()
     latest_label = ui.label('').classes('text-caption text-grey-7 q-mt-xs')

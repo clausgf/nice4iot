@@ -1,17 +1,17 @@
 """Unit tests for the flat-JSON form inference, schema subset and approval
-store (app.core.device.files_ui)."""
+store (app.core.device.file_form)."""
 import pytest
 
-from app.core.device.files_ui import (
-    _FormField,
-    _approve_schema,
-    _fields_from_schema,
-    _infer_flat_fields,
-    _infer_kind,
-    _is_schema_approved,
-    _resolve_schema_path,
-    _schema_kind,
-    _validate_field,
+from app.core.device.file_form import (
+    FormField,
+    approve_schema,
+    fields_from_schema,
+    infer_flat_fields,
+    infer_kind,
+    is_schema_approved,
+    resolve_schema_path,
+    schema_kind,
+    validate_field,
 )
 
 
@@ -27,7 +27,7 @@ from app.core.device.files_ui import (
     ([], 'string_list'),
 ])
 def test_infer_kind_representable(value, kind):
-    assert _infer_kind(value) == kind
+    assert infer_kind(value) == kind
 
 
 @pytest.mark.parametrize("value", [
@@ -38,11 +38,11 @@ def test_infer_kind_representable(value, kind):
     None,            # null
 ])
 def test_infer_kind_not_representable(value):
-    assert _infer_kind(value) is None
+    assert infer_kind(value) is None
 
 
 def test_infer_flat_fields_all_scalars():
-    fields = _infer_flat_fields({'a': 1, 'b': 'x', 'c': True, 'd': ['p', 'q'], 'e': 1.5})
+    fields = infer_flat_fields({'a': 1, 'b': 'x', 'c': True, 'd': ['p', 'q'], 'e': 1.5})
     assert fields is not None
     got = {f.key: f.kind for f in fields}
     assert got == {'a': 'integer', 'b': 'string', 'c': 'boolean',
@@ -58,11 +58,11 @@ def test_infer_flat_fields_all_scalars():
     {'ok': 1, 'bad': {}},   # one bad value poisons the whole form
 ])
 def test_infer_flat_fields_rejects_non_flat(obj):
-    assert _infer_flat_fields(obj) is None
+    assert infer_flat_fields(obj) is None
 
 
 def test_infer_flat_fields_empty_object_is_empty_list():
-    assert _infer_flat_fields({}) == []
+    assert infer_flat_fields({}) == []
 
 
 # ---------------------------------------------------------------------------
@@ -83,7 +83,7 @@ def test_infer_flat_fields_empty_object_is_empty_list():
     ({}, None),
 ])
 def test_schema_kind(spec, kind):
-    assert _schema_kind(spec) == kind
+    assert schema_kind(spec) == kind
 
 
 def test_fields_from_schema_metadata_defaults_and_required():
@@ -95,7 +95,7 @@ def test_fields_from_schema_metadata_defaults_and_required():
             'name': {'type': 'string', 'default': 'dev', 'maxLength': 20},
         },
     }
-    by = {f.key: f for f in _fields_from_schema(schema, {'interval_s': 30})}
+    by = {f.key: f for f in fields_from_schema(schema, {'interval_s': 30})}
     assert by['interval_s'].kind == 'integer' and by['interval_s'].value == 30
     assert by['interval_s'].minimum == 10 and by['interval_s'].maximum == 600
     assert by['interval_s'].label == 'Interval'
@@ -105,26 +105,26 @@ def test_fields_from_schema_metadata_defaults_and_required():
 
 
 def test_fields_from_schema_ignores_unknown_type_and_rejects_non_object():
-    assert _fields_from_schema({'type': 'string'}, {}) is None
-    assert _fields_from_schema({'type': 'object'}, {}) is None  # no properties
-    fields = _fields_from_schema(
+    assert fields_from_schema({'type': 'string'}, {}) is None
+    assert fields_from_schema({'type': 'object'}, {}) is None  # no properties
+    fields = fields_from_schema(
         {'type': 'object', 'properties': {'a': {'type': 'string'}, 'b': {'type': 'weird'}}}, {})
     assert [f.key for f in fields] == ['a']  # unknown-type 'b' ignored
 
 
 def test_validate_field():
-    assert _validate_field(_FormField('x', 'string', None, required=True), '') is not None
-    assert _validate_field(_FormField('x', 'string', None, required=True), 'ok') is None
-    num = _FormField('n', 'integer', 0, minimum=10, maximum=20)
-    assert _validate_field(num, 5) is not None
-    assert _validate_field(num, 25) is not None
-    assert _validate_field(num, 15) is None
-    en = _FormField('e', 'enum', None, enum=['a', 'b'])
-    assert _validate_field(en, 'c') is not None
-    assert _validate_field(en, 'a') is None
-    ln = _FormField('s', 'string', '', max_length=3)
-    assert _validate_field(ln, 'abcd') is not None
-    assert _validate_field(ln, 'abc') is None
+    assert validate_field(FormField('x', 'string', None, required=True), '') is not None
+    assert validate_field(FormField('x', 'string', None, required=True), 'ok') is None
+    num = FormField('n', 'integer', 0, minimum=10, maximum=20)
+    assert validate_field(num, 5) is not None
+    assert validate_field(num, 25) is not None
+    assert validate_field(num, 15) is None
+    en = FormField('e', 'enum', None, enum=['a', 'b'])
+    assert validate_field(en, 'c') is not None
+    assert validate_field(en, 'a') is None
+    ln = FormField('s', 'string', '', max_length=3)
+    assert validate_field(ln, 'abcd') is not None
+    assert validate_field(ln, 'abc') is None
 
 
 def test_resolve_schema_path(tmp_path):
@@ -134,13 +134,13 @@ def test_resolve_schema_path(tmp_path):
     proj.mkdir()
     data = dev / 'config.json'
     data.write_text('{}')
-    assert _resolve_schema_path(data, proj) is None
+    assert resolve_schema_path(data, proj) is None
     (proj / 'config.schema.json').write_text('{}')
-    assert _resolve_schema_path(data, proj) == proj / 'config.schema.json'   # fallback
+    assert resolve_schema_path(data, proj) == proj / 'config.schema.json'   # fallback
     (dev / 'config.schema.json').write_text('{}')
-    assert _resolve_schema_path(data, proj) == dev / 'config.schema.json'    # device wins
-    assert _resolve_schema_path(dev / 'config.schema.json', proj) is None    # a schema has no schema
-    assert _resolve_schema_path(dev / 'notes.txt', proj) is None             # non-json
+    assert resolve_schema_path(data, proj) == dev / 'config.schema.json'    # device wins
+    assert resolve_schema_path(dev / 'config.schema.json', proj) is None    # a schema has no schema
+    assert resolve_schema_path(dev / 'notes.txt', proj) is None             # non-json
 
 
 def test_schema_approval_is_hash_bound(projects_dir):
@@ -149,9 +149,9 @@ def test_schema_approval_is_hash_bound(projects_dir):
     create_project('proj')
     schema = project_dir('proj') / 'config.schema.json'
     schema.write_text('{"type":"object","properties":{}}')
-    assert _is_schema_approved(schema, 'proj') is False
-    _approve_schema(schema, 'proj')
-    assert _is_schema_approved(schema, 'proj') is True
+    assert is_schema_approved(schema, 'proj') is False
+    approve_schema(schema, 'proj')
+    assert is_schema_approved(schema, 'proj') is True
     # a device edit changes the content hash -> approval is revoked automatically
     schema.write_text('{"type":"object","properties":{"a":{"type":"string"}}}')
-    assert _is_schema_approved(schema, 'proj') is False
+    assert is_schema_approved(schema, 'proj') is False

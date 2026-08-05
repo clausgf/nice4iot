@@ -20,7 +20,7 @@ import aiomqtt
 
 from app.config import app_config
 from app.exceptions import NotFoundError
-from app.util import logger, is_valid_filename, is_valid_upload_filename
+from app.util import atomic_write, logger, is_valid_filename, is_valid_upload_filename
 
 # ---------------------------------------------------------------------------
 # Module-level state
@@ -202,13 +202,11 @@ async def _handle_upload(project_name: str, device_name: str, filename: str,
         return
 
     dest = device_path / filename
-    tmp = dest.with_name(filename + '.mqtt.tmp')
     try:
-        await anyio.to_thread.run_sync(lambda: tmp.write_bytes(payload))
-        await anyio.to_thread.run_sync(lambda: tmp.rename(dest))
+        await anyio.to_thread.run_sync(
+            lambda: atomic_write(dest, payload, suffix='.mqtt.tmp'))
         logger.debug(f"MQTT upload saved: {dest} ({len(payload)} bytes)")
     except OSError as e:
-        await anyio.to_thread.run_sync(lambda: tmp.unlink(missing_ok=True))
         logger.error(f"MQTT upload write failed for {dest}: {e}")
 
 

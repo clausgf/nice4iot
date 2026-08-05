@@ -21,7 +21,7 @@ from niceview.dataadapter import JsonAdapter
 
 from app.paths import project_dir as get_project_dir, device_dir as get_device_dir
 from app.core.file.models import FileConfig
-from app.util import logger, is_valid_upload_filename
+from app.util import atomic_write, logger, is_valid_upload_filename, shadow_merge
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -67,12 +67,9 @@ def load_file_state(project_name: str, device_name: str) -> dict:
 def save_file_state(project_name: str, device_name: str, state: dict) -> None:
     """Atomically write the per-device file publish state."""
     path = _state_path(project_name, device_name)
-    tmp = path.with_name(FILE_STATE_FILENAME + '.tmp')
     try:
-        tmp.write_text(json.dumps(state, indent=2, default=str), encoding='utf-8')
-        tmp.rename(path)
+        atomic_write(path, json.dumps(state, indent=2, default=str))
     except OSError as e:
-        tmp.unlink(missing_ok=True)
         logger.error(f"Failed to save file state for {project_name}/{device_name}: {e}")
 
 
@@ -221,12 +218,9 @@ async def check_and_publish_project(project_name: str) -> None:
             lambda: load_file_state(project_name, device.name)
         )
 
-        # Build a merged list: device-specific files take priority over project files
-        device_filenames = {p.name for p in device_files}
-        files_to_check: list[Path] = list(device_files)
-        for pf in project_files:
-            if pf.name not in device_filenames:
-                files_to_check.append(pf)
+        # Device-specific files take priority over project files — the same rule
+        # the Files card lists by.
+        files_to_check = shadow_merge(device_files, project_files, key=lambda p: p.name)
 
         for file_path in files_to_check:
             fname = file_path.name

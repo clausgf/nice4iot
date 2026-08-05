@@ -52,7 +52,7 @@ from app.api.dependencies import DeviceAuthInfo, device_auth
 from app.core.device.backend import get_file_path
 from app.core.file.backend import get_file_config
 from app.exceptions import NotFoundError
-from app.util import logger, is_valid_upload_filename
+from app.util import atomic_write, logger, is_valid_upload_filename
 
 ###############################################################################
 
@@ -322,8 +322,6 @@ async def put_resource(
 
     file_config = await anyio.to_thread.run_sync(lambda: get_file_config(project_name))
     max_size = file_config.max_upload_size
-    tmp_path = file_path.with_name(file_path.name + '.upload.tmp')
-
     # Collect the upload body into memory (bounded by max_size) before writing
     # to disk.  This keeps the async streaming loop on the event loop thread
     # while pushing the blocking write/rename to a worker thread.
@@ -337,14 +335,7 @@ async def put_resource(
         chunks.append(chunk)
     content = b''.join(chunks)
 
-    def _write_atomic() -> None:
-        tmp_path.write_bytes(content)
-        tmp_path.rename(file_path)
-
-    try:
-        await anyio.to_thread.run_sync(_write_atomic)
-    except Exception:
-        await anyio.to_thread.run_sync(lambda: tmp_path.unlink(missing_ok=True))
-        raise
+    await anyio.to_thread.run_sync(
+        lambda: atomic_write(file_path, content, suffix='.upload.tmp'))
     logger.debug(f"wrote {length} bytes to {file_path}")
     return Response(status_code=200)

@@ -38,8 +38,8 @@ def config_expansion(title: str, *, value: bool = False) -> Generator[ui.expansi
     including for extension-registered 'general'/global cards (see
     app.extensions.register_project_card() et al.).
     """
-    with ui.card().classes('w-full dense'):
-        with ui.expansion(title, value=value).classes('w-full q-mb-none').props(
+    with ui.card().tight().classes('w-full'):
+        with ui.expansion(title, value=value).classes('w-full q-mt-xs q-mb-xs').props(
             'dense header-class="text-h6 font-bold"'
         ) as expansion:
             yield expansion

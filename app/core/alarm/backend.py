@@ -15,7 +15,7 @@ from niceview.dataadapter import JsonAdapter, lenient_list_load
 
 from app.paths import project_dir
 from app.core.alarm.models import AlarmConfig, AlarmEvent
-from app.util import logger
+from app.util import atomic_write, logger
 
 # ---------------------------------------------------------------------------
 # File names and adapters
@@ -56,13 +56,10 @@ def save_alarm_events(project_name: str, events: list[AlarmEvent]) -> None:
     # Keep only events that are still active OR not yet acknowledged.
     pruned = [e for e in events if e.is_active or not e.is_acknowledged]
     path = project_dir(project_name) / ALARM_EVENTS_FILE
-    tmp = path.with_name(path.name + '.tmp')
     try:
-        tmp.write_bytes(_events_ta.dump_json(pruned, indent=2))
-        tmp.rename(path)
+        atomic_write(path, _events_ta.dump_json(pruned, indent=2))
     except OSError as e:
         logger.error(f"Failed to save alarm events for {project_name!r}: {e}")
-        tmp.unlink(missing_ok=True)
 
 
 # ---------------------------------------------------------------------------

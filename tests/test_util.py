@@ -50,3 +50,53 @@ def test_project_model_rejects_invalid_name(bad):
 def test_device_model_rejects_invalid_name(bad):
     with pytest.raises(ValidationError):
         Device(name=bad, project_name="proj")
+
+
+# ---------------------------------------------------------------------------
+# shadow_merge / atomic_write
+# ---------------------------------------------------------------------------
+
+def test_shadow_merge_own_hides_under_and_keeps_order():
+    from app.util import shadow_merge
+    own = ['b.json', 'a.json']
+    under = ['a.json', 'c.json']
+    assert shadow_merge(own, under, key=str) == ['b.json', 'a.json', 'c.json']
+
+
+def test_shadow_merge_edge_cases():
+    from app.util import shadow_merge
+    assert shadow_merge([], ['x'], key=str) == ['x']
+    assert shadow_merge(['x'], [], key=str) == ['x']
+    # keyed by the callable, not by identity
+    pairs_own = [('a', 1)]
+    pairs_under = [('a', 2), ('b', 3)]
+    assert shadow_merge(pairs_own, pairs_under, key=lambda p: p[0]) == [('a', 1), ('b', 3)]
+
+
+def test_atomic_write_text_and_bytes(tmp_path):
+    from app.util import atomic_write
+    target = tmp_path / 'out.json'
+    atomic_write(target, '{"a": 1}')
+    assert target.read_text() == '{"a": 1}'
+    atomic_write(target, b'\x00\x01')          # overwrites in place
+    assert target.read_bytes() == b'\x00\x01'
+    assert list(tmp_path.iterdir()) == [target]  # no temp file left behind
+
+
+def test_atomic_write_cleans_up_and_raises_on_failure(tmp_path):
+    from app.util import atomic_write
+    import pytest as _pytest
+    target = tmp_path / 'missing-dir' / 'out.json'
+    with _pytest.raises(OSError):
+        atomic_write(target, 'x')
+    assert not (tmp_path / 'missing-dir').exists()
+
+
+def test_atomic_write_suffix_keeps_concurrent_writers_apart(tmp_path):
+    """The device upload, MQTT and UI paths pass distinct suffixes so their temp
+    files cannot collide on the same target."""
+    from app.util import atomic_write
+    target = tmp_path / 'f.bin'
+    atomic_write(target, b'a', suffix='.upload.tmp')
+    assert target.read_bytes() == b'a'
+    assert not (tmp_path / 'f.bin.upload.tmp').exists()

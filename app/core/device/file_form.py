@@ -1,0 +1,247 @@
+"""
+File forms — the logic behind the JSON Form tab, without any UI.
+
+Three concerns, all synchronous and free of NiceGUI so they stay easy to test:
+
+* **Inference** — a flat JSON object's values are mapped to field kinds, so a
+  file without a schema still gets a form.
+* **Schema subset** — a `<name>.schema.json` sibling describes the fields
+  explicitly. Deliberately NOT a JSON Schema implementation: flat object only,
+  a fixed set of types, unknown keywords ignored, and no `$ref` (SSRF) or
+  `pattern` (untrusted regex, ReDoS). See docs/file-forms.md.
+* **Approval** — a schema is inert until its content hash is approved, so a
+  device-uploaded schema cannot drive the admin's form on its own.
+
+Rendering lives in `files_ui.py`; the field specs produced here are never fed
+to `pydantic.create_model` or niceview, which keeps the untrusted-input path
+small.
+"""
+import contextlib
+import hashlib
+import json
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from app.paths import project_dir as get_project_dir
+from app.util import atomic_write
+
+_SCHEMA_MAX_BYTES = 256 * 1024
+_SCHEMA_MAX_FIELDS = 500
+
+
+# ---------------------------------------------------------------------------
+# Field specs
+# ---------------------------------------------------------------------------
+
+@dataclass
+class FormField:
+    """One form field. Inference fills key/kind/value from a flat JSON object's
+    values; a schema builds the same shape and adds the metadata below
+    (title/enum/min/max/…)."""
+    key: str
+    kind: str        # string | integer | number | boolean | string_list | enum | textarea | date
+    value: Any
+    label: str | None = None
+    description: str | None = None
+    enum: list | None = None
+    minimum: float | None = None
+    maximum: float | None = None
+    max_length: int | None = None
+    max_items: int | None = None
+    required: bool = False
+
+
+def infer_kind(v: Any) -> str | None:
+    if isinstance(v, bool):        # bool is a subclass of int — check it first
+        return 'boolean'
+    if isinstance(v, int):
+        return 'integer'
+    if isinstance(v, float):
+        return 'number'
+    if isinstance(v, str):
+        return 'string'
+    if isinstance(v, list) and all(isinstance(x, str) for x in v):
+        return 'string_list'
+    return None
+
+
+def infer_flat_fields(obj: dict) -> list[FormField] | None:
+    """Field specs for a flat object, or None if any value isn't representable
+    (nested object, mixed/other list, null) — then no form tab is offered."""
+    fields: list[FormField] = []
+    for key, value in obj.items():
+        kind = infer_kind(value)
+        if kind is None:
+            return None
+        fields.append(FormField(key, kind, value))
+    return fields
+
+
+# ---------------------------------------------------------------------------
+# Schema subset
+# ---------------------------------------------------------------------------
+
+def _num(v: Any) -> float | None:
+    return v if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+
+
+def _int(v: Any) -> int | None:
+    return v if isinstance(v, int) and not isinstance(v, bool) else None
+
+
+def _empty_for(kind: str) -> Any:
+    return {'boolean': False, 'string_list': []}.get(kind, None if kind in ('integer', 'number') else '')
+
+
+def schema_kind(spec: dict) -> str | None:
+    t = spec.get('type')
+    if t == 'string':
+        if isinstance(spec.get('enum'), list):
+            return 'enum'
+        if spec.get('format') == 'date':
+            return 'date'
+        if spec.get('x-multiline') is True:
+            return 'textarea'
+        return 'string'
+    if t == 'integer':
+        return 'integer'
+    if t == 'number':
+        return 'number'
+    if t == 'boolean':
+        return 'boolean'
+    if t == 'array' and isinstance(spec.get('items'), dict) and spec['items'].get('type') == 'string':
+        return 'string_list'
+    return None  # unknown/unsupported type — ignored (field editable via raw only)
+
+
+def fields_from_schema(schema: dict, data: dict) -> list[FormField] | None:
+    """Build form fields from the schema subset, or None if it is not a usable
+    flat object schema. Values come from *data*, then the field's ``default``."""
+    if not isinstance(schema, dict) or schema.get('type') != 'object':
+        return None
+    props = schema.get('properties')
+    if not isinstance(props, dict):
+        return None
+    required = set(schema.get('required') or [])
+    fields: list[FormField] = []
+    for name, spec in list(props.items())[:_SCHEMA_MAX_FIELDS]:
+        if not isinstance(spec, dict):
+            continue
+        kind = schema_kind(spec)
+        if kind is None:
+            continue
+        default = spec.get('default')
+        value = data.get(name, default if default is not None else _empty_for(kind))
+        fields.append(FormField(
+            key=name, kind=kind, value=value,
+            label=spec.get('title') if isinstance(spec.get('title'), str) else None,
+            description=spec.get('description') if isinstance(spec.get('description'), str) else None,
+            enum=spec.get('enum') if isinstance(spec.get('enum'), list) else None,
+            minimum=_num(spec.get('minimum')), maximum=_num(spec.get('maximum')),
+            max_length=_int(spec.get('maxLength')), max_items=_int(spec.get('maxItems')),
+            required=name in required,
+        ))
+    return fields
+
+
+def resolve_schema_path(data_path: Path, fallback_dir: Path | None) -> Path | None:
+    """The '<name>.schema.json' sibling of a '<name>.json' data file, resolved in
+    the file's own directory first, then *fallback_dir* (device dir → project dir).
+    Schema files themselves get no schema."""
+    if data_path.suffix.lower() != '.json' or data_path.name.endswith('.schema.json'):
+        return None
+    schema_name = f'{data_path.name[:-len(".json")]}.schema.json'
+    here = data_path.with_name(schema_name)
+    if here.is_file():
+        return here
+    if fallback_dir is not None:
+        there = fallback_dir / schema_name
+        if there.is_file():
+            return there
+    return None
+
+
+def load_schema(schema_path: Path) -> dict | None:
+    try:
+        if schema_path.stat().st_size > _SCHEMA_MAX_BYTES:
+            return None
+        parsed = json.loads(schema_path.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+# ---------------------------------------------------------------------------
+# Schema approval (device-uploaded schemas are inert until approved)
+# ---------------------------------------------------------------------------
+
+def _approvals_path(project_name: str) -> Path:
+    return get_project_dir(project_name) / '.schema_approvals.json'
+
+
+def _schema_key(schema_path: Path, project_name: str) -> str:
+    try:
+        return schema_path.relative_to(get_project_dir(project_name)).as_posix()
+    except ValueError:
+        return schema_path.name
+
+
+def _file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _load_approvals(project_name: str) -> dict:
+    path = _approvals_path(project_name)
+    try:
+        return json.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def is_schema_approved(schema_path: Path, project_name: str) -> bool:
+    try:
+        current = _file_sha256(schema_path)
+    except OSError:
+        return False
+    return _load_approvals(project_name).get(_schema_key(schema_path, project_name)) == current
+
+
+def approve_schema(schema_path: Path, project_name: str) -> None:
+    """Record the schema's current content hash as approved. Called when a user
+    approves an uploaded schema, or saves/edits one in the UI (admin provenance)."""
+    try:
+        digest = _file_sha256(schema_path)
+    except OSError:
+        return
+    approvals = _load_approvals(project_name)
+    approvals[_schema_key(schema_path, project_name)] = digest
+    with contextlib.suppress(OSError):
+        atomic_write(_approvals_path(project_name), json.dumps(approvals, indent=2) + '\n')
+
+
+# ---------------------------------------------------------------------------
+# Validation
+# ---------------------------------------------------------------------------
+
+def validate_field(field: FormField, value: Any) -> str | None:
+    """Enforce the subset's constraints with plain checks (no regex). Returns the
+    first error message for *field*, or None if the value is acceptable."""
+    name = field.label or field.key
+    empty = value is None or value == '' or value == []
+    if field.required and empty:
+        return f'{name}: required'
+    if empty:
+        return None
+    if field.kind in ('integer', 'number'):
+        if field.minimum is not None and value < field.minimum:
+            return f'{name}: must be ≥ {field.minimum}'
+        if field.maximum is not None and value > field.maximum:
+            return f'{name}: must be ≤ {field.maximum}'
+    if field.kind in ('string', 'textarea') and field.max_length and len(value) > field.max_length:
+        return f'{name}: at most {field.max_length} characters'
+    if field.kind == 'enum' and field.enum and value not in [str(x) for x in field.enum]:
+        return f'{name}: not an allowed value'
+    if field.kind == 'string_list' and field.max_items is not None and len(value) > field.max_items:
+        return f'{name}: at most {field.max_items} items'
+    return None

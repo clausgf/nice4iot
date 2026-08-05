@@ -9,7 +9,7 @@ from niceview.dataadapter import JsonAdapter, lenient_model_load
 
 from app.config import app_config
 from app.paths import project_dir, device_dir
-from app.util import logger, is_valid_name
+from app.util import atomic_write, logger, is_valid_name
 from app.core.telemetry.models import (
     INFO_METRIC_KEY, DataView, MetricSeries, TelemetryBackend, TelemetryConfig,
 )
@@ -165,9 +165,7 @@ def read_data_view(project_name: str, device_name: str) -> DataView | None:
 def save_data_view(project_name: str, device_name: str, view: DataView) -> None:
     """Persist the Data-tab explorer config atomically. Blocking file IO."""
     path = device_dir(project_name, device_name) / DATA_VIEW_FILE
-    tmp = path.with_name(path.name + '.tmp')
-    tmp.write_text(view.model_dump_json(indent=2))
-    tmp.rename(path)
+    atomic_write(path, view.model_dump_json(indent=2))
 
 
 def latest_labels(project_name: str, device_name: str,

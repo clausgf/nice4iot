@@ -9,6 +9,7 @@ from pydantic import TypeAdapter
 
 from app.exceptions import AuthError
 from app.paths import project_dir
+from app.util import atomic_write
 from app.core.token.models import AuthToken, TOKEN_CHARS, TOKEN_MIN_LENGTH
 from niceview.dataadapter import lenient_list_load
 
@@ -117,9 +118,7 @@ def load_device_tokens(project_name: str, device_name: str) -> list[AuthToken]:
 def save_device_tokens(project_name: str, device_name: str, tokens: list[AuthToken]) -> None:
     """Atomically write device tokens to disk."""
     file = get_device_token_filename(project_name, device_name)
-    temp = file.with_name(file.name + '.tmp')
-    temp.write_bytes(_token_list_adapter.dump_json(tokens, indent=2))
-    temp.rename(file)
+    atomic_write(file, _token_list_adapter.dump_json(tokens, indent=2))
 
 
 @contextmanager

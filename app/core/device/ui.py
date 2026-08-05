@@ -12,14 +12,12 @@ from app.core.device.backend import (
     is_device_online, rename_device,
 )
 from app.core.device.files_ui import device_files_panel
-from app.core.firmware.ui import firmware_source_card
-from app.paths import device_dir
 from app.core.device.data_ui import device_data_panel
 from app.core.device.logs_ui import device_logs_panel
 from app.core.project.backend import get_project
 from app.core.token.backend import get_device_token_adapter
 from app.core.token.ui import TokenListCard
-from app.util import is_valid_name, render_datetime
+from app.util import is_valid_name, render_datetime, render_datetime_age
 from niceview import ModelForm
 from niceview.util import confirm_dialog, input_dialog
 from app.extensions import get_device_dashboard_cards, get_device_general_cards, get_device_tabs, maybe_await
@@ -82,11 +80,10 @@ async def device_dashboard_panel(project_name: str, device_name: str) -> None:
         device = get_device(project_name, device_name)
         project = get_project(project_name, check_active=False)
         labels = await anyio.to_thread.run_sync(lambda: latest_labels(project_name, device_name))
-        now = datetime.datetime.now(datetime.timezone.utc)
 
         with ui.grid().classes('grid-cols-1 sm:grid-cols-2 gap-4 w-full'):
-            await _status_card(device, project_name, project.device_online_threshold_s, now, labels)
-            await _provisioning_card(device)
+            await _status_card(device, project_name, project.device_online_threshold_s, labels)
+            await _timeline_card(device)
             for render_fn in await anyio.to_thread.run_sync(lambda: get_device_dashboard_cards(project_name)):
                 await maybe_await(render_fn(project_name, device_name))
 
@@ -95,19 +92,8 @@ async def device_dashboard_panel(project_name: str, device_name: str) -> None:
     await dashboard_alarms_card(project_name, device_name)
 
 
-def _ago(delta: datetime.timedelta) -> str:
-    s = int(delta.total_seconds())
-    if s < 60:
-        return f'{s}s ago'
-    if s < 3600:
-        return f'{s // 60}min ago'
-    if s < 86400:
-        return f'{s // 3600}h ago'
-    return f'{s // 86400}d ago'
-
-
 async def _status_card(device: Device, project_name: str, online_threshold_s: int,
-                 now: datetime.datetime, labels: dict[str, str] | None = None) -> None:
+                       labels: dict[str, str] | None = None) -> None:
     from app.core.alarm.backend import get_alarm_count
     online = is_device_online(device, online_threshold_s)
     alarm_count = get_alarm_count(project_name, device.name)
@@ -138,35 +124,30 @@ async def _status_card(device: Device, project_name: str, online_threshold_s: in
             # Row 2-: location, description, last seen, firmware, labels
             if device.location:
                 with ui.row().classes('items-center gap-1 q-mt-xs'):
-                    ui.icon('place').classes('text-grey-6 text-sm')
+                    ui.icon('place').classes('text-grey-7 text-sm')
                     ui.label(device.location).classes('text-body2')
             if device.description:
-                ui.label(device.description).classes('text-body2 q-mt-xs text-grey-8')
+                ui.label(device.description).classes('text-body2 q-mt-xs text-grey-7')
             if device.location or device.description:
                 ui.separator().classes('q-mt-xs q-mb-xs')
 
             with ui.grid(columns='auto 1fr').classes('grid-cols-2 gap-y-1 q-mt-sm'):
-                ui.label('Last seen').classes('text-caption text-grey-6')
-                if device.last_seen_at:
-                    delta = now - device.last_seen_at
-                    ui.label(f'{render_datetime(device.last_seen_at)}  ({_ago(delta)})').classes('text-body2')
-                else:
-                    ui.label('Never').classes('text-body2')
-                ui.label('Firmware').classes('text-caption text-grey-6')
+                ui.label('Firmware').classes('text-caption text-grey-7')
                 if device.firmware_version:
                     fw = device.firmware_version
-                    ui.label(fw).classes('text-body2')
+                    ui.label(fw).tooltip(fw).classes('text-body2 overflow-hidden text-ellipsis')
                 else:
-                    ui.label('Unknown').classes('text-body2 text-grey-6')
+                    ui.label('Unknown').classes('text-body2 text-grey-7')
                 # Reported labels (firmware_version already shown above).
                 extra = {k: v for k, v in (labels or {}).items()
-                        if k not in ('firmware_version')}
+                        if k not in ('firmware_version', 'firmware_id', 'firmware_sha256', 'firmware_commit')}
                 for k, v in sorted(extra.items()):
                     ui.label(k).classes('text-caption text-grey-7')
-                    ui.label(v).classes('text-body2')
+                    ui.label(v).tooltip(v).classes('text-body2 overflow-hidden text-ellipsis')
 
 
-async def _provisioning_card(device: Device) -> None:
+async def _timeline_card(device: Device) -> None:
+
     with ui.card().tight().classes('w-full'):
         with ui.card_section().props('dense').classes('w-full'):
             # Row 0: card name - icons for alarms, active, online
@@ -178,14 +159,16 @@ async def _provisioning_card(device: Device) -> None:
                 ui.chip(prov_text).props(f'dense color={prov_color} text-color=white')
             ui.separator().classes('q-mt-xs q-mb-xs')
             with ui.grid(columns='auto 1fr').classes('grid-cols-2 gap-y-1 q-mt-sm'):
-                ui.label('Created').classes('text-caption text-grey-6')
+                ui.label('Last seen').classes('text-caption text-grey-7')
+                ui.label(render_datetime_age(device.last_seen_at)).classes('text-body2')
+                ui.label('Created').classes('text-caption text-grey-7')
                 ui.label(render_datetime(device.created_at)).classes('text-body2')
-                ui.label('Updated').classes('text-caption text-grey-6')
+                ui.label('Updated').classes('text-caption text-grey-7')
                 ui.label(render_datetime(device.updated_at)).classes('text-body2')
-                ui.label('Last provisioned').classes('text-caption text-grey-6')
-                ui.label(render_datetime(device.last_provisioned_at)).classes('text-body2')
-                ui.label('Last provisioning request').classes('text-caption text-grey-6')
-                ui.label(render_datetime(device.last_provisioning_request_at)).classes('text-body2')
+                ui.label('Last provisioned').classes('text-caption text-grey-7')
+                ui.label(render_datetime_age(device.last_provisioned_at)).classes('text-body2')
+                ui.label('Last provisioning request').classes('text-caption text-grey-7')
+                ui.label(render_datetime_age(device.last_provisioning_request_at)).classes('text-body2')
 
 
 # ***************************************************************************
@@ -199,11 +182,6 @@ async def device_general_panel(project_name: str, device_name: str) -> None:
             _device_general_card(project_name, device_name)
         with config_expansion('Authentication Tokens'):
             _device_tokens_card(project_name, device_name)
-        with config_expansion('Firmware'):
-            # Device-level firmware source pulls into the device dir (overrides
-            # the project copy via the normal file-serving fallback).
-            await firmware_source_card(device_dir(project_name, device_name),
-                                 project_name=project_name, device_name=device_name)
         for title, render_fn in await anyio.to_thread.run_sync(lambda: get_device_general_cards(project_name)):
             # Match the device page's built-in expansions (subtitle1), not the
             # config_expansion default (h6, used on the project page).

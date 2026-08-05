@@ -116,7 +116,7 @@ def _archive_row(archive: Path) -> None:
     size_kb = archive.stat().st_size / 1024
     size_str = f'{size_kb:.0f} KB' if size_kb < 1024 else f'{size_kb / 1024:.1f} MB'
     with ui.row().classes('w-full items-center gap-2 q-py-xs'):
-        ui.icon('archive').classes('text-grey-6 text-sm')
+        ui.icon('archive').classes('text-grey-7 text-sm')
         ui.label(label).classes('grow text-body2')
         ui.label(size_str).classes('text-caption text-grey-7')
         ui.button(icon='download').props('flat dense size=sm').tooltip('Download').on_click(
