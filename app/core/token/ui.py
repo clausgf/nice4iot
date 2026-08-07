@@ -37,26 +37,27 @@ class TokenListCard:
     @ui.refreshable
     def update_rows(self) -> None:
         for key, item in self.adapter.items():
-            form = ModelForm.from_adapter(AuthToken, self.adapter, key, autosave=True)
+            form = ModelForm.from_adapter(AuthToken, self.adapter, key, autosave=True,
+                                          base_props='outlined dense hide-bottom-space')
             with ui.card().classes('w-full q-mb-md'):
                 with ui.row().classes('w-full items-center'):
                     form.render_field('is_active', label='', tooltip='Active')
                     if self.show_name:
-                        form.render_field('name').classes('grow').props('outlined dense hide-bottom-space')
+                        form.render_field('name').classes('grow')
                     ui.button(icon='delete').props('color=negative dense flat').on_click(
                         lambda _, token=item: self.delete_token(token)
                     )
                 with ui.row().classes('w-full items-center'):
-                    form.render_field('value').classes('grow').props('outlined dense hide-bottom-space')
+                    form.render_field('value').classes('grow')
                     ui.button(icon='content_copy').props('dense flat').on('click', handler=lambda: (
                         ui.clipboard.write(form.item.value),
                         ui.notify('Token copied to clipboard', type='positive')
                     ))
                 with ui.row().classes('w-full'):
-                    form.render_field('expires_at').props('outlined dense hide-bottom-space')
-                    form.render_field('created_at').props('outlined dense hide-bottom-space')
+                    form.render_field('expires_at')
+                    form.render_field('created_at')
                     if form.item.last_use_at is not None:
-                        form.render_field('last_use_at').props('outlined dense hide-bottom-space')
+                        form.render_field('last_use_at')
                 form.render_nonfield_errors()
 
     def _unique_name(self, base: str = 'token') -> str:

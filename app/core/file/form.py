@@ -8,7 +8,7 @@ Four concerns, all synchronous and free of NiceGUI so they stay easy to test:
 * **Schema subset** — a `<name>.schema.json` sibling describes the fields
   explicitly. Deliberately NOT a JSON Schema implementation: flat object only,
   a fixed set of types, unknown keywords ignored, and no `$ref` (SSRF) or
-  `pattern` (untrusted regex, ReDoS). See docs/file-forms.md.
+  `pattern` (untrusted regex, ReDoS). See docs/concepts.md.
 * **Approval** — a schema is inert until its content hash is approved, so a
   device-uploaded schema cannot drive the admin's form on its own.
 * **View plan** — `plan_json_view()` combines the three into the decision the
@@ -257,7 +257,7 @@ def validate_field(field: FormField, value: Any) -> str | None:
 class JsonView:
     """What the JSON detail view shows for one file, decided without any NiceGUI.
 
-    This is the decision table from docs/file-forms.md in code: whether there is a
+    This is the decision table from docs/concepts.md in code: whether there is a
     Form tab at all, which tab is default, and whether a schema is waiting for
     approval. The renderer only switches on the result.
     """

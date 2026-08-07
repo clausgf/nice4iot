@@ -5,7 +5,7 @@ JSON opens in a validating CodeMirror editor — with a Form tab whenever the fi
 is a flat object or an approved schema describes it; recognised text files open
 in a plain editor; images (png/jpg/gif/webp ≤ 2 MB) render as an inline preview.
 SVG and other binaries stay download-only: untrusted SVG is never rendered inline
-(see docs/file-forms.md).
+(see docs/concepts.md).
 
 Also home to the three actions every part of the card needs — save, publish,
 download — because they all operate on a single file.

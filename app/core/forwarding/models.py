@@ -23,16 +23,12 @@ class ForwardingConfig(BaseModel):
 
     forward_method: typing.Literal["GET", "POST", "PUT", "HEAD", "DELETE"] = Field(
         default="GET",
-        description='HTTP method to use for forwarding. '
-        'The path and query parameters after the forwarding name '
-        'in the original URL will be appended to the forward URL.')
+        description='HTTP method.')
 
     forward_url: str = Field(
         pattern=URL_REGEX,
         default='http://', 
-        description='URL to forward to, e.g. http://example.com/api. '
-        'The path and query parameters after the forwarding name '
-        'in the original URL will be appended to this URL.')
+        description='URL to forward to, e.g. http://example.com/api.')
 
     class Meta:
         description = (

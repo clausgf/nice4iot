@@ -14,8 +14,9 @@ class TelemetryCard:
         self.config = self.adapter.read()
 
         ui.markdown(TelemetryConfig.Meta.description).classes('text-caption q-ma-none')
-        backend_form = ModelForm.from_item(self.config, on_change=lambda e: self._on_backend_change())
-        backend_form.render_field('backend').props('outlined dense').classes('w-full')
+        backend_form = ModelForm.from_item(self.config, on_change=lambda e: self._on_backend_change(),
+                                           base_props='outlined dense hide-bottom-space', default_classes='w-full')
+        backend_form.render_field('backend')
         self._render_config()
 
     def _save(self) -> None:
@@ -33,8 +34,7 @@ class TelemetryCard:
         if self.config.backend == 'none':
             return
         sub_config = getattr(self.config, self.config.backend)
-        form = ModelForm.from_item(sub_config, on_change=lambda e: self._save())
+        form = ModelForm.from_item(sub_config, on_change=lambda e: self._save(),
+                                   base_props='outlined dense hide-bottom-space', default_classes='w-full')
         with ui.card().classes('w-full q-mt-sm'):
             form.render()
-            for widget in form.widgets.values():
-                widget.props('outlined dense').classes('w-full')

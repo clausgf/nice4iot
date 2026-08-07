@@ -19,17 +19,18 @@ class ForwardingCard:
     def update_rows(self) -> None:
         """Update the rows in the table."""
         for key, item in self.adapter.items():
-            form = ModelForm.from_adapter(ForwardingConfig, self.adapter, key, autosave=True)
+            form = ModelForm.from_adapter(ForwardingConfig, self.adapter, key, autosave=True,
+                                          base_props='outlined dense hide-bottom-space')
 
             with ui.card().classes('w-full q-mb-md'):
                 with ui.row().classes('w-full items-center'):
-                    form.render_field('name').classes('grow').props('outlined dense hide-bottom-space')
+                    form.render_field('name').classes('grow')
                     ui.button(icon='delete').props('color=negative dense flat').on_click(
                         lambda _, fwd=item: self.delete_forwarding(fwd)
                     )
                 with ui.row().classes('w-full'):
-                    form.render_field('forward_method').classes('w-1/4 q-mr-sm').props('outlined dense hide-bottom-space')
-                    form.render_field('forward_url').classes('grow').props('outlined dense hide-bottom-space')
+                    form.render_field('forward_method').classes('w-1/4 q-mr-sm')
+                    form.render_field('forward_url').classes('grow')
                 form.render_nonfield_errors()
 
     def _unique_name(self, base: str = 'forwarding') -> str:

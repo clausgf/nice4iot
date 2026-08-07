@@ -28,15 +28,5 @@
   behind it (filesystem storage, sync I/O in an async app, caching).
 - **[Extensions](extensions.md)** — adding REST endpoints, MQTT pub/sub, and UI
   cards or tabs from a separately deployed package.
-- **[File Editing & Schema-Driven Forms](file-forms.md)** *(design)* — the
-  planned file browser/editor, image preview, and the minimal JSON-Schema subset
-  with its device-schema approval workflow.
-- **[A model-free field renderer in niceview](niceview-field-rendering.md)**
-  *(proposal)* — letting the JSON Form tab reuse niceview's widget rendering
-  without ever turning an untrusted schema into a Pydantic model.
-- **[Firmware from GitHub Releases](firmware-releases.md)** — a per-project/device
-  firmware source that pulls a release asset (`firmware.bin`) from a public GitHub
-  repo into the file store, manually or on a schedule; plus devices reporting their
-  running version (`X-Firmware-Version`).
 - **[Development](development.md)** — setup, running from source, tests, linting.
 - **[Contributing](../CONTRIBUTING.md)** — the rules enforced in review.

@@ -6,6 +6,68 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-08-07
+
+### Changed
+
+- **niceview 0.11.0 → 0.14.1.** What reaches the UI:
+  - A model's `description` is now carried as `FieldInfo.description` and placed
+    by `description_as`, which defaults to **tooltip** — where it also was before
+    0.12.0. It no longer fills the placeholder, and it now works on widget types
+    that have no hint slot, so the switches finally document themselves too.
+  - A field without a default (`Device.name`, `Device.project_name`,
+    `ForwardingConfig.name`) is marked `*` and rejects an empty value at the
+    widget, before the model sees it.
+  - `ModelForm(field_props=…)` is now `base_props`, `field_classes` is
+    `default_classes`, and CSS classes no longer accumulate down the cascade —
+    the most specific source replaces the rest. Both renames are used throughout.
+
+  The `include=` lists in the device and project cards define field *order* as of
+  0.13.0, but both cards place every field individually, so nothing moved. No use
+  of `help_text`, `FieldInfo.format`, frozen models or `SecretStr`, so those
+  breaking changes do not apply.
+- **The JSON Form tab renders through niceview.** `app.core.file.form_ui` now
+  builds its widgets with `niceview.render_field()` and reads them back with
+  `field_value()`, replacing the hand-written eight-branch widget switch with one
+  table from the schema subset's field kinds to `(widget_type, field_type)`. The
+  untrusted schema still never becomes a Pydantic model — see
+  `docs/architecture.md`. Consequences: all eight field kinds show their
+  validation inline (textarea and switch previously could not), a schema's
+  `description` becomes the widget's tooltip instead of a caption line below it,
+  an integer field reads back as `int` rather than `float`, and the `*` marker
+  for required fields comes from niceview instead of being appended by hand.
+- **Form field styling is set per form, not per field.** `base_props` and
+  `default_classes` replace 33 repetitions of `.props('outlined dense …')` across
+  the device, project, token, forwarding, firmware, logging, telemetry and file
+  cards, including three `for widget in form.widgets.values()` loops. One visible
+  consequence — switches are now `dense` like every other widget, because
+  form-wide props reach every widget type.
+- **One width rule across the settings cards: inputs fill the column, switches
+  keep their natural width.** Previously the file, logging and firmware cards
+  stretched their switches to full width while the device and project cards did
+  not. `default_classes='w-full'` now says the rule once per form, and the
+  switches opt out with a class of their own — `'is_active:w-auto'` in a layout,
+  `render_field('is_active', classes='w-auto')` otherwise. That works because
+  classes replace rather than accumulate as of 0.14.0; a full-width switch would
+  otherwise take a whole line of the wrapping flex row to itself. The device card
+  additionally carries a `layout=`, which replaces its `include=` list and its
+  hand-built switch row. The token and forwarding cards keep per-field
+  `render_field()` calls with their own `grow` / `w-1/4`: their rows mix fields
+  with a delete button, which the layout notation cannot express.
+- **Three design papers retired.** `docs/file-forms.md`,
+  `docs/firmware-releases.md` and `docs/niceview-field-rendering.md` documented
+  features while they were being built and had outlived that role. What still
+  carries weight moved: the JSON-Schema subset, the schema-approval workflow and
+  the firmware-pull behaviour to `docs/concepts.md`; their trust boundaries to
+  `SECURITY.md`; the "interpret, never generate" rationale to
+  `docs/architecture.md`; the firmware build-flag guidance to
+  `docs/device-api.md`. Scope statements, goals and delivery phases were dropped.
+- **nicepaper 0.13.1 → 0.14.0** (the optional `epaper` extra, which the released
+  container image bakes in). Adds a Home Assistant widget with local gauges and
+  moves the extension to niceview 0.14.1, the version nice4iot now pins too. Its
+  five `register_*()` calls are unchanged, so the `app.extensions` contract was
+  not touched.
+
 ## [0.23.0] - 2026-08-05
 
 ### Changed
@@ -36,7 +98,7 @@ API change must be recorded. Format loosely follows
 - **`plan_json_view()`** in `app.core.file.form` decides which JSON editor
   a file gets — Form tab or not, which tab leads, schema approval pending — as a
   pure function returning a `JsonView`. The decision table in
-  `docs/file-forms.md` is now unit-tested directly instead of only through a
+  `docs/concepts.md` is now unit-tested directly instead of only through a
   rendered panel.
 - **"New JSON" asks for a filename only.** It uses `niceview.util.input_dialog`,
   writes an empty object and drills straight into the file's editor, replacing
@@ -204,7 +266,7 @@ API change must be recorded. Format loosely follows
   ever sent (public repos only); `repo` is `owner/name` (no URLs → no SSRF).
   Optional MQTT force-publish on pull for device-level sources. The device API is
   unchanged — devices keep fetching the file via `GET /api/file`. See
-  [docs/firmware-releases.md](docs/firmware-releases.md).
+  [docs/concepts.md](docs/concepts.md#firmware-distribution).
 
 ## [0.15.1] - 2026-08-03
 
@@ -241,7 +303,7 @@ API change must be recorded. Format loosely follows
   `last_seen_at`, never in `device.json`) and shown in the **Device → Dashboard**
   Status card and the **Project → Devices** table. Headers are optional and
   backward-compatible; omitting them leaves the last reported value unchanged. See
-  [docs/firmware-releases.md](docs/firmware-releases.md#reporting-the-running-version).
+  [docs/device-api.md](docs/device-api.md#reporting-firmware-version-optional).
 
 ### Changed
 
@@ -281,7 +343,7 @@ API change must be recorded. Format loosely follows
   automatically (admin provenance). Untrusted schemas are rendered by a small
   dedicated interpreter — never `pydantic.create_model`/niceview, never as
   HTML/Markdown — and `$ref`/`pattern` are not honoured (no SSRF / ReDoS). See
-  [docs/file-forms.md](docs/file-forms.md).
+  [docs/concepts.md](docs/concepts.md#schema-driven-json-forms).
 
 ### Changed
 

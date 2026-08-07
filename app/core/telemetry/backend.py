@@ -289,7 +289,7 @@ def normalize_metrics(values: dict) -> dict:
 # Numeric leaves are measurements. String leaves are treated as low-cardinality
 # device metadata (labels/tags) and are NOT attached to the numeric series —
 # instead every backend emits one synthetic info series carrying all labels of a
-# write (see docs/firmware-releases.md and the telemetry data-model docs). This
+# write (see docs/concepts.md and the telemetry data-model docs). This
 # keeps the numeric series clean and churn-free when a label value changes.
 
 LABEL_MAX_LEN = 64               # cap on a single label value (chars)

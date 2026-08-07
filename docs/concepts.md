@@ -1,6 +1,6 @@
 # Core Concepts
 
-The domain model: how state is stored, how devices authenticate, and how telemetry, alarms and health tracking work.
+The domain model: how state is stored, how devices authenticate, how files and firmware reach a device, and how telemetry, alarms and health tracking work.
 
 [← Documentation index](README.md) · [Project README](../README.md)
 
@@ -70,7 +70,64 @@ Provisioning request (provisioning token)
 
 ### Editing files in the UI
 
-The **Files** tab (project and device) browses the same directories with a drill-down editor: JSON and recognised text files edit inline, images preview inline, other binaries download only. A flat JSON object also gets a **Form** view. Dropping a sibling `<name>.schema.json` (a small JSON-Schema subset) turns that into a proper form with typed widgets and validation — the device may upload the schema, but it stays inert until a user **approves** it (approval is bound to the schema's content hash, so a device changing it forces re-approval). See [File Editing & Forms](file-forms.md).
+The **Files** tab browses the same directories with a drill-down editor. The device tab shows the device's *effective* file set — its own files layered over the project's, inherited entries marked with a `project` chip and the same precedence the API applies. Writes never reach the project directory: saving an inherited file is a **copy-on-write** into the device directory, so the project file and every other device using it stay untouched. Inherited entries therefore have no delete button; deleting a device override makes the inherited file reappear.
+
+What a file opens as:
+
+| File | Default view | Also available |
+|---|---|---|
+| JSON with an approved schema | **Form** | Raw (CodeMirror) |
+| Flat JSON, no schema | Raw | Form (types inferred from the values) |
+| Non-flat JSON, recognised text | Raw | — |
+| Image (png/jpg/gif/webp ≤ 2 MB) | Preview | — |
+| Anything else | — | download only |
+
+"Flat JSON" means a top-level object whose values are all scalars or string arrays. Saving the **form** writes back only the fields it shows and preserves every other key in the file, so a schema that covers part of a document is data-safe; the raw editor writes the whole document verbatim.
+
+### Schema-driven JSON forms
+
+A sibling `<name>.schema.json` describes `<name>.json` and turns its Form view into typed widgets with validation. It is resolved **device directory first, then project directory** — the same fallback as the data files. A device can upload one through the ordinary file API; an operator can write one in the UI.
+
+This is a deliberately small **subset** of JSON Schema, not an implementation of it: a flat `type: object` with `properties`, and every keyword we don't know is ignored, so a richer schema still renders with fewer honoured constraints.
+
+| Schema | Widget | Value |
+|---|---|---|
+| `type: string` | text input | `str` |
+| `type: string` + `enum` | select | `str` from the enum |
+| `type: string` + `x-multiline: true` | textarea | `str` |
+| `type: string` + `format: "date"` | date picker | ISO-8601 date string |
+| `type: integer` | number (integer) | `int` |
+| `type: number` | number | `float` |
+| `type: boolean` | switch | `bool` |
+| `type: array`, `items.type: string` | chips | `list[str]` |
+
+Honoured alongside these: `title`, `description`, `default`, `required`, `minimum`/`maximum`, `maxLength`, `maxItems`. `x-multiline` uses JSON Schema's blessed `x-` extension prefix, since the spec has no standard "multiline" hint.
+
+Not supported: nested objects · arrays of non-strings · `$ref` · `pattern` · `oneOf`/`anyOf`/`allOf`/`if`/`then`. The first three are omissions of scope; `$ref` and `pattern` are refused on purpose — see the schema-trust bullet in [SECURITY.md](../SECURITY.md#security-model--what-is-and-is-not-protected).
+
+**Approval.** A device holds a valid token, so a schema it uploads is untrusted input that would otherwise shape an admin's form. An uploaded schema is therefore **inert until a user approves it**, and approval is bound to the schema's **content hash**: if the device changes the file, the hash changes, the approval lapses and the UI asks again. A schema created or edited in the UI is admin provenance and is approved at save time. Approved hashes live in `<project>/.schema_approvals.json`.
+
+## Firmware Distribution
+
+Firmware reaches a device in two independent halves. The **device** side never changed: it fetches `firmware.bin` through `GET /api/file/{project}/{device}/firmware.bin` with the ordinary device→project fallback and ETag caching. The **admin** side is the act of getting that file into the store — either uploaded by hand, or pulled from a public GitHub release.
+
+A `.firmware.json` sidecar configures a source per project and, optionally, per device. Each one is independent and pulls into **its own directory**: the project source writes the project's `firmware.bin`, a device source that device's. Inheritance is not a configuration concern — it happens at serve time through the file fallback, so a device needs its own source only when it should track a *different* release than the project.
+
+Which release is chosen depends on `channel`:
+
+| `channel` | Chosen release |
+|---|---|
+| `stable` | the one GitHub marks *latest* (excludes prereleases and drafts) |
+| `prerelease` | newest by `published_at`, prereleases included |
+| `pinned` | exactly `pinned_tag` |
+
+**"Newer" is decided by tag string, not semver.** The last pulled `tag_name` is recorded in `.firmware.state.json`; a pull happens when the resolved tag differs from it (for `pinned`, when the asset digest changes). There is no version-range parsing — that keeps the logic auditable and avoids a semver dependency. Semver-aware constraints, private repositories, non-GitHub sources and rollback orchestration are out of scope.
+
+A pull resolves the release, streams the named asset (default `firmware.bin`) under a hard size cap, verifies GitHub's SHA-256 `digest` when the release provides one, and only then renames it atomically into place. If `publish_on_pull` is set and the project has MQTT enabled, the new file is pushed to the device immediately.
+
+**Auto-pull** is opt-in per source. A background loop ticks once a minute and honours each source's `auto_pull_interval_min`, issuing a **conditional** request with the stored ETag — a `304 Not Modified` costs nothing against the rate limit. Unauthenticated GitHub allows 60 requests/hour per IP, so a 5-minute floor is enforced on the interval and the remaining budget is logged (warning at ≤ 5 left).
+
+Which version a device actually *runs* is something only the device knows, so it self-reports it — see [Device API → Reporting firmware version](device-api.md#reporting-firmware-version-optional). The UI contrasts the reported version against the pulled tag per device.
 
 ## Size Limits
 

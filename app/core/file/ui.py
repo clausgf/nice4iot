@@ -7,8 +7,8 @@ from app.core.file.models import FileConfig
 async def file_config_card(project_name: str) -> None:
     """Content for the per-project file transfer settings card (caller provides the card/header)."""
     adapter = get_file_adapter(project_name)
-    form = ModelForm.from_adapter(FileConfig, adapter, autosave=True)
-    form.render_field('max_upload_size').props('outlined dense').classes('w-full')
-    form.render_field('mqtt_check_interval_s').props('outlined dense').classes('w-full')
-    form.render_field('mqtt_qos').props('outlined dense').classes('w-full')
-    form.render_field('mqtt_retain').classes('w-full')
+    # updated_at is the config's optimistic-lock timestamp, not a setting.
+    form = ModelForm.from_adapter(FileConfig, adapter, autosave=True, exclude='updated_at',
+                                  base_props='outlined dense hide-bottom-space',
+                                  default_classes='w-full')
+    form.render()

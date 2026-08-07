@@ -49,10 +49,10 @@ async def firmware_source_card(dir_path: Path, *, project_name: str, device_name
 
     # updated_at is the config's optimistic-lock timestamp (last save), not a
     # firmware fact — excluded from the form to avoid confusion.
-    form = ModelForm.from_item(config, exclude='updated_at', on_change=_on_change)
+    form = ModelForm.from_item(config, exclude='updated_at', on_change=_on_change,
+                               base_props='outlined dense hide-bottom-space',
+                               default_classes='w-full')
     form.render()
-    for widget in form.widgets.values():
-        widget.props('outlined dense hide-bottom-space').classes('w-full')
     form.widgets['pinned_tag'].set_visibility(config.channel == 'pinned')
     form.widgets['auto_pull_interval_min'].set_visibility(config.auto_pull_enabled)
 

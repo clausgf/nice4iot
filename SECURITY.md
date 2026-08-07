@@ -38,6 +38,29 @@ Understanding the intended boundaries helps judge whether something is a bug:
 - **No multi-user separation** — all UI operators share one access level. There
   is no RBAC, and no isolation between projects at the UI level. Privilege
   escalation *between UI users* is therefore not a meaningful boundary today.
+- **Device-uploaded content is untrusted, and one piece of it renders in the
+  operator's browser.** A device can upload `<name>.schema.json`, which drives a
+  form in the management UI. That path is meant to hold, so it is kept narrow: an
+  uploaded schema is **inert until a user approves it**, and approval is bound to
+  the file's SHA-256 — a device that changes the schema forces re-approval. The
+  schema is never turned into a type (no `pydantic.create_model`); it is
+  interpreted into a fixed set of widget kinds. Its text reaches only labels,
+  descriptions (rendered as tooltips) and option lists, never
+  `ui.markdown`/`ui.html`, and never CSS or Quasar props. `$ref` is unsupported (no remote fetch, no SSRF) and `pattern` is ignored
+  (no untrusted regex, no ReDoS); schema size and field count are capped. Images
+  are shown as inert `data:` URIs and SVG is never inlined. Reported firmware
+  versions are likewise displayed but never interpreted (trimmed, capped at 64
+  characters).
+- **Firmware pulls reach out to GitHub, and only there.** Only `owner/repo` is
+  accepted — regex-validated, never a URL — and requests are pinned to
+  `api.github.com`, with the asset download following the redirect only to
+  GitHub's own asset host under a bounded redirect count. No credentials are ever
+  sent, so nothing can leak across that redirect and no secret is written to
+  disk; private repositories are out of scope rather than a deferred feature. The
+  download is streamed under a hard 64 MiB cap and, when the release carries a
+  `digest`, verified against its SHA-256 before the atomic rename. The asset is
+  stored verbatim and never parsed or executed. A firmware source can only be
+  configured by an authenticated operator; a device can never set one.
 - **HTTP forwarding** — the forwarding endpoint strips the `Authorization`
   header but passes other client headers through to the configured backend.
   Treat forwarding targets as trusted.

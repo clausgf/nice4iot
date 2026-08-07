@@ -23,8 +23,8 @@ class Project(BaseModel):
             Field(min_length=1,
                   pattern=NAME_REGEX,
                   description='Unique project identifier. Used as the directory name on disk and '
-                              'as the telemetry metric-name prefix. Must be a valid identifier: '
-                              'letters, digits and underscore only, and must not start with a digit.'),
+                              'as the telemetry metric-name prefix. Letters, digits and underscore only. '
+                              'Must not start with a digit.'),
             niceview.Field(editable=False)
         ] = "project"
 

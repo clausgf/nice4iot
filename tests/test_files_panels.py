@@ -226,3 +226,66 @@ def test_new_json_name_completion(raw, expected):
     assert _as_json_name(raw) == expected
     if expected == '.json':
         assert not is_valid_upload_filename(_as_json_name(raw))
+
+
+# ---------------------------------------------------------------------------
+# Form round-trip — render_field in, field_value out
+# ---------------------------------------------------------------------------
+
+def _round_trip(fields):
+    """Render the fields and read them straight back, without touching a widget."""
+    from app.core.file.form_ui import render_form_fields
+
+    container = ui.column()
+    result = {}
+
+    async def run() -> None:
+        with container:
+            collect = render_form_fields(fields)
+            result['values'] = collect()
+
+    asyncio.run(run())
+    return result['values']
+
+
+def test_form_round_trip_preserves_every_kind_and_stays_json_serialisable():
+    """niceview converts widget values by field_type, so a value that goes into a
+    widget must come back unchanged — and json.dumps must accept it, which a
+    datetime.date from the date widget would not."""
+    import json
+
+    from app.core.file.form import FormField
+
+    fields = [
+        FormField('s', 'string', 'text'),
+        FormField('t', 'textarea', 'multi\nline'),
+        FormField('d', 'date', '2026-08-06'),
+        FormField('i', 'integer', 42),
+        FormField('f', 'number', 1.5),
+        FormField('b', 'boolean', True),
+        FormField('e', 'enum', 'eco', enum=['eco', 'turbo']),
+        FormField('l', 'string_list', ['a', 'b']),
+    ]
+    values = _round_trip(fields)
+    assert values == {'s': 'text', 't': 'multi\nline', 'd': '2026-08-06', 'i': 42,
+                      'f': 1.5, 'b': True, 'e': 'eco', 'l': ['a', 'b']}
+    assert isinstance(values['i'], int) and not isinstance(values['i'], bool)
+    json.dumps(values)   # would raise on a date object
+
+
+def test_form_round_trip_keeps_empty_values_empty():
+    from app.core.file.form import FormField
+
+    values = _round_trip([
+        FormField('s', 'string', ''),
+        FormField('d', 'date', ''),
+        FormField('l', 'string_list', []),
+    ])
+    assert values == {'s': '', 'd': None, 'l': []}
+
+
+def test_form_collect_reports_the_first_violation():
+    from app.core.file.form import FormField
+
+    values = _round_trip([FormField('n', 'integer', 5, minimum=10)])
+    assert values is None   # out of range -> reported, nothing returned

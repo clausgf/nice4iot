@@ -237,17 +237,19 @@ async def project_card(project_id: str) -> None:
                                             'is_http_enabled', 'is_mqtt_enabled', 'mqtt_topic_base',
                                             'device_tokens_expire_in', 'device_token_length',
                                             'device_online_threshold_s'],
-                                    autosave=True)
-    form.render_field('name', editable=False).props('outlined dense').classes('w-full')
-    form.render_field('description').props('outlined dense hide-bottom-space').classes('w-full')
-    form.render_field('tags').props('outlined dense hide-bottom-space').classes('w-full')
+                                    autosave=True,
+                                    base_props='outlined dense hide-bottom-space',
+                                    default_classes='w-full')
+    form.render_field('name', editable=False)
+    form.render_field('description')
+    form.render_field('tags')
     with ui.row().classes('w-full gap-3 q-mt-none'):
-        form.render_field('is_active')
-        form.render_field('is_autocreate_devices')
-        form.render_field('is_provisioning_autoapproval')
+        form.render_field('is_active', classes='w-auto')
+        form.render_field('is_autocreate_devices', classes='w-auto')
+        form.render_field('is_provisioning_autoapproval', classes='w-auto')
     with ui.row().classes('w-full gap-3 q-mt-none'):
-        form.render_field('is_http_enabled')
-        form.render_field('is_mqtt_enabled')
+        form.render_field('is_http_enabled', classes='w-auto')
+        form.render_field('is_mqtt_enabled', classes='w-auto')
     with ui.row().classes('items-center gap-1') as mqtt_warning:
         ui.icon('warning').classes('text-warning text-sm')
         ui.label('Global MQTT broker disabled (set MQTT_ENABLED)') \
@@ -257,10 +259,10 @@ async def project_card(project_id: str) -> None:
         backward=lambda item: cast(Project, item).is_mqtt_enabled and not app_config.mqtt_enabled
     )
 
-    form.render_field('mqtt_topic_base').props('outlined dense').classes('w-full')
-    form.render_field('device_tokens_expire_in').props('outlined dense').classes('w-full')
-    form.render_field('device_token_length').props('outlined dense').classes('w-full')
-    form.render_field('device_online_threshold_s').props('outlined dense').classes('w-full')
+    form.render_field('mqtt_topic_base')
+    form.render_field('device_tokens_expire_in')
+    form.render_field('device_token_length')
+    form.render_field('device_online_threshold_s')
 
     def _created_updated_caption(item: Project) -> str:
         return f'Created {render_datetime(item.created_at)}, updated {render_datetime(item.updated_at)}'

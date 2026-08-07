@@ -18,7 +18,7 @@ from app.core.project.backend import get_project
 from app.core.token.backend import get_device_token_adapter
 from app.core.token.ui import TokenListCard
 from app.util import is_valid_name, render_datetime, render_datetime_age
-from niceview import ModelForm
+from niceview import Field, ModelForm
 from niceview.util import confirm_dialog, input_dialog
 from app.extensions import get_device_dashboard_cards, get_device_general_cards, get_device_tabs, maybe_await
 
@@ -196,16 +196,19 @@ def _device_general_card(project_name: str, device_name: str) -> None:
     form = ModelForm.from_adapter(
         Device,
         device_adapter(project_name, device_name),
-        include=['name', 'description', 'location', 'tags', 'is_active', 'is_provisioning_approved'],
         autosave=True,
+        base_props='outlined dense hide-bottom-space',
+        default_classes='w-full',
+        # The device name is the directory name; it is changed through Rename below.
+        field_infos={'name': Field(editable=False)},
+        # The layout selects the fields and arranges them. Classes replace rather
+        # than accumulate (niceview 0.14), so ':w-auto' on a switch takes it out of
+        # default_classes' w-full — a w-full switch would fill the wrapping row on
+        # its own instead of sharing it.
+        layout=['name', 'description', 'location', 'tags',
+                [':w-full gap-4 q-mt-xs', 'is_active:w-auto', 'is_provisioning_approved:w-auto']],
     )
-    form.render_field('name', editable=False).props('outlined dense').classes('w-full')
-    form.render_field('description').props('outlined dense hide-bottom-space').classes('w-full')
-    form.render_field('location').props('outlined dense hide-bottom-space').classes('w-full')
-    form.render_field('tags').props('outlined dense hide-bottom-space').classes('w-full')
-    with ui.row().classes('w-full gap-4 q-mt-xs'):
-        form.render_field('is_active')
-        form.render_field('is_provisioning_approved')
+    form.render()
     d = cast(Device, form.item)  # niceview types form.item as Any; cast enables attribute access for bind_text_from
     ui.label().classes('text-caption text-grey-7 q-mt-xs').bind_text_from(
         d, 'updated_at',

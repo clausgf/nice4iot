@@ -25,10 +25,10 @@ class LoggingCard:
             ui.notify(str(e), color='negative')
 
     def _render_backend(self, title: str, config) -> None:
-        form = ModelForm.from_item(config, on_change=lambda e: self._save())
+        form = ModelForm.from_item(config, on_change=lambda e: self._save(),
+                                   base_props='outlined dense hide-bottom-space',
+                                   default_classes='w-full')
         marker = f'logging-{title.lower()}'
         with ui.card().classes('w-full').mark(marker):
             ui.label(title).classes('font-bold')
             form.render()
-            for widget in form.widgets.values():
-                widget.props('outlined dense').classes('w-full')

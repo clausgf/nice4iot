@@ -1,78 +1,80 @@
 """
 The JSON Form tab's widgets: one `FormField` → one NiceGUI input.
 
-A deliberately small interpreter over the field kinds from `form.py` — a
-fixed switch, not schema-derived types fed into `pydantic.create_model` or
-niceview's ModelForm. That keeps the untrusted-input path short and auditable
-(see docs/file-forms.md); niceview's ModelForm stays reserved for our own
-code-defined models.
+The field kinds from `form.py` are translated into niceview's `FieldInfo`
+vocabulary and rendered with `niceview.render_field()`, which builds the same
+widget a `ModelForm` would — without a model. The untrusted schema is never
+turned into a type: it produces a `FormField` whose `kind` is one of the eight
+literals *we* assign, and `_WIDGETS` below is our table (see docs/concepts.md).
 
-Only text ever reaches a text-rendering widget (labels, options, help lines) —
-schema-supplied strings never go to ui.markdown/ui.html, so a schema cannot
-inject markup.
+Schema-supplied strings reach only `label`, `description` and `options`, all of
+which niceview renders as text — never markup. `props`/`classes` are ours, so a
+schema cannot inject Quasar props or CSS.
 
 Knows nothing about files: it renders fields and hands back a collector. Where
 the values end up is `detail_ui.py`'s business.
 """
+import datetime
 from typing import Any, Callable
 
 from nicegui import ui
+from niceview import Field, FieldInfo, field_value, render_field
+from niceview.fieldinfo import WidgetType
 
 from app.core.file.form import FormField, validate_field
 
-# Widgets that carry NiceGUI's own validation (a ValidationElement) show the
-# message inline, under the field. The rest — switch, textarea — are validated on
-# save only. Either way the save-time check stays authoritative: inline errors
-# inform, they do not block.
-_VALIDATES_INLINE = {'string', 'date', 'integer', 'number', 'enum', 'string_list'}
+# kind -> (widget, Python type). The type drives field_value()'s conversions: an
+# integer field reads back as int rather than float, a chips field as list[str].
+_WIDGETS: dict[str, tuple[WidgetType, Any]] = {
+    'string':      ('ui.input',       str),
+    'textarea':    ('ui.textarea',    str),
+    'date':        ('date',           str),
+    'integer':     ('ui.number',      int),
+    'number':      ('ui.number',      float),
+    'boolean':     ('ui.switch',      bool),
+    'enum':        ('ui.select',      str),
+    'string_list': ('ui.input_chips', list[str]),
+}
 
 
-def _render_widget(field: FormField, label: str) -> Callable[[], Any]:
-    """Render the input widget for *field*; return a getter for its value."""
-    validation = ((lambda v: validate_field(field, v))
-                  if field.kind in _VALIDATES_INLINE else None)
+def to_field_info(field: FormField) -> FieldInfo:
+    """Translate one field of the schema subset into niceview's vocabulary.
 
-    if field.kind == 'boolean':
-        w = ui.switch(label, value=bool(field.value))
-        return lambda: bool(w.value)
-    if field.kind == 'enum':
-        options = [str(x) for x in (field.enum or [])]
-        w = ui.select(options, label=label, value=field.value if field.value in options else None,
-                      validation=validation).props('outlined dense').classes('w-full')
-        return lambda: w.value
-    if field.kind == 'textarea':
-        w = ui.textarea(label, value=field.value or '').props('outlined dense').classes('w-full')
-        return lambda: w.value
-    if field.kind == 'date':
-        w = ui.input(label, value=field.value or '', validation=validation) \
-            .props('outlined dense type=date').classes('w-full')
-        return lambda: w.value or None
-    if field.kind == 'integer':
-        w = ui.number(label, value=field.value, precision=0, step=1, min=field.minimum,
-                      max=field.maximum, validation=validation).props('outlined dense').classes('w-full')
-        return lambda: int(w.value) if w.value is not None else None
-    if field.kind == 'number':
-        w = ui.number(label, value=field.value, min=field.minimum, max=field.maximum,
-                      validation=validation).props('outlined dense').classes('w-full')
-        return lambda: w.value
-    if field.kind == 'string_list':
-        w = ui.input_chips(label, value=list(field.value or []), validation=validation) \
-            .props('outlined dense').classes('w-full')
-        return lambda: list(w.value or [])
-    w = ui.input(label, value=field.value or '', validation=validation) \
-        .props('outlined dense').classes('w-full')
-    if field.max_length:
-        w.props(f'maxlength={field.max_length}')
-    return lambda: w.value
+    The single place where the subset meets the widget layer — a newly supported
+    type is a row in `_WIDGETS` plus one in `schema_kind()`, not another branch.
+    """
+    widget_type, field_type = _WIDGETS[field.kind]
+    props = 'outlined dense'
+    if field.max_length and field.kind in ('string', 'textarea'):
+        props += f' maxlength={field.max_length}'
+    return Field(
+        label=field.label or field.key,
+        widget_type=widget_type,
+        field_type=field_type,
+        # niceview renders a description wherever description_as says — a tooltip by
+        # default, which is also the only slot a switch has. It reaches the widget as
+        # text, never as markup.
+        description=field.description,
+        options=[str(x) for x in field.enum] if field.enum is not None else None,
+        min=field.minimum,
+        max=field.maximum,
+        precision=0 if field.kind == 'integer' else None,
+        step=1 if field.kind == 'integer' else None,
+        required=field.required,
+        # Layer 2: the same check the save path runs, shown under the widget.
+        validation=lambda value, f=field: validate_field(f, value),
+        props=props,
+        classes='w-full',
+    )
 
 
-def _render_field(field: FormField) -> Callable[[], Any]:
-    label = (field.label or field.key) + (' *' if field.required else '')
-    with ui.column().classes('w-full gap-0'):
-        getter = _render_widget(field, label)
-        if field.description:
-            ui.label(field.description).classes('text-caption text-grey-7')
-    return getter
+def _json_value(value: Any) -> Any:
+    """Make a widget value JSON-serialisable.
+
+    Only the date widget needs it: niceview reads it back as a `datetime.date`,
+    while the subset stores an ISO-8601 string (docs/concepts.md).
+    """
+    return value.isoformat() if isinstance(value, datetime.date) else value
 
 
 def render_form_fields(fields: list[FormField]) -> Callable[[], dict | None]:
@@ -82,15 +84,14 @@ def render_form_fields(fields: list[FormField]) -> Callable[[], dict | None]:
     values, or None after reporting the first error — so a save handler is just
     ``if (values := collect()) is None: return``.
     """
-    getters: dict[str, Callable[[], Any]] = {}
+    infos = {f.key: to_field_info(f) for f in fields}
     with ui.column().classes('w-full gap-3'):
         if not fields:
             ui.label('Empty object — nothing to edit as a form.').classes('text-caption text-grey-7')
-        for field in fields:
-            getters[field.key] = _render_field(field)
+        widgets = {f.key: render_field(infos[f.key], f.value) for f in fields}
 
     def collect() -> dict | None:
-        values = {f.key: getters[f.key]() for f in fields}
+        values = {key: _json_value(field_value(w, infos[key])) for key, w in widgets.items()}
         for f in fields:
             if (err := validate_field(f, values[f.key])) is not None:
                 ui.notify(err, type='negative')

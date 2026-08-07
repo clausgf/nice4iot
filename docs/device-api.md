@@ -43,9 +43,16 @@ field is easier than a custom header. Body and header are equivalent; if both ar
 present on one request, the body value wins.
 
 Reporting on **every** request keeps the shown version fresh; reporting **at
-provisioning** guarantees a known value at least at each token refresh. Bake the
-version into the firmware image at build time so it can be reported (see
-[Firmware from GitHub Releases → Reporting the running version](firmware-releases.md#reporting-the-running-version)).
+provisioning** guarantees a known value at least at each token refresh.
+
+Bake the version into the image at build time so it cannot drift from the actual
+build: inject the release tag as a compile-time define (GitHub Actions offers it
+as `${{ github.ref_name }}` on a `v*` tag build) and set the header once in the
+HTTP client's shared request helper — the same place that sets
+`Authorization: Bearer …` — rather than per call. Keep a fallback
+(`#ifndef FIRMWARE_VERSION #define FIRMWARE_VERSION "dev"`) so local builds still
+compile. See [Core Concepts → Firmware Distribution](concepts.md#firmware-distribution)
+for the server side.
 
 ## Telemetry metric names
 

@@ -23,8 +23,7 @@ class Device(BaseModel):
         min_length=1,
         pattern=NAME_REGEX,
         description='Unique device identifier within the project. Used as the directory name on disk. '
-                    'Must be a valid identifier: letters, digits and underscore only, '
-                    'and must not start with a digit.')
+                    'Letters, digits and underscore only. Must not start with a digit.')
 
     description: Annotated[str,
             Field(description='Human-readable description of this device.'),
@@ -43,14 +42,13 @@ class Device(BaseModel):
 
     project_name: Annotated[str,
             Field(min_length=1,
-                  description='Name of the project this device belongs to. '
-                               'Set at creation time. The project determindes the parent directory of the device directory.'),
+                  description='Name of the project this device belongs to. Set at creation time.'),
             niceview.Field(editable=False)
         ]
 
     created_at: Annotated[datetime.datetime,
             Field(default_factory=NOW_FACTORY,
-                  description='Timestamp when the device record was created (UTC, set automatically).'),
+                  description='Device record creation timestamp (UTC, set automatically).'),
             niceview.Field(editable=False)
         ]
 
@@ -89,8 +87,7 @@ class Device(BaseModel):
     firmware_version: Annotated[str,
             Field(default='',
                   description='Firmware version the device last reported (via the X-Firmware-Version '
-                              'header on authenticated API requests, or at provisioning). '
-                              'Device-reported runtime state; source of truth is .runtime.json, not this file.'),
+                              'header on authenticated API requests, or at provisioning). '),
             niceview.Field(editable=False)
         ] = ''
 
@@ -108,7 +105,6 @@ class Device(BaseModel):
     class Meta:
         description = (
             "Device settings and provisioning state. "
-            "The device name is the filesystem key and cannot be changed without renaming the directory."
         )
 
 

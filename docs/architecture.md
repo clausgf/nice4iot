@@ -95,15 +95,26 @@ event loop. The telemetry hot path (`_append_local_metrics`) is wrapped inside
 `write_telemetry`. This is the project-wide rule; see CLAUDE.md for details.
 
 **Device-supplied schemas are untrusted; forms are interpreted, not generated.**
-The planned schema-driven file forms (see
-[File Editing & Schema-Driven Forms](file-forms.md)) accept a *minimal
-JSON-Schema subset*, not the full spec, and render it with a small dedicated
-interpreter rather than feeding it into `pydantic.create_model`/niceview — which
-stays reserved for our own code-defined models. A device-uploaded schema is
-inert until a user approves it, approval is bound to the schema's content hash
-(a device edit changes the hash and forces re-approval), and schema text is
-never rendered as HTML/Markdown. This keeps the untrusted-input path small,
-auditable, and free of `$ref` (SSRF) and `pattern` (ReDoS) risk.
+The schema-driven file forms (see
+[Core Concepts → Schema-driven JSON forms](concepts.md#schema-driven-json-forms))
+accept a *minimal JSON-Schema subset*, not the full spec. The schema never
+becomes a type: it is interpreted into a `FormField` whose `kind` is one of eight
+literals we assign, and `app/core/file/form_ui.py` maps those to widgets. Only
+then does niceview build the widget (`render_field()`, which needs no model) —
+`pydantic.create_model` and `ModelForm` stay reserved for our own code-defined
+models, because a model class is exactly what must not be built from device
+input. A device-uploaded schema is inert until a user approves it, approval is
+bound to its content hash, and schema text is never rendered as HTML/Markdown.
+This keeps the untrusted-input path down to the schema parser plus one table,
+and free of `$ref` (SSRF) and `pattern` (ReDoS) risk.
+
+**The JSON form and the app's own forms share one widget layer.** Every form
+backed by one of our Pydantic models goes through niceview's `ModelForm`; the
+JSON form cannot, because its fields come from a schema rather than a class. Both
+nonetheless render through the same `render_field()`/`field_value()` pair, so the
+JSON form gets niceview's styling, validation layers and value conversions
+without a model ever being generated — and stops being the one form in the app
+that ages separately from the rest.
 
 **Pluggable UI authentication, disabled by default.**
 The REST API endpoints are protected by bearer tokens (a separate mechanism). The NiceGUI management UI has its own optional auth, selected via `AUTH_PROVIDER` (`none` by default) — see [Configuration → Authentication](configuration.md#authentication) and `app/auth/`.

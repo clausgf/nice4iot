@@ -26,22 +26,22 @@ class MetricAlarmRule(BaseModel):
         ] = True
 
     kind: Annotated[str,
-            Field(description='Telemetry kind to watch, e.g. "sensors" or "system".'),
-            niceview.Field()
+            Field(description='Telemetry kind to watch.'),
+            niceview.Field(placeholder='E.g. "sensors" or "system"')
         ] = 'sensors'
 
     metric: Annotated[str,
-            Field(description='Metric name within the payload, e.g. "temperature".'),
-            niceview.Field()
+            Field(description='Metric name within the payload.'),
+            niceview.Field(placeholder='E.g. "temperature" or "humidity"')
         ] = 'temperature'
 
     comparison: Annotated[Literal['<', '=', '>'],
-            Field(description='Comparison operator applied to the metric value.'),
+            Field(description='Comparison operator compares metric value to threshold.'),
             niceview.Field()
         ] = '<'
 
     threshold: Annotated[float,
-            Field(description='Threshold value. Alarm fires when metric comparison threshold is True.'),
+            Field(description='Alarm fires when the comparison evaluates to True.'),
             niceview.Field(widget_type='ui.number')
         ] = 0.0
 

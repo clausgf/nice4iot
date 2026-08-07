@@ -159,7 +159,7 @@ def test_schema_approval_is_hash_bound(projects_dir):
 
 
 # ---------------------------------------------------------------------------
-# View plan — the decision table from docs/file-forms.md
+# View plan — the decision table from docs/concepts.md
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
