@@ -6,6 +6,8 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-08-12
+
 ### Added
 
 - **`deploy/Caddyfile`** — a copy-ready example config for the reverse proxy the
