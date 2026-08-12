@@ -6,6 +6,19 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.25.1] - 2026-08-12
+
+### Fixed
+
+- **nicepaper 0.15.0 → 0.15.1** (the optional `epaper` extra, which the released
+  container image bakes in). Fixes the display presets shipped in 0.25.0: picking
+  a panel from the **Display** list in the screen settings did nothing. The
+  select's handler read `e.value` off the `GenericEventArguments` an `.on()`
+  handler receives, which carries the payload in `.args` and has no `.value`; the
+  resulting `AttributeError` was caught and logged server-side, so the browser
+  showed no error and the fields below simply stayed as they were. No API or
+  `app.extensions` contract change — the five `register_*()` calls are unchanged.
+
 ## [0.25.0] - 2026-08-12
 
 ### Added
