@@ -35,6 +35,17 @@ Understanding the intended boundaries helps judge whether something is a bug:
   `/api/*` and lock out devices, so `/api/*` must be exempted from the proxy's
   login gate. That is a configuration requirement, not a weakened boundary — the
   device API stays bearer-token protected either way.
+- **Extension endpoints are as protected as the extension asks for.**
+  `mount_extension_router()` gates on whether the extension is enabled for the
+  project; bearer-token auth is opt-in per router (`require_device_auth=True`).
+  The bundled epaper extension does **not** opt in, so
+  `/api/ext/epaper/<project>/screens/<screen>/image.png` is reachable by anyone
+  who reaches it — deliberately, since e-paper firmware holds no token. If your
+  displays also can't do TLS, [deploy/README.md](deploy/README.md#serving-display-images-over-plain-http)
+  describes exposing *only* that path over plain HTTP on the display LAN
+  ([deploy/Caddyfile](deploy/Caddyfile)); that is an unencrypted, unauthenticated
+  path to rendered screens by design, and `remote_ip` filtering is not
+  authentication.
 - **No multi-user separation** — all UI operators share one access level. There
   is no RBAC, and no isolation between projects at the UI level. Privilege
   escalation *between UI users* is therefore not a meaningful boundary today.

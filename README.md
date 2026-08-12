@@ -140,7 +140,7 @@ mkdir -p data                # once, owned by your user
 docker compose -f compose-ghcr.yml pull && docker compose -f compose-ghcr.yml up -d
 ```
 
-The production files run nice4iot behind an external reverse proxy (it joins a `proxy` Docker network and only `expose`s port 8080 internally). Releases are published to `ghcr.io/clausgf/nice4iot` on every `v*` tag. See [deploy/README.md](deploy/README.md) for the details — **including the security note to read before exposing nice4iot to a network**, serving under a sub-path, and the epaper extension (built in by default).
+The production files run nice4iot behind an external reverse proxy (it joins a `proxy` Docker network and only `expose`s port 8080 internally); [deploy/Caddyfile](deploy/Caddyfile) is a copy-ready example for that proxy. Releases are published to `ghcr.io/clausgf/nice4iot` on every `v*` tag. See [deploy/README.md](deploy/README.md) for the details — **including the security note to read before exposing nice4iot to a network**, serving under a sub-path, serving e-paper images over plain HTTP to displays that can't do TLS, and the epaper extension (built in by default).
 
 ---
 

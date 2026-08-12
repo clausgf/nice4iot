@@ -7,6 +7,10 @@
 # the proxy enforces auth (or restricts access) before exposing it. See the
 # security note in deploy/README.md.
 #
+# The proxy is not part of this file — see deploy/Caddyfile for a copy-ready
+# example, including the plain-HTTP listener that lets e-paper displays without
+# a certificate store fetch image.png over the LAN.
+#
 #   mkdir -p data          # once, owned by your uid (PUID/PGID below)
 #   docker compose -f compose-build.yml up -d --build
 

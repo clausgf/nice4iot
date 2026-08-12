@@ -11,6 +11,10 @@
 #   docker compose -f compose-ghcr.yml up -d
 #
 # Read the security note in deploy/README.md before exposing the UI.
+#
+# The proxy is not part of this file — see deploy/Caddyfile for a copy-ready
+# example, including the plain-HTTP listener that lets e-paper displays without
+# a certificate store fetch image.png over the LAN.
 
 networks:
   proxy:

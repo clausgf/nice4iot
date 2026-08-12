@@ -1,0 +1,73 @@
+# Example Caddy config for the reverse proxy in front of nice4iot.
+#
+# The compose files here do NOT ship a proxy: nice4iot joins the external
+# `proxy` network and only `expose`s 8080 to it, so this belongs in whatever
+# runs your proxy. Mount it there as /etc/caddy/Caddyfile and put that
+# container on the same `proxy` network, so `nice4iot:8080` resolves.
+#
+# Two listeners, for two very different clients:
+#   - the HTTPS site  — humans (admin UI) and devices (REST API), everything
+#   - plain HTTP :8081 — e-paper displays, image.png only, LAN only
+# See "Serving display images over plain HTTP" in deploy/README.md.
+
+# ---------------------------------------------------------------------------
+# HTTPS — the normal, complete entry point. Caddy provisions the certificate.
+# ---------------------------------------------------------------------------
+iot.example.com {
+	reverse_proxy nice4iot:8080
+}
+
+# To serve under a sub-path instead (nice4iot then needs `--root-path /iot`,
+# see deploy/README.md), replace the block above with:
+#
+#iot.example.com {
+#	redir /iot /iot/          # so relative asset URLs resolve
+#	handle_path /iot/* {
+#		reverse_proxy nice4iot:8080
+#	}
+#}
+
+# ---------------------------------------------------------------------------
+# Plain HTTP for e-paper displays — images only, LAN only.
+#
+# E-paper firmware usually has no certificate store worth the name, so a
+# deployment that is HTTPS-only can be unreachable for the very devices the
+# images exist for. This second listener serves nothing but the rendered PNG,
+# restricted to the display network. Both conditions are ANDed; everything
+# else on this port — the admin UI, the rest of the API, requests from off the
+# LAN — gets a flat 404.
+#
+# Adapt 192.168.2.0/24 to the network your displays sit on. The path pattern
+# matches the epaper extension's route
+#   /api/ext/epaper/<project>/screens/<screen>/image.png
+# ---------------------------------------------------------------------------
+http://:8081 {
+	@image {
+		remote_ip 192.168.2.0/24
+		path_regexp ^/api/ext/epaper/[^/]+/screens/[^/]+/image\.png$
+	}
+	handle @image {
+		reverse_proxy nice4iot:8080
+	}
+	respond 404
+}
+
+# This ADDS a way to reach the images, it does not move them: image.png stays
+# available over HTTPS on the site above, subject to whatever protects it
+# there. That is intended — the screen editor loads its preview from its own
+# origin with a relative URL, so excluding the image path from the HTTPS site
+# to "have only one way in" breaks the preview.
+#
+# What it does and does not buy you:
+#   - Not confidentiality. The images travel unencrypted and unauthenticated;
+#     anyone on that LAN can fetch any screen of any project. Fine for a
+#     weather panel, a deliberate decision for a room calendar whose rendered
+#     image shows meeting subjects.
+#   - remote_ip is not authentication. It matches the directly connecting
+#     peer, which anything on the same LAN can hold. It keeps the plain port
+#     off the internet; it does not keep a compromised device off it.
+#   - The editor views come along: ?raw=true and ?boxes=true live on the same
+#     path. Add `not query raw=*` and `not query boxes=*` to @image if that
+#     bothers you.
+#   - Device bearer tokens are unaffected — this route needs none, and adding
+#     it does not weaken the token auth on the rest of /api.

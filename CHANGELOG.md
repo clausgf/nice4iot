@@ -6,6 +6,48 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+### Added
+
+- **`deploy/Caddyfile`** — a copy-ready example config for the reverse proxy the
+  compose files assume. It carries the two listeners a display deployment needs:
+  the normal HTTPS site for the admin UI and the whole API, plus a **plain-HTTP
+  listener that serves only the epaper image endpoint, restricted to the display
+  LAN**. E-paper firmware usually has no certificate store worth the name, so an
+  HTTPS-only deployment can be unreachable for the very devices the images exist
+  for; this implements the approach nicepaper's `SECURITY.md` describes, in the
+  proxy rather than as a second listener inside the app. The matcher ANDs
+  `remote_ip` with `path_regexp ^/api/ext/epaper/[^/]+/screens/[^/]+/image\.png$`
+  — everything else on that port (the UI, the rest of `/api`, off-LAN requests)
+  gets a flat `404`. Documented under *Serving display images over plain HTTP* in
+  [deploy/README.md](deploy/README.md), including what it does **not** buy you:
+  the images travel unencrypted and unauthenticated, and `remote_ip` is not
+  authentication. `image.png` stays reachable over HTTPS as well — the screen
+  editor loads its preview from its own origin. The compose files are unchanged
+  apart from a comment pointing at the new file; the proxy stays external.
+
+### Changed
+
+- **nicepaper 0.14.0 → 0.15.0** (the optional `epaper` extra, which the released
+  container image bakes in). Its five `register_*()` calls are unchanged, so the
+  `app.extensions` contract was not touched, but three changes are visible to
+  anyone already running screens:
+  - **Existing text may move.** Every widget `alignment` now defaults to `lt`
+    instead of `lb`. Screen files don't store the default, so a `Text`, `Date` or
+    `HomeAssistant` widget without an explicit `alignment` renders vertically
+    offset after the update. Set `"alignment": "lb"` to keep the old placement.
+  - **The `?color_model=` query parameter on the image endpoint is gone** and is
+    now ignored. `/api/ext/epaper/<project>/screens/<screen>/image.png` serves the
+    image quantized to the palette configured *on the screen*, so a display needs
+    no palette knowledge of its own. Displays that passed it must have the palette
+    set on their screen instead. `?raw=true` (unquantized) and `?boxes=true`
+    (widget outlines, `no-store`) are new; a display never needs either.
+  - **`WidgetModel.show_bounding_box` was removed** — outlines are a preview-only
+    view now. Existing screen files with the key load fine and drop it on save.
+
+  Otherwise additive: display presets picked from a searchable panel catalog,
+  per-screen palette and colors, global `latitude`/`longitude` as the default
+  weather location, and a pixel ruler on the editor preview.
+
 ## [0.24.0] - 2026-08-07
 
 ### Changed

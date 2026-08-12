@@ -1,8 +1,9 @@
 # Deployment
 
-A container image ([`Dockerfile`](Dockerfile)) and three Docker Compose files,
-each for a different way of running nice4iot. Run the commands below from this
-`deploy/` directory.
+A container image ([`Dockerfile`](Dockerfile)), three Docker Compose files —
+each for a different way of running nice4iot — and an example
+[`Caddyfile`](Caddyfile) for the reverse proxy in front of it. Run the commands
+below from this `deploy/` directory.
 
 | File | Use it when | Image |
 |---|---|---|
@@ -13,7 +14,9 @@ each for a different way of running nice4iot. Run the commands below from this
 Both production files put nice4iot behind a reverse proxy: nice4iot is never
 published itself; it joins an external `proxy` Docker network and only
 `expose`s port 8080 to it, so a reverse proxy (Caddy, Traefik, nginx, …) on the
-same network is the sole public entry point.
+same network is the sole public entry point. The proxy is deliberately not part
+of these files — you usually already run one. [`Caddyfile`](Caddyfile) is a
+copy-ready example of the nice4iot side of that config.
 
 ## Production from the pre-built image (recommended)
 
@@ -145,6 +148,73 @@ both halves must agree:
   `command:` line in your compose file, so NiceGUI emits `/iot`-prefixed asset,
   redirect, and WebSocket URLs.
 
+## Serving display images over plain HTTP
+
+E-paper displays are not browsers: firmware polling `image.png` usually has no
+certificate store worth the name, so an HTTPS-only deployment can be
+unreachable for the very devices the images exist for. The supported answer is
+a second, plain-HTTP listener **in the reverse proxy** that serves nothing but
+the image endpoint, restricted to the LAN the displays are on — not a second
+listener inside nice4iot, which would duplicate what the proxy already does
+well. [`Caddyfile`](Caddyfile) ships both listeners; the relevant half:
+
+```caddyfile
+# plain HTTP for the displays: images only, LAN only
+http://:8081 {
+	@image {
+		remote_ip 192.168.2.0/24
+		path_regexp ^/api/ext/epaper/[^/]+/screens/[^/]+/image\.png$
+	}
+	handle @image {
+		reverse_proxy nice4iot:8080
+	}
+	respond 404
+}
+```
+
+Adapt `192.168.2.0/24` to your display network. Both conditions are ANDed, and
+everything else on that port — the admin UI, the rest of the API, requests from
+outside the LAN — gets a flat `404`. The path pattern matches the epaper
+extension's route, `/api/ext/epaper/<project>/screens/<screen>/image.png`.
+`path_regexp` sees the path as this listener receives it, so the sub-path
+scenario above does not apply here: point the displays at the bare
+`http://<host>:8081/api/ext/epaper/…` path, without the `/iot` prefix.
+
+Two Docker-specific points, since the proxy here runs in a container:
+
+- **Publish the port on the proxy, not on nice4iot.** Add `"8081:8081"` to the
+  proxy service's `ports:` — nice4iot itself stays unpublished, exactly as
+  before. Bind it to the LAN interface (`"192.168.2.10:8081:8081"`) if the host
+  also has a public address.
+- **`remote_ip` needs the real client address.** Docker's iptables DNAT
+  preserves the source IP for connections arriving from the LAN, so the matcher
+  works; but if the proxy sits behind *another* hop, `remote_ip` matches that
+  hop instead. Verify with a request from a display subnet before trusting it.
+
+This **adds** a way to reach the images, it does not move them: `image.png`
+stays available over HTTPS as well, subject to whatever protects it there. That
+is intended — the screen editor loads its preview from its own origin with a
+relative URL, so excluding the image path from the HTTPS site to "have only one
+way in" breaks the preview.
+
+What this does and does not buy you (see nicepaper's
+[SECURITY.md](https://github.com/clausgf/nicepaper/blob/main/SECURITY.md) for
+the full discussion):
+
+- **Not confidentiality.** The images travel unencrypted and unauthenticated;
+  anyone on that LAN can fetch any screen of any project. Fine for a weather
+  panel, a deliberate decision for a room calendar whose rendered image shows
+  meeting subjects and organisers.
+- **`remote_ip` is not authentication.** It matches the directly connecting
+  peer, which anything on the same LAN can hold. It keeps the plain port off
+  the internet; it does not keep a compromised device off it.
+- **The editor views come along.** `?raw=true` and `?boxes=true` live on the
+  same path. Add `not query raw=*` and `not query boxes=*` to the matcher if
+  that bothers you.
+- **Device tokens are unaffected.** The epaper image route is mounted without
+  `require_device_auth`, so it needs no bearer token either way; the rest of
+  `/api` keeps its token auth, and none of it is reachable on port 8081.
+
 ## Releasing (building and publishing the image)
 
 [`.github/workflows/release.yml`](../.github/workflows/release.yml) builds the
@@ -169,7 +239,8 @@ ships with it baked in. It pulls in
 [`nicepaper`](https://github.com/clausgf/nicepaper) (a public `git+https`
 dependency — no credentials). Comment that build arg out to build without it.
 Once installed the extension (`extensions.epaper`) auto-registers; enable it per
-project under **Project → General → Extensions**.
+project under **Project → General → Extensions**. If your displays can't do
+TLS, see *Serving display images over plain HTTP* above.
 
 ## Notes
 
