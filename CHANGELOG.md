@@ -6,6 +6,43 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-08-13
+
+### Changed
+
+- **The Files card gets files in through one Add dialog** instead of a permanently
+  visible footer. Add is now niceview's own title-row button (`add_button='New'`,
+  driving `on_add`); its dialog offers both ways in — a drop zone first, since
+  uploading is the common case, and a name field below that creates an empty JSON
+  file and drills straight into its editor. The dialog stays open after an upload,
+  so several files can be dropped in a row, and the name field now *gates*
+  Create — an invalid name or one already taken in the write directory is rejected
+  at the field, where the old flow only warned after the fact.
+
+  Consequences: uploading is one click further away and is no longer possible
+  while a file's detail view is open (the wrapper hides Add there). Everything
+  the footer did is otherwise unchanged, including that uploads and new files
+  always land in the write directory, never in the underlay.
+
+  Delete deliberately stays a per-row action: the wrapper's delete button is
+  detail-view only, cannot be made conditional per entry — inherited files have
+  no own copy to delete — and its fixed confirmation text ("cannot be undone")
+  would be wrong for an override, which is exactly reversible.
+- **niceview 0.14.1 → 0.15.0**, which the above depends on: `on_add`/`on_back` now
+  accept `async def` and are awaited, so the handler can open a dialog and act on
+  the answer. Previously the coroutine was dropped unawaited — a button that did
+  nothing, with a `RuntimeWarning` as the only trace. The release also rejects an
+  *async* `render_detail`/`render_list_item`/`render_list_container` at
+  construction time; ours are synchronous, so nothing changed there.
+
+### Fixed
+
+- `_make_upload_handler` no longer refreshes the file list itself; it reports
+  success and the caller refreshes once the dialog is closed. Refreshing from
+  inside the handler would delete the dialog mid-upload, since the Add dialog is
+  built in the click context of the wrapper's title row and therefore lives in
+  the same refreshable subtree as the list.
+
 ## [0.25.1] - 2026-08-12
 
 ### Fixed

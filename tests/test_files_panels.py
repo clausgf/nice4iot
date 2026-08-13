@@ -212,6 +212,51 @@ def test_wrapper_navigates_from_the_list_into_the_detail_view(project_with_devic
     asyncio.run(run())
 
 
+def test_wrapper_add_button_takes_our_async_handler(project_with_device):
+    """Add is niceview's own title-row button driving our async on_add.
+
+    niceview 0.15.0 awaits an async on_add but rejects an async *renderer* at
+    construction time, so the two look alike and are not. Worth pinning: a
+    handler niceview refuses to await is a button that silently does nothing —
+    the failure mode 0.15.0 was released to end — and it would never show up in
+    a test that only renders the list.
+    """
+    from nicegui import background_tasks, core
+
+    from app.core.file.overlay import FileCtx, OverlayDirectoryAdapter
+    from app.core.file.browser_ui import _build_wrapper
+    from app.util import is_valid_upload_filename
+
+    project, device = project_with_device
+    ctx = FileCtx(project, device, False, underlay_dir=project_dir(project))
+    adapter = OverlayDirectoryAdapter(device_dir(project, device), project_dir(project),
+                                      suffix=None, name_filter=is_valid_upload_filename)
+    container = ui.column()
+    called = False
+
+    async def _on_add() -> None:
+        nonlocal called
+        called = True
+
+    async def run() -> None:
+        core.loop = asyncio.get_running_loop()
+        try:
+            with container:
+                wrapper = _build_wrapper(adapter, title='Files', ctx=ctx,
+                                         refresh=lambda: None, state={}, on_add=_on_add)
+                wrapper.render()
+                assert wrapper.add_button is not None      # Add is the wrapper's own button
+                assert wrapper.delete_button is None       # delete stays a per-row action
+                await wrapper._handle_add()                # what the click awaits
+                while pending := list(background_tasks.running_tasks):
+                    await asyncio.gather(*pending)
+        finally:
+            core.loop = None
+
+    asyncio.run(run())
+    assert called, 'niceview did not await our async on_add handler'
+
+
 @pytest.mark.parametrize("raw,expected", [
     ('config', 'config.json'),
     ('config.json', 'config.json'),

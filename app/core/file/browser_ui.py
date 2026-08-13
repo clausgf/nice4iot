@@ -22,7 +22,7 @@ from typing import Any, Callable
 import anyio
 from nicegui import ui
 from niceview import DrillDownWrapper
-from niceview.util import confirm_dialog, input_dialog
+from niceview.util import confirm_dialog
 
 from app.core.device.backend import get_device_path
 from app.core.file.backend import get_file_config, load_file_state, publish_file_now
@@ -116,11 +116,17 @@ def _as_json_name(raw: str) -> str:
     return name if name.endswith('.json') else f'{name}.json'
 
 
-def _make_upload_handler(directory: Path, refresh: Callable[[], Any], ctx: FileCtx):
+def _make_upload_handler(directory: Path, on_success: Callable[[], Any], ctx: FileCtx):
     """Return an upload handler that writes uploaded files to *directory* atomically.
 
     An upload can be several MB, so the blocking write/rename is pushed to a
-    worker thread — the same treatment as the device-facing PUT /api/file path."""
+    worker thread — the same treatment as the device-facing PUT /api/file path.
+
+    *on_success* is called after a file landed. It deliberately does not refresh
+    the list itself: the handler runs inside the Add dialog, which hangs in the
+    same refreshable subtree as the list, so refreshing here would delete the
+    dialog out from under the user mid-upload. The caller refreshes once the
+    dialog is closed."""
     async def _handle(e) -> None:
         # NiceGUI 3.x: the upload event carries a FileUpload (e.file) whose read()
         # is async; the earlier e.name / e.content.read() no longer exist.
@@ -134,7 +140,7 @@ def _make_upload_handler(directory: Path, refresh: Callable[[], Any], ctx: FileC
         try:
             await anyio.to_thread.run_sync(lambda: atomic_write(dest, content))
             ui.notify(f'Uploaded {filename}', type='positive')
-            refresh()
+            on_success()
             maybe_publish(dest, ctx)
         except OSError as exc:
             log.exception(f'Upload failed: {exc}')
@@ -144,23 +150,88 @@ def _make_upload_handler(directory: Path, refresh: Callable[[], Any], ctx: FileC
     return _handle
 
 
+async def _add_file_dialog(write_dir: Path, *, ctx: FileCtx, max_upload: int) -> tuple[str | None, bool]:
+    """The wrapper's Add action: one dialog for both ways to get a file in here.
+
+    Returns `(created, uploaded)` — the name of a newly created empty file to
+    drill into, and whether an upload changed the directory. Neither is acted on
+    here: the caller owns the refresh, because this dialog is built in the click
+    context of the wrapper's title row and therefore lives inside the refreshable
+    body it would be refreshing (see `_make_upload_handler`).
+
+    Upload comes first because it is the common case; the name field is the
+    second way in. The dialog stays open after an upload so several files can be
+    dropped in one go.
+    """
+    uploaded = False
+
+    def _mark_uploaded() -> None:
+        nonlocal uploaded
+        uploaded = True
+
+    def _taken(raw: str) -> bool:
+        """A name already used in write_dir. Shadowing an underlay file is fine."""
+        return (write_dir / _as_json_name(raw)).exists()
+
+    with ui.dialog() as dialog, ui.card().classes('w-full'):
+        ui.label('Add File').classes('text-h6')
+        ui.upload(
+            on_upload=_make_upload_handler(write_dir, _mark_uploaded, ctx),
+            max_file_size=max_upload,
+            auto_upload=True,
+        ).props('flat bordered label="Drop files here, or pick one"').classes('w-full')
+        ui.label(f'Up to {human_size(max_upload)} per file. Several files can be dropped in a row.') \
+            .classes('text-caption text-grey-7')
+
+        ui.separator().classes('q-my-sm')
+        with ui.row().classes('w-full items-start gap-2 no-wrap'):
+            name = ui.input(
+                label='New JSON file', placeholder='config',
+                validation={
+                    'Letters, digits, _ - . only, starting with a letter or digit':
+                        lambda s: is_valid_upload_filename(_as_json_name(s)),
+                    'Already exists — close this and open it to edit': lambda s: not _taken(s),
+                },
+            ).props('outlined dense').classes('grow')
+
+            def _create() -> None:
+                if not name.validate():
+                    return
+                dialog.submit(_as_json_name(name.value))
+            ui.button('Create', icon='add', on_click=_create).props('dense')
+
+        with ui.row().classes('w-full place-content-end q-mt-sm'):
+            ui.button('Done', on_click=lambda: dialog.submit(None)).props('flat dense')
+
+    created = await dialog
+    return created, uploaded
+
+
 # ---------------------------------------------------------------------------
-# Card = DrillDownWrapper(list <-> detail) + an always-visible upload footer
+# Card = DrillDownWrapper(list <-> detail), Add via the wrapper's own button
 # ---------------------------------------------------------------------------
 
 def _build_wrapper(adapter: OverlayDirectoryAdapter, *, title: str, ctx: FileCtx,
-                   refresh: Callable[[], Any], state: dict) -> DrillDownWrapper:
+                   refresh: Callable[[], Any], state: dict,
+                   on_add: Callable[[], Any] | None = None) -> DrillDownWrapper:
     """The list <-> detail wrapper for one card.
 
     Extracted from `_files_card` so a test can drive the navigation niceview owns:
     rendering a panel only ever reaches the list view, and a mismatch in what we
     hand the wrapper used to surface in the browser rather than in CI.
+
+    Add is the wrapper's own title-row button driving `on_add` (niceview 0.15.0+
+    awaits an async handler, so it can open a dialog and act on the answer).
+    Delete stays a per-row action: the wrapper's button is detail-view only and
+    would need to be conditional per entry — inherited files have no own copy to
+    delete — with a confirmation text that differs per entry.
     """
     return DrillDownWrapper.from_adapter(
         OverlayFileEntry, adapter,
         list_title=title,
         item_title_field='name',
-        add_button=None, delete_button=None,  # our own row/footer actions instead
+        add_button='New', delete_button=None,
+        on_add=on_add,
         render_list_item=lambda _key, item, select: _file_list_row(
             item, select, ctx, refresh, state),
         render_detail=lambda a, key, _set: file_detail(a, key, ctx),
@@ -184,50 +255,29 @@ def _files_card(write_dir: Path, *, title: str, description: str, ctx: FileCtx) 
         adapter = OverlayDirectoryAdapter(write_dir, ctx.underlay_dir, suffix=None,
                                           name_filter=is_valid_upload_filename)
         wrapper = _build_wrapper(adapter, title=title, ctx=ctx,
-                                 refresh=wrapper_body.refresh, state=state)
+                                 refresh=wrapper_body.refresh, state=state, on_add=_add)
         wrapper.render()
 
-    ui.markdown(description).classes('text-caption q-ma-none')
-    wrapper_body()
-
-    # Upload footer lives outside the wrapper so it is reachable even when the
-    # directory is empty (DrillDownWrapper skips render_list_container then).
-    # Uploads and new files always land in write_dir, never in the underlay.
-    ui.separator().classes('q-mt-sm')
-    with ui.row().classes('w-full items-center gap-2 q-mt-xs flex-wrap'):
-        ui.label('Upload').classes('text-caption text-grey-7')
-
-        async def _new_json() -> None:
-            """Ask for a name, create an empty object, drill straight into its editor."""
-            raw = await input_dialog(
-                'New JSON File', label='Filename', placeholder='config',
-                validator=lambda s: is_valid_upload_filename(_as_json_name(s)),
-                error_message='Letters, digits, _ - . only, starting with a letter or digit')
-            if raw is None:
-                return  # cancelled
-            fname = _as_json_name(raw)
-            dest = write_dir / fname
-            if dest.exists():
-                ui.notify(f'{fname} already exists — open it to edit', type='warning')
-                return
+    async def _add() -> None:
+        """Upload or create — then refresh once, with the dialog already gone."""
+        created, uploaded = await _add_file_dialog(write_dir, ctx=ctx, max_upload=max_upload)
+        if created is not None:
+            dest = write_dir / created
             if not save_text(dest, '{}\n'):
                 return
             # Creating a device file of a project file's name is allowed, but say so.
-            hides = ctx.underlay_dir is not None and (ctx.underlay_dir / fname).is_file()
-            ui.notify(f'Created {fname}' + (' — overrides the project file' if hides else ''),
+            hides = ctx.underlay_dir is not None and (ctx.underlay_dir / created).is_file()
+            ui.notify(f'Created {created}' + (' — overrides the project file' if hides else ''),
                       type='positive')
             maybe_publish(dest, ctx)
-            wrapper_body.refresh()
-            if wrapper is not None:
-                wrapper.open(fname)
+        elif not uploaded:
+            return  # dialog dismissed without changing anything
+        wrapper_body.refresh()
+        if created is not None and wrapper is not None:
+            wrapper.open(created)  # straight into the editor for the new file
 
-        ui.button('New JSON', icon='add', on_click=_new_json).props('dense flat size=sm')
-
-    ui.upload(
-        on_upload=_make_upload_handler(write_dir, wrapper_body.refresh, ctx),
-        max_file_size=max_upload,
-        auto_upload=True,
-    ).props('flat dense').classes('w-full q-mt-xs')
+    ui.markdown(description).classes('text-caption q-ma-none')
+    wrapper_body()
 
 
 # ---------------------------------------------------------------------------
