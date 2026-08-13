@@ -988,7 +988,7 @@ wheels = [
 
 [[package]]
 name = "nice4iot"
-version = "0.26.0"
+version = "0.27.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiomqtt" },
@@ -1111,8 +1111,8 @@ dependencies = [
 
 [[package]]
 name = "niceview"
-version = "0.15.0"
-source = { git = "https://github.com/clausgf/niceview.git#ffba729d24ba7e7b1e36459f92d4c680c27d5347" }
+version = "0.16.0"
+source = { git = "https://github.com/clausgf/niceview.git#3fdfb8a7de354b757f3c76b9c79af27ffe14bd34" }
 dependencies = [
     { name = "annotated-types" },
     { name = "nicegui" },

@@ -212,7 +212,7 @@ async def _add_file_dialog(write_dir: Path, *, ctx: FileCtx, max_upload: int) ->
 # ---------------------------------------------------------------------------
 
 def _build_wrapper(adapter: OverlayDirectoryAdapter, *, title: str, ctx: FileCtx,
-                   refresh: Callable[[], Any], state: dict,
+                   refresh: Callable[[], Any], state: dict, description: str = '',
                    on_add: Callable[[], Any] | None = None) -> DrillDownWrapper:
     """The list <-> detail wrapper for one card.
 
@@ -229,6 +229,7 @@ def _build_wrapper(adapter: OverlayDirectoryAdapter, *, title: str, ctx: FileCtx
     return DrillDownWrapper.from_adapter(
         OverlayFileEntry, adapter,
         list_title=title,
+        description=description,
         item_title_field='name',
         add_button='New', delete_button=None,
         on_add=on_add,
@@ -254,9 +255,13 @@ def _files_card(write_dir: Path, *, title: str, description: str, ctx: FileCtx) 
             state = load_file_state(ctx.project_name, ctx.device_name)
         adapter = OverlayDirectoryAdapter(write_dir, ctx.underlay_dir, suffix=None,
                                           name_filter=is_valid_upload_filename)
-        wrapper = _build_wrapper(adapter, title=title, ctx=ctx,
-                                 refresh=wrapper_body.refresh, state=state, on_add=_add)
+        wrapper = _build_wrapper(adapter, title=title, ctx=ctx, refresh=wrapper_body.refresh,
+                                 state=state, description=description, on_add=_add)
         wrapper.render()
+        # niceview renders the description unstyled, below the title row; the card
+        # wants it as a caption. Exposed elements survive list<->detail navigation.
+        if wrapper.description is not None:
+            wrapper.description.classes('text-caption q-ma-none')
 
     async def _add() -> None:
         """Upload or create — then refresh once, with the dialog already gone."""
@@ -276,7 +281,6 @@ def _files_card(write_dir: Path, *, title: str, description: str, ctx: FileCtx) 
         if created is not None and wrapper is not None:
             wrapper.open(created)  # straight into the editor for the new file
 
-    ui.markdown(description).classes('text-caption q-ma-none')
     wrapper_body()
 
 

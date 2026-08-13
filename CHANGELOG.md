@@ -6,6 +6,28 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-08-13
+
+### Changed
+
+- **niceview 0.15.0 → 0.16.0**, which brings a shared "chrome" style for everything
+  the wrappers draw around a form or list. Visible on the Files card without any
+  change on our side: the title row's buttons are joined in a `ui.button_group` at
+  the right edge, carry tooltips, no longer wrap, and lost the redundant `round` /
+  `color=primary` props.
+- **The Files card's description is the wrapper's, not ours.** `DrillDownWrapper`
+  gained `description=`, so `_files_card` hands its markdown to the wrapper instead
+  of rendering a `ui.markdown` of its own above it. The text therefore moves from
+  *above* the title row to *below* it, matching `EditGridWrapper`/`EditFormWrapper`.
+  niceview renders it unstyled, so the card still applies `text-caption q-ma-none`
+  to the exposed `wrapper.description` — exposed elements survive list↔detail
+  navigation, unlike anything in the body.
+
+  Nothing else in the app drives niceview chrome: `DrillDownWrapper` is used only
+  here, and no `ModelList`/`EditGridWrapper` at all, so `set_chrome_style()` is
+  deliberately not called — an application-wide look is a decision for when there
+  is more than one wrapper to keep consistent.
+
 ## [0.26.0] - 2026-08-13
 
 ### Changed
