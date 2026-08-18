@@ -35,3 +35,12 @@ class PrometheusConfig(BaseModel):
     read_timeout: Annotated[int,
             Field(description='HTTP read timeout in seconds.')
         ] = 10
+
+    class Meta:
+        profiles = {
+            'settings': [
+                'push_url', 'pull_url', 
+                ['username', 'password'], 
+                ['write_timeout', 'read_timeout'],
+            ],
+        }

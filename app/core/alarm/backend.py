@@ -10,12 +10,13 @@ Storage layout
   <project>/.alarm_events.json  — list[AlarmEvent] (current event state)
 """
 import datetime
+from niceview import JsonListAdapter
 from pydantic import TypeAdapter
 from niceview.dataadapter import JsonAdapter, lenient_list_load
 
 from app.paths import project_dir
-from app.core.alarm.models import AlarmConfig, AlarmEvent
-from app.util import atomic_write, logger
+from app.core.alarm.models import AlarmConfig, AlarmEvent, MetricAlarmRule, DeviceOfflineAlarm
+from app.util import atomic_write, logger, render_datetime
 
 # ---------------------------------------------------------------------------
 # File names and adapters
@@ -23,13 +24,12 @@ from app.util import atomic_write, logger
 
 ALARM_CONFIG_FILE = '.alarm_config.json'
 ALARM_EVENTS_FILE = '.alarm_events.json'
+ALARM_RULES_CONFIG_FILE = '.alarm_rules.json'
 
 _events_ta = TypeAdapter(list[AlarmEvent])
 
-BUILTIN_DEVICE_OFFLINE = 'device_offline'
 
-
-def get_alarm_config_adapter(project_name: str) -> JsonAdapter:
+def get_alarm_adapter(project_name: str) -> JsonAdapter:
     """Return a JsonAdapter for the project alarm configuration."""
     return JsonAdapter(
         AlarmConfig,
@@ -37,6 +37,21 @@ def get_alarm_config_adapter(project_name: str) -> JsonAdapter:
         create_if_not_exist=True,
         lock_field='updated_at',
     )
+
+def get_alarm_rules_adapter(project_name: str) -> JsonListAdapter:
+    """Return a JsonListAdapter for the project alarm rules configuration."""
+    return JsonListAdapter(
+        MetricAlarmRule,
+        project_dir(project_name) / ALARM_RULES_CONFIG_FILE,
+        create_if_not_exist=True,
+    )
+
+def get_device_offline_threshold(project_name: str) -> datetime.timedelta:
+    """Time since last contact after which a device counts as offline."""
+    try:
+        return get_alarm_adapter(project_name).read().device_offline.device_offline_threshold
+    except Exception:
+        return DeviceOfflineAlarm().device_offline_threshold
 
 
 # ---------------------------------------------------------------------------
@@ -81,6 +96,50 @@ def _find(events: list[AlarmEvent], rule_name: str, device_name: str) -> AlarmEv
     )
 
 
+def _reconcile_alarm_event(
+    events: list[AlarmEvent],
+    *,
+    rule_name: str,
+    device_name: str,
+    active: bool,
+    now: datetime.datetime,
+    message: str,
+    last_value: float | None = None,
+) -> bool:
+    """Insert / re-open / touch / clear the single event for ``(rule_name, device_name)``
+    so it reflects ``active``. Mutates ``events`` in place; returns True if it changed.
+
+    This is the shared trigger→re-open→touch→clear state machine of every rule type;
+    each caller only computes ``active``, ``message`` and ``last_value``. A new event is
+    created only when ``len(events)`` grows, which is how callers know to log it.
+    """
+    existing = _find(events, rule_name, device_name)
+    if active:
+        if existing is None:
+            events.append(AlarmEvent(
+                rule_name=rule_name,
+                device_name=device_name,
+                triggered_at=now,
+                last_seen_at=now,
+                last_value=last_value,
+                message=message,
+            ))
+            return True
+        existing.last_seen_at = now
+        existing.last_value = last_value
+        if not existing.is_active:              # condition re-triggered after a clear: re-open
+            existing.is_active = True
+            existing.triggered_at = now
+            existing.message = message
+            existing.is_acknowledged = False
+            existing.acknowledged_at = None
+        return True
+    if existing and existing.is_active:
+        existing.is_active = False
+        return True
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Rule evaluation
 # ---------------------------------------------------------------------------
@@ -92,7 +151,7 @@ def evaluate_metric_rules(project_name: str, device_name: str,
     Called synchronously from write_telemetry (via anyio thread).
     """
     try:
-        config = get_alarm_config_adapter(project_name).read()
+        config = get_alarm_adapter(project_name).read()
     except Exception:
         return
 
@@ -109,40 +168,15 @@ def evaluate_metric_rules(project_name: str, device_name: str,
         if raw is None or not isinstance(raw, (int, float)):
             continue
         value = float(raw)
-        triggered = _matches(value, rule.comparison, rule.threshold)
-        existing = _find(events, rule.name, device_name)
-
-        if triggered:
-            if existing is None:
-                msg = (rule.description or
-                       f"{rule.metric} {rule.comparison} {rule.threshold} (got {value})")
-                events.append(AlarmEvent(
-                    rule_name=rule.name,
-                    device_name=device_name,
-                    triggered_at=now,
-                    last_seen_at=now,
-                    last_value=value,
-                    message=msg,
-                    is_active=True,
-                ))
+        active = _matches(value, rule.comparison, rule.threshold)
+        msg = f"{rule.kind}.{rule.metric} {rule.comparison} {rule.threshold} (got {value})"
+        before = len(events)
+        if _reconcile_alarm_event(events, rule_name=rule.name, device_name=device_name,
+                                  active=active, now=now, message=msg, last_value=value):
+            changed = True
+            if len(events) > before:  # a fresh event was appended
                 logger.warning(f"Alarm triggered [{project_name}/{device_name}] "
-                               f"rule={rule.name!r}: {msg}")
-                changed = True
-            else:
-                existing.last_seen_at = now
-                existing.last_value = value
-                changed = True  # always persist updated last_value / last_seen_at
-                if not existing.is_active:
-                    # Condition re-triggered after a clear: re-open.
-                    existing.is_active = True
-                    existing.triggered_at = now
-                    existing.is_acknowledged = False
-                    existing.acknowledged_at = None
-        else:
-            if existing and existing.is_active:
-                existing.is_active = False
-                existing.last_seen_at = now
-                changed = True
+                               f"rule={rule.kind!r}.{rule.name!r}: {msg}")
 
     if changed:
         save_alarm_events(project_name, events)
@@ -153,11 +187,10 @@ def evaluate_device_offline(project_name: str) -> None:
 
     Called synchronously from the background alarm check loop.
     """
-    from app.core.project.backend import get_project
     from app.core.device.backend import get_devices, is_device_online
 
     try:
-        config = get_alarm_config_adapter(project_name).read()
+        config = get_alarm_adapter(project_name).read()
     except Exception:
         return
 
@@ -165,12 +198,12 @@ def evaluate_device_offline(project_name: str) -> None:
         return
 
     try:
-        project = get_project(project_name, check_active=False)
         devices = get_devices(project_name)
     except Exception:
         return
 
-    threshold_s = project.device_online_threshold_s
+    threshold = config.device_offline.device_offline_threshold
+    rule_name = config.device_offline.name
     events = load_alarm_events(project_name)
     now = datetime.datetime.now(datetime.timezone.utc)
     changed = False
@@ -178,36 +211,84 @@ def evaluate_device_offline(project_name: str) -> None:
     for device in devices:
         if not device.is_active:
             continue
-        offline = not is_device_online(device, threshold_s)
-        existing = _find(events, BUILTIN_DEVICE_OFFLINE, device.name)
 
-        if offline:
-            if existing is None:
-                events.append(AlarmEvent(
-                    rule_name=BUILTIN_DEVICE_OFFLINE,
-                    device_name=device.name,
-                    triggered_at=now,
-                    last_seen_at=now,
-                    message=f"Device not seen for >{threshold_s}s",
-                    is_active=True,
-                ))
+        active = not is_device_online(device, threshold)
+        offline_for_s = (now - device.last_seen_at).total_seconds() if device.last_seen_at else None
+        msg = f"Device not seen for >{threshold} (last seen at {render_datetime(device.last_seen_at)})"
+        before = len(events)
+        if _reconcile_alarm_event(events, rule_name=rule_name, device_name=device.name,
+                                  active=active, now=now, message=msg, last_value=offline_for_s):
+            changed = True
+            if len(events) > before:  # a fresh event was appended
                 logger.warning(f"Alarm triggered [{project_name}/{device.name}] "
-                               f"rule=device_offline: not seen for >{threshold_s}s")
-                changed = True
-            elif not existing.is_active:
-                existing.is_active = True
-                existing.triggered_at = now
-                existing.last_seen_at = now
-                existing.is_acknowledged = False
-                existing.acknowledged_at = None
-                changed = True
-            else:
-                existing.last_seen_at = now
-        else:
-            if existing and existing.is_active:
-                existing.is_active = False
-                existing.last_seen_at = now
-                changed = True
+                               f"rule={rule_name}: {msg}")
+
+    if changed:
+        save_alarm_events(project_name, events)
+
+
+def evaluate_provisioning_expiry(project_name: str) -> None:
+    """Evaluate the built-in provisioning-token-expiry rule.
+
+    Fires one alarm per active device whose last-used provisioning token expires
+    within the configured lead time.
+    Called synchronously from the background alarm check loop.
+    """
+    from app.core.device.backend import get_devices
+
+    try:
+        config = get_alarm_adapter(project_name).read()
+    except Exception:
+        return
+
+    cfg = config.provisioning_expiry
+    if not cfg.is_active:
+        return
+
+    try:
+        devices = get_devices(project_name)
+    except Exception:
+        return
+
+    threshold = cfg.token_expiration_threshold
+    rule_name = cfg.name
+    events = load_alarm_events(project_name)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    changed = False
+
+    def _evaluate(key: str, expires_at: datetime.datetime | None, subject: str) -> None:
+        """Trigger / re-open / touch / clear one provisioning-expiry event, keyed by `key`."""
+        nonlocal changed
+        active = expires_at is not None and expires_at - now <= threshold
+        time_left_s = (expires_at - now).total_seconds() if expires_at else None
+        msg = f"Provisioning token {subject} expires at {render_datetime(expires_at)}" if expires_at else ""
+        before = len(events)
+        if _reconcile_alarm_event(events, rule_name=rule_name, device_name=key,
+                                  active=active, now=now, message=msg, last_value=time_left_s):
+            changed = True
+            if len(events) > before:  # a fresh event was appended
+                logger.warning(f"Alarm triggered [{project_name}/{key}] "
+                               f"rule={rule_name}: {msg}")
+
+    used_fingerprints: set[str] = set()
+    for device in devices:
+        if not device.is_active:
+            continue
+        if device.last_provisioning_token_fingerprint:
+            used_fingerprints.add(device.last_provisioning_token_fingerprint)
+        _evaluate(device.name, device.last_provisioning_token_expires_at, f"{device.last_provisioning_token_fingerprint} used by device {device.name}")
+
+    # Optionally also flag project tokens that are expiring but no device uses.
+    if not cfg.only_tokens_in_active_use:
+        from app.core.token.backend import get_provisioning_token_adapter
+        try:
+            tokens = list(get_provisioning_token_adapter(project_name))
+        except Exception:
+            tokens = []
+        for token in tokens:
+            if not token.is_active or token.fingerprint in used_fingerprints:
+                continue
+            _evaluate(f'token:{token.fingerprint}', token.expires_at, f"{token.fingerprint}")
 
     if changed:
         save_alarm_events(project_name, events)

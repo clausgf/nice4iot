@@ -48,3 +48,13 @@ class InfluxLineConfig(BaseModel):
     timeout: Annotated[int,
             Field(description='HTTP request timeout in seconds.')
         ] = 10
+
+    class Meta:
+        profiles = {
+            'settings': [
+                'write_url', 
+                ['database', 'org', 'bucket'],
+                ['username', 'password'], 
+                ['token', 'timeout'],
+            ],
+        }

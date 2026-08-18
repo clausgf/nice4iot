@@ -5,6 +5,8 @@ and device-token settings from the environment, and that an unset env value
 falls back to the model default (i.e. today's behaviour when nothing is set).
 Everything stays editable per project afterwards — only the initial value is set.
 """
+import datetime
+
 from app.config import app_config
 from app.core.project.backend import create_project, project_adapter
 from app.core.telemetry.backend import default_telemetry_config, get_telemetry_adapter
@@ -47,13 +49,13 @@ def test_create_project_seeds_from_env(projects_dir, monkeypatch):
     monkeypatch.setattr(app_config, "default_telemetry_prometheus_pull_url", "http://vm:8428/api/v1/")
     monkeypatch.setattr(app_config, "default_logging_loki_enabled", True)
     monkeypatch.setattr(app_config, "device_token_length", 48)
-    monkeypatch.setattr(app_config, "device_token_expires_in", 30)
+    monkeypatch.setattr(app_config, "device_token_expires_in", datetime.timedelta(days=30))
 
     create_project("weatherstation")
 
     project = project_adapter("weatherstation").read()
     assert project.device_token_length == 48
-    assert project.device_tokens_expire_in == 30
+    assert project.device_tokens_expire_in == datetime.timedelta(days=30)
 
     tel = get_telemetry_adapter("weatherstation").read()
     assert tel.backend == "prometheus"
@@ -68,6 +70,6 @@ def test_create_project_without_env_matches_model_defaults(projects_dir):
     create_project("plain")
     project = project_adapter("plain").read()
     assert project.device_token_length == 32
-    assert project.device_tokens_expire_in == 7
+    assert project.device_tokens_expire_in == datetime.timedelta(days=7)
     tel = get_telemetry_adapter("plain").read()
     assert tel.backend == "none"

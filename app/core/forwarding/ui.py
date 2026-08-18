@@ -1,5 +1,5 @@
 from nicegui import ui
-from niceview import ModelForm
+from niceview import FormAction, ModelForm
 
 from app.core.forwarding.backend import get_forwarding_adapter
 from app.core.forwarding.models import ForwardingConfig
@@ -13,25 +13,33 @@ class ForwardingCard:
 
         ui.markdown(ForwardingConfig.Meta.description).classes('text-caption q-ma-none')
         self.update_rows()
-        ui.button('Add Forwarding', icon='add').props('color=primary w-full').on_click(self.add_row)
+        ui.button('Add Forwarding', icon='add').classes('w-full').on_click(self.add_row)
+
+    def _actions(self) -> dict[str, FormAction]:
+        return {
+            'delete': FormAction(icon='delete', tooltip='Delete forwarding',
+                                 props='color=negative',
+                                 on_click=lambda e: self.delete_forwarding(e.form.item)),
+        }
+
+    @staticmethod
+    def _layout() -> list:
+        return [
+            [':w-full items-center gap-2', 'name', '@delete:mb-0'],
+            ['forward_method:w-1/4', 'forward_url'],
+        ]
 
     @ui.refreshable
     def update_rows(self) -> None:
         """Update the rows in the table."""
-        for key, item in self.adapter.items():
-            form = ModelForm.from_adapter(ForwardingConfig, self.adapter, key, autosave=True,
-                                          base_props='outlined dense hide-bottom-space')
-
+        for key, _item in self.adapter.items():
             with ui.card().classes('w-full q-mb-md'):
-                with ui.row().classes('w-full items-center'):
-                    form.render_field('name').classes('grow')
-                    ui.button(icon='delete').props('color=negative dense flat').on_click(
-                        lambda _, fwd=item: self.delete_forwarding(fwd)
-                    )
-                with ui.row().classes('w-full'):
-                    form.render_field('forward_method').classes('w-1/4 q-mr-sm')
-                    form.render_field('forward_url').classes('grow')
-                form.render_nonfield_errors()
+                ModelForm.from_adapter(
+                    ForwardingConfig, self.adapter, key, autosave=True,
+                    base_props='outlined dense hide-bottom-space',
+                    actions=self._actions(),
+                    layout=self._layout(),
+                ).render()
 
     def _unique_name(self, base: str = 'forwarding') -> str:
         existing = {item.name for item in self.adapter}

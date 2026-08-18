@@ -36,7 +36,7 @@ _USER_AGENT = 'nice4iot'
 _HTTP_TIMEOUT = 30.0
 _MAX_REDIRECTS = 5
 _MAX_FIRMWARE_SIZE = 64 * 1024 * 1024  # 64 MiB hard cap on a downloaded asset
-_MIN_INTERVAL_MIN = 5
+_MIN_INTERVAL = datetime.timedelta(minutes=5)
 # The asset download 302s from api.github.com to a GitHub-owned asset host. We
 # never attach credentials, so this is a defence-in-depth check, not a secret guard.
 _ALLOWED_DOWNLOAD_HOSTS = ('api.github.com', 'github.com', 'codeload.github.com')
@@ -307,7 +307,7 @@ async def _pull_firmware(dir_path: Path, src: FirmwareSource, *, project_name: s
     )
     await anyio.to_thread.run_sync(lambda: save_firmware_state(dir_path, new_state))
 
-    if src.publish_on_pull and device_name:
+    if src.mqtt_publish_on_pull and device_name:
         from app.core.file.backend import publish_file_now
         try:
             await publish_file_now(project_name, device_name, dest)
@@ -348,7 +348,7 @@ async def auto_pull_tick() -> None:
         src = await anyio.to_thread.run_sync(lambda dp=dir_path: load_firmware_source(dp))
         if not src.auto_pull_enabled or not src.repo.strip():
             continue
-        interval_s = max(_MIN_INTERVAL_MIN, src.auto_pull_interval_min) * 60
+        interval_s = max(_MIN_INTERVAL, src.auto_pull_interval).total_seconds()
         key = str(dir_path)
         if time.monotonic() - _last_check.get(key, 0.0) < interval_s:
             continue

@@ -11,7 +11,10 @@ class LoggingBackend(Protocol):
 class LokiConfig(BaseModel):
     """Pushes log messages via the Loki JSON push API — to Grafana Loki or any
     Loki-compatible endpoint such as VictoriaLogs."""
-    is_active: Annotated[bool, Field(title='Active')] = False
+    is_active: Annotated[bool, 
+            Field(description='Enable/disable sending logs to Loki.'),
+            niceview.Field(label='', tooltip='Whether to log to Loki or not.')
+        ] = False
     log_url: Annotated[str,
             Field(description=
                 'Loki push API endpoint URL.\n'
@@ -32,11 +35,21 @@ class LokiConfig(BaseModel):
             Field(description='HTTP request timeout in seconds.')
         ] = 10
 
+    class Meta:
+        profiles = {
+            'settings': [
+                ['is_active:shrink', 'log_url'],
+                ['username', 'password'],
+                ['tenant_id', 'timeout'],
+            ],
+        }
+
 
 class FileLogConfig(BaseModel):
     """Appends log messages to a per-project rotating log file."""
     is_active: Annotated[bool, 
-            Field(title='Active')
+            Field(description='Enable/disable appending logs to file.'),
+            niceview.Field(label='', tooltip='Whether to log to file or not.')
         ] = False
     rotation_interval: Annotated[
             Literal['daily', 'weekly', 'monthly'],
@@ -45,6 +58,13 @@ class FileLogConfig(BaseModel):
     backup_count: Annotated[int, 
             Field(description='Number of backup files to keep.')
         ] = 7
+
+    class Meta:
+        profiles = {
+            'settings': [
+                ['is_active:shrink', 'rotation_interval', 'backup_count'],
+            ],
+        }
 
 
 class LoggingConfig(BaseModel):

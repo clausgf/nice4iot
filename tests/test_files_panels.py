@@ -246,7 +246,7 @@ def test_wrapper_add_button_takes_our_async_handler(project_with_device):
                                          refresh=lambda: None, state={}, on_add=_on_add)
                 wrapper.render()
                 assert wrapper.add_button is not None      # Add is the wrapper's own button
-                assert wrapper.delete_button is None       # delete stays a per-row action
+                assert wrapper.delete_button is not None   # so is Delete
                 await wrapper._handle_add()                # what the click awaits
                 while pending := list(background_tasks.running_tasks):
                     await asyncio.gather(*pending)
@@ -255,6 +255,104 @@ def test_wrapper_add_button_takes_our_async_handler(project_with_device):
 
     asyncio.run(run())
     assert called, 'niceview did not await our async on_add handler'
+
+
+def test_detail_hides_delete_for_an_inherited_file(project_with_device):
+    """Delete is niceview's own title-row button, hidden for an inherited file —
+    there is no device copy to remove, and the adapter would raise KeyError.
+
+    This pins an ordering niceview guarantees rather than documents as API: the
+    title row is updated *before* the body is refreshed, so the visibility our
+    render_detail sets is the last word. If that ever reversed, Delete would sit
+    enabled on a file it cannot delete, and nothing else here would notice.
+    """
+    from nicegui import background_tasks, core
+
+    from app.core.file.overlay import FileCtx, OverlayDirectoryAdapter
+    from app.core.file.browser_ui import _build_wrapper
+    from app.util import is_valid_upload_filename
+
+    project, device = project_with_device
+    (device_dir(project, device) / 'own.json').write_text('{"n": 1}')
+    (project_dir(project) / 'shared.txt').write_text('hello')       # inherited
+
+    ctx = FileCtx(project, device, False, underlay_dir=project_dir(project))
+    adapter = OverlayDirectoryAdapter(device_dir(project, device), project_dir(project),
+                                      suffix=None, name_filter=is_valid_upload_filename)
+    container = ui.column()
+    seen: dict[str, bool] = {}
+
+    async def run() -> None:
+        core.loop = asyncio.get_running_loop()
+        try:
+            with container:
+                wrapper = _build_wrapper(adapter, title='Files', ctx=ctx,
+                                         refresh=lambda: None, state={})
+                wrapper.render()
+                # mqtt_enabled=False, so publish is absent entirely rather than hidden
+                assert set(wrapper.action_buttons) == {'download'}
+                assert wrapper.delete_button is not None
+                for key in ('own.json', 'shared.txt'):
+                    wrapper.open(key)
+                    while pending := list(background_tasks.running_tasks):
+                        await asyncio.gather(*pending)
+                    seen[key] = wrapper.delete_button.visible
+        finally:
+            core.loop = None
+
+    asyncio.run(run())
+    assert seen['own.json'] is True, 'Delete must be offered for the device\'s own file'
+    assert seen['shared.txt'] is False, 'Delete must be hidden for an inherited file'
+
+
+def test_delete_confirmation_is_worded_per_entry():
+    """The reason Delete can be niceview's own button: a ChromeText slot takes a
+    callable, so the one message it offers still asks the right question.
+
+    Dropping a device copy is not the irreversible delete of a plain file, and
+    saying so is the whole point of the overlay being visible in this card.
+    """
+    import datetime
+    from pathlib import Path
+
+    from niceview.text import text_of
+
+    from app.core.file.browser_ui import _delete_texts
+    from app.core.file.overlay import OverlayFileEntry
+
+    def entry(**kw) -> OverlayFileEntry:
+        path = Path('/tmp/config.json')
+        return OverlayFileEntry(name='config.json', mtime=datetime.datetime.now(), size=1,
+                                read_path=path, save_path=path, **kw)
+
+    shown: OverlayFileEntry | None = None
+    texts = _delete_texts(lambda: shown)
+
+    shown = entry(overrides=True)
+    message = text_of(texts.delete_item_message)
+    assert 'project file will be used again' in message
+    assert 'irreversible' not in message.lower(), 'a device copy is not an irreversible delete'
+    assert '**config.json**' in message, 'the dialog renders markdown'
+
+    shown = entry()
+    assert 'irreversible' in text_of(texts.delete_item_message).lower()
+    assert text_of(texts.item_deleted) == 'Deleted config.json'
+
+    shown = None  # never reached through the UI, but must not raise
+    assert text_of(texts.delete_item_message)
+    assert text_of(texts.item_deleted)
+
+
+def test_detail_actions_include_publish_only_where_it_can_work(project_with_device):
+    """Publish is card-level constant, so it is absent rather than hidden — a
+    project card has no device to publish to."""
+    from app.core.file.overlay import FileCtx
+    from app.core.file.browser_ui import _file_actions
+
+    project, device = project_with_device
+    assert 'publish' not in _file_actions(FileCtx(project, None, False), lambda: None)
+    assert 'publish' not in _file_actions(FileCtx(project, device, False), lambda: None)
+    assert 'publish' in _file_actions(FileCtx(project, device, True), lambda: None)
 
 
 @pytest.mark.parametrize("raw,expected", [

@@ -18,8 +18,7 @@ class FirmwareSource(BaseModel):
     """
 
     repo: Annotated[str,
-            Field(default='',
-                  description='Public GitHub repository as owner/name (e.g. clausgf/nice4iot). '
+            Field(description='Public GitHub repository as owner/name (e.g. clausgf/nice4iot). '
                               'Not a URL. Leave empty to disable.'),
             niceview.Field()
         ] = ''
@@ -35,44 +34,44 @@ class FirmwareSource(BaseModel):
         ] = 'stable'
 
     pinned_tag: Annotated[str,
-            Field(default='', title='Pinned tag',
+            Field(title='Pinned tag',
                   description='Release tag to pull when channel is "Pinned tag".'),
             niceview.Field()
         ] = ''
 
     asset_name: Annotated[str,
-            Field(default='firmware.bin', title='Asset name',
+            Field(title='Asset name',
                   description='Name of the release asset to download.'),
             niceview.Field()
         ] = 'firmware.bin'
 
     dest_filename: Annotated[str,
-            Field(default='firmware.bin', title='Destination filename',
+            Field(title='Destination filename',
                   description='Filename written into this directory (served to devices).'),
             niceview.Field()
         ] = 'firmware.bin'
 
     auto_pull_enabled: Annotated[bool,
-            Field(default=False, title='Auto-pull',
+            Field(title='Auto-pull',
                   description='Periodically check the release channel and pull a new asset automatically.'),
             niceview.Field()
         ] = False
 
-    auto_pull_interval_min: Annotated[int,
-            Field(default=60, title='Auto-pull interval (min)',
-                  description='How often to check for a new release, in minutes (floored at 5).'),
-            niceview.Field(widget_type='ui.number')
-        ] = 60
+    auto_pull_interval: Annotated[datetime.timedelta,
+            Field(title='Auto-pull interval',
+                  description='How often to check for a new release (floored at 5 minutes).'),
+            niceview.Field()
+        ] = datetime.timedelta(minutes=60)
 
-    publish_on_pull: Annotated[bool,
-            Field(default=False, title='Publish over MQTT on pull',
+    mqtt_publish_on_pull: Annotated[bool,
+            Field(title='Publish over MQTT on pull',
                   description='After a successful pull, force-publish the file over MQTT '
                               '(device-level source only; project MQTT must be enabled).'),
             niceview.Field()
         ] = False
 
     updated_at: Annotated[datetime.datetime | None,
-            Field(default=None, description='Timestamp of the last change (UTC, set automatically).'),
+            Field(description='Timestamp of the last change (UTC, set automatically).'),
             niceview.Field(editable=False)
         ] = None
 
@@ -96,6 +95,14 @@ class FirmwareSource(BaseModel):
         description = ('Pull a firmware asset from a **public** GitHub release into the project or device directory. '
                        'The pulled file is served to devices via the normal file path (device copy '
                        'overrides the project copy).')
+        profiles = {
+            'settings': [
+                ['repo', 'channel', 'pinned_tag'], 
+                ['asset_name', 'dest_filename'],
+                ['auto_pull_enabled', 'auto_pull_interval'],
+                'mqtt_publish_on_pull',
+            ],
+        }
 
 
 class FirmwareState(BaseModel):

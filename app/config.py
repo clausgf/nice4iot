@@ -61,7 +61,7 @@ class AppConfig(BaseSettings):
 
     # Per-project device-token defaults (also editable per project). device_token_length
     # was previously unused; it now seeds new projects' Project.device_token_length.
-    device_token_expires_in: int = 7  # days
+    device_token_expires_in: datetime.timedelta = datetime.timedelta(days=7)
 
     # admin UI authentication (see app/auth/) — does not affect the
     # device REST API, which has its own separate bearer-token auth

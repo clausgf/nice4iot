@@ -74,7 +74,7 @@ async def all_projects_subpage(args: PageArguments, nav: ui.element):
                     ui.label(f'Created: {render_datetime(project.created_at)}').classes('text-caption text-italic text-grey-7 q-mt-xs')
             card.on('click', lambda e, p=project.name: ui.navigate.to(project_url(p)))
 
-        ui.button('New Project', icon='add').props('color=primary').on_click(_new_project).classes('w-full')
+        ui.button('New Project', icon='add').on_click(_new_project).classes('w-full')
 
 # ***************************************************************************
 
@@ -117,11 +117,13 @@ async def project_dashboard_panel(project_id: str) -> None:
     @ui.refreshable
     async def _content() -> None:
         from app.mqtt.backend import connection_status as mqtt_connection_status
+        from app.core.alarm.backend import get_device_offline_threshold
         project = get_project(project_id, check_active=False)
         devices = get_devices(project_id)
+        threshold = await anyio.to_thread.run_sync(lambda: get_device_offline_threshold(project_id))
         active = [d for d in devices if d.is_active]
         pending_approval = [d for d in active if not d.is_provisioning_approved]
-        online = [d for d in active if is_device_online(d, project.device_online_threshold_s)]
+        online = [d for d in active if is_device_online(d, threshold)]
         seen = sorted([d for d in devices if d.last_seen_at], key=lambda d: d.last_seen_at, reverse=True)
 
         with ui.grid().classes('grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 w-full'):
@@ -183,7 +185,7 @@ async def project_dashboard_panel(project_id: str) -> None:
                         ui.label('Recent Activity').classes('text-subtitle1 font-bold')
                         ui.separator().classes('q-mt-xs q-mb-xs')
                         for d in seen[:8]:
-                            dot_color = 'text-green' if is_device_online(d, project.device_online_threshold_s) else 'text-grey'
+                            dot_color = 'text-green' if is_device_online(d, threshold) else 'text-grey'
                             with ui.row().classes('w-full items-center gap-2 q-mt-xs'):
                                 ui.icon('fiber_manual_record').classes(f'text-sm {dot_color}')
                                 ui.label(d.name).classes('grow text-body2 cursor-pointer') \
@@ -232,24 +234,16 @@ async def project_general_panel(project_id: str):
 
 async def project_card(project_id: str) -> None:
     form = ModelForm.from_adapter(Project, project_adapter(project_id),
-                                    include=['name', 'description', 'tags', 'is_active',
-                                            'is_autocreate_devices', 'is_provisioning_autoapproval',
-                                            'is_http_enabled', 'is_mqtt_enabled', 'mqtt_topic_base',
-                                            'device_tokens_expire_in', 'device_token_length',
-                                            'device_online_threshold_s'],
-                                    autosave=True,
-                                    base_props='outlined dense hide-bottom-space',
-                                    default_classes='w-full')
-    form.render_field('name', editable=False)
-    form.render_field('description')
-    form.render_field('tags')
-    with ui.row().classes('w-full gap-3 q-mt-none'):
-        form.render_field('is_active', classes='w-auto')
-        form.render_field('is_autocreate_devices', classes='w-auto')
-        form.render_field('is_provisioning_autoapproval', classes='w-auto')
-    with ui.row().classes('w-full gap-3 q-mt-none'):
-        form.render_field('is_http_enabled', classes='w-auto')
-        form.render_field('is_mqtt_enabled', classes='w-auto')
+            autosave=True,
+            layout=[
+                ['is_active:shrink', 'name'], 
+                'description', 'tags',
+                ['is_autocreate_devices', 'is_provisioning_autoapproval'],
+                ['is_http_enabled', 'is_mqtt_enabled'],
+                'mqtt_topic_base',
+                ['device_tokens_expire_in', 'device_token_length'],
+            ])
+    form.render()
     with ui.row().classes('items-center gap-1') as mqtt_warning:
         ui.icon('warning').classes('text-warning text-sm')
         ui.label('Global MQTT broker disabled (set MQTT_ENABLED)') \
@@ -258,11 +252,6 @@ async def project_card(project_id: str) -> None:
         form, 'item',
         backward=lambda item: cast(Project, item).is_mqtt_enabled and not app_config.mqtt_enabled
     )
-
-    form.render_field('mqtt_topic_base')
-    form.render_field('device_tokens_expire_in')
-    form.render_field('device_token_length')
-    form.render_field('device_online_threshold_s')
 
     def _created_updated_caption(item: Project) -> str:
         return f'Created {render_datetime(item.created_at)}, updated {render_datetime(item.updated_at)}'
@@ -303,8 +292,7 @@ async def extensions_card(project_id: str) -> None:
                 ui.icon('info').classes('text-warning')
                 ui.label('Extension tabs only update after a page reload.') \
                     .classes('text-caption text-warning')
-                ui.button('Reload page', icon='refresh', on_click=ui.navigate.reload) \
-                    .props('dense flat color=warning')
+                ui.button('Reload page', icon='refresh', on_click=ui.navigate.reload)
 
     _list()
 
@@ -319,7 +307,10 @@ async def _rename_project(old_name: str, new_name: str) -> None:
         return
     if not await confirm_dialog(
         'Rename Project',
-        'Renaming a project also changes its URLs. Are you sure?',
+        f'Renaming **{old_name}** changes the API path of every device in it. '
+        'They all stop reaching the server until each one is reconfigured with the new name.',
+        ok_label='Rename',
+        ok_role='delete',
     ):
         ui.notify("Project rename cancelled", type='negative')
         return
@@ -337,7 +328,7 @@ async def _delete_project(project_id: str) -> None:
         'Delete Project',
         'Deleting a project is irreversible. Are you sure?',
         ok_label='Delete',
-        ok_color='negative',
+        ok_role='delete',
     ):
         ui.notify("Project deletion cancelled", type='negative')
         return
@@ -363,6 +354,9 @@ async def danger_card(project_id: str) -> None:
 
         async def _on_rename() -> None:
             await _rename_project(project_id, name_widget.value)
+        # Negative on purpose, and not to be normalised away: a rename is destructive
+        # for deployed devices. Their configured API paths carry the project name, so
+        # renaming breaks every client in the field until it is reconfigured.
         ui.button('Rename Project').props('color=negative').on_click(_on_rename)
 
     async def _on_delete() -> None:

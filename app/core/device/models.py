@@ -19,22 +19,24 @@ class Device(BaseModel):
     (e.g. after a reboot) can coexist until old tokens expire.
     """
 
-    name: str = Field(
-        min_length=1,
-        pattern=NAME_REGEX,
-        description='Unique device identifier within the project. Used as the directory name on disk. '
-                    'Letters, digits and underscore only. Must not start with a digit.')
+    is_active: Annotated[bool,
+            Field(description='Inactive devices are rejected: provisioning returns 403; '
+                              'device API calls return 401 (all auth failures are normalised to 401).'),
+            niceview.Field(label='', tooltip='Whether the device is active or not.')
+        ] = True
+
+    name: Annotated[str, 
+            Field(description='Unique device identifier within the project. Used as the directory name on disk. '
+                    'Letters, digits and underscore only. Must not start with a digit.',
+                min_length=1,
+                pattern=NAME_REGEX),
+            niceview.Field(editable=False)
+        ] = "device"
 
     description: Annotated[str,
             Field(description='Human-readable description of this device.'),
             niceview.Field(widget_type='ui.textarea')
         ] = ""
-
-    is_active: Annotated[bool,
-            Field(title='Active',
-                  description='Inactive devices are rejected: provisioning returns 403; '
-                              'device API calls return 401 (all auth failures are normalised to 401).')
-        ] = True
 
     location: Annotated[str,
             Field(description='Physical location or installation site of the device (free text).')
@@ -84,6 +86,23 @@ class Device(BaseModel):
             niceview.Field(editable=False)
         ] = None
 
+    last_provisioning_token_fingerprint: Annotated[str,
+            Field(default='',
+                  description='Short SHA-256 fingerprint of the provisioning token this device '
+                              'last used successfully. Identifies the token (matched against the '
+                              'fingerprint shown in the project provisioning-token list) without '
+                              'storing the shared secret.'),
+            niceview.Field(editable=False)
+        ] = ''
+
+    last_provisioning_token_expires_at: Annotated[datetime.datetime | None,
+            Field(default=None,
+                  description='Expiry of the provisioning token this device last used (UTC). '
+                              'Filter devices by this to find which are affected by a soon-expiring '
+                              'provisioning token, even after the token itself has been removed.'),
+            niceview.Field(editable=False)
+        ] = None
+
     firmware_version: Annotated[str,
             Field(default='',
                   description='Firmware version the device last reported (via the X-Firmware-Version '
@@ -101,11 +120,6 @@ class Device(BaseModel):
             Field(description='Free-form labels for grouping and filtering devices.'),
             niceview.Field()
         ] = []
-
-    class Meta:
-        description = (
-            "Device settings and provisioning state. "
-        )
 
 
 class DeviceRuntime(BaseModel):

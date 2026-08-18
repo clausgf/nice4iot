@@ -76,13 +76,14 @@ async def device_dashboard_panel(project_name: str, device_name: str) -> None:
 
     @ui.refreshable
     async def _content() -> None:
+        from app.core.alarm.backend import get_device_offline_threshold
         from app.core.telemetry.backend import latest_labels
         device = get_device(project_name, device_name)
-        project = get_project(project_name, check_active=False)
+        threshold = await anyio.to_thread.run_sync(lambda: get_device_offline_threshold(project_name))
         labels = await anyio.to_thread.run_sync(lambda: latest_labels(project_name, device_name))
 
         with ui.grid().classes('grid-cols-1 sm:grid-cols-2 gap-4 w-full'):
-            await _status_card(device, project_name, project.device_online_threshold_s, labels)
+            await _status_card(device, project_name, threshold, labels)
             await _timeline_card(device)
             for render_fn in await anyio.to_thread.run_sync(lambda: get_device_dashboard_cards(project_name)):
                 await maybe_await(render_fn(project_name, device_name))
@@ -92,10 +93,10 @@ async def device_dashboard_panel(project_name: str, device_name: str) -> None:
     await dashboard_alarms_card(project_name, device_name)
 
 
-async def _status_card(device: Device, project_name: str, online_threshold_s: int,
+async def _status_card(device: Device, project_name: str, offline_threshold: datetime.timedelta,
                        labels: dict[str, str] | None = None) -> None:
     from app.core.alarm.backend import get_alarm_count
-    online = is_device_online(device, online_threshold_s)
+    online = is_device_online(device, offline_threshold)
     alarm_count = get_alarm_count(project_name, device.name)
 
     with ui.card().tight().classes('w-full'):
@@ -169,6 +170,11 @@ async def _timeline_card(device: Device) -> None:
                 ui.label(render_datetime_age(device.last_provisioned_at)).classes('text-body2')
                 ui.label('Last provisioning request').classes('text-caption text-grey-7')
                 ui.label(render_datetime_age(device.last_provisioning_request_at)).classes('text-body2')
+                if device.last_provisioning_token_expires_at:
+                    ui.label('Provisioning token expires').classes('text-caption text-grey-7')
+                    ui.label(render_datetime_age(device.last_provisioning_token_expires_at)) \
+                        .tooltip(f'Token fingerprint: {device.last_provisioning_token_fingerprint}') \
+                        .classes('text-body2')
 
 
 # ***************************************************************************
@@ -197,16 +203,9 @@ def _device_general_card(project_name: str, device_name: str) -> None:
         Device,
         device_adapter(project_name, device_name),
         autosave=True,
-        base_props='outlined dense hide-bottom-space',
-        default_classes='w-full',
-        # The device name is the directory name; it is changed through Rename below.
-        field_infos={'name': Field(editable=False)},
-        # The layout selects the fields and arranges them. Classes replace rather
-        # than accumulate (niceview 0.14), so ':w-auto' on a switch takes it out of
-        # default_classes' w-full — a w-full switch would fill the wrapping row on
-        # its own instead of sharing it.
-        layout=['name', 'description', 'location', 'tags',
-                [':w-full gap-4 q-mt-xs', 'is_active:w-auto', 'is_provisioning_approved:w-auto']],
+        layout=[['is_active:shrink', 'name'], 
+                'description', 'location', 'tags',
+                ['is_provisioning_approved:w-auto']],
     )
     form.render()
     d = cast(Device, form.item)  # niceview types form.item as Any; cast enables attribute access for bind_text_from
@@ -220,10 +219,9 @@ def _device_tokens_card(project_name: str, device_name: str) -> None:
     project = get_project(project_name, check_active=False)
     TokenListCard(
         get_device_token_adapter(project_name, device_name),
-        show_name=False,
         allow_add=True,
         token_length=project.device_token_length,
-        expires_in=datetime.timedelta(days=project.device_tokens_expire_in),
+        expires_in=project.device_tokens_expire_in,
     )
 
 
@@ -239,11 +237,14 @@ async def _device_danger_card(project_name: str, device_name: str) -> None:
         ).classes('grow').props('dense outlined')
         async def _on_rename() -> None:
             await _rename_device(project_name, device_name, name_widget.value)
-        ui.button('Rename').props('color=negative').on_click(_on_rename)
+        # Negative on purpose, and not to be normalised away: a rename is destructive
+        # for deployed devices. Their configured API paths carry the device name, so
+        # renaming breaks every client in the field until it is reconfigured.
+        ui.button('Rename Device').props('color=negative').on_click(_on_rename)
 
     async def _on_delete() -> None:
         await _delete_device(project_name, device_name)
-    ui.button('Delete Device').props('color=negative w-full').on_click(_on_delete)
+    ui.button('Delete Device').props('color=negative').classes('w-full').on_click(_on_delete)
 
 
 async def _rename_device(project_name: str, old_name: str, new_name: str) -> None:
@@ -255,7 +256,10 @@ async def _rename_device(project_name: str, old_name: str, new_name: str) -> Non
         return
     if not await confirm_dialog(
         'Rename Device',
-        f'Renaming **{old_name}** changes its URL path. Continue?',
+        f'Renaming **{old_name}** changes the API path it is reached at. '
+        'The device stops reaching the server until it is reconfigured with the new name.',
+        ok_label='Rename',
+        ok_role='delete',
     ):
         return
     try:
@@ -272,7 +276,7 @@ async def _delete_device(project_name: str, device_name: str) -> None:
         'Delete Device',
         f'Delete device **{device_name}**? This is irreversible.',
         ok_label='Delete',
-        ok_color='negative',
+        ok_role='delete',
     ):
         return
     try:
@@ -304,6 +308,7 @@ class ProjectDevicesTable:
             {'name': 'last_seen_at', 'label': 'Last Seen', 'field': 'last_seen_at', 'sortable': True},
             {'name': 'firmware_version', 'label': 'Firmware', 'field': 'firmware_version', 'sortable': True},
             {'name': 'is_provisioning_approved', 'label': 'Provisioning OK', 'field': 'is_provisioning_approved', 'sortable': True},
+            {'name': 'prov_token_expires_at', 'label': 'Token Expires', 'field': 'prov_token_expires_at', 'sortable': True},
         ]
         rows = [
             {
@@ -315,6 +320,7 @@ class ProjectDevicesTable:
                 'last_seen_at': render_datetime(d.last_seen_at),
                 'firmware_version': d.firmware_version or '—',
                 'is_provisioning_approved': d.is_provisioning_approved,
+                'prov_token_expires_at': render_datetime(d.last_provisioning_token_expires_at),
             }
             for d in self.devices
         ]
@@ -348,7 +354,6 @@ class ProjectDevicesTable:
 
                 ui.button(icon='add') \
                     .tooltip('Create Device') \
-                    .props('color=primary dense') \
                     .on_click(_new_device)
         self.table.on('row-dblclick', lambda msg: (
             ui.navigate.to(device_url(self.project_name, msg.args[1]['id'])),

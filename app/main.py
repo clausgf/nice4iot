@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from nicegui import ui
+import niceview
 
 from app.config import app_config
 from app.util import app_version
@@ -49,17 +50,20 @@ async def _mqtt_loop_wrapper() -> None:
 
 
 async def _alarm_check_loop() -> None:
-    """Periodically evaluate the device-offline built-in alarm rule."""
+    """Periodically evaluate the built-in alarm rules (device offline, token expiry)."""
     import anyio
     while True:
         await asyncio.sleep(60)
         try:
             from app.core.project.backend import get_projects
-            from app.core.alarm.backend import evaluate_device_offline
+            from app.core.alarm.backend import evaluate_device_offline, evaluate_provisioning_expiry
             projects = await anyio.to_thread.run_sync(get_projects)
             for project in projects:
                 await anyio.to_thread.run_sync(
                     lambda pn=project.name: evaluate_device_offline(pn)
+                )
+                await anyio.to_thread.run_sync(
+                    lambda pn=project.name: evaluate_provisioning_expiry(pn)
                 )
         except Exception as e:
             _main_log.error(f"alarm_check_loop error: {e}")
@@ -178,7 +182,15 @@ for _, _ext_module_name, _ in pkgutil.iter_modules(_ext_paths, _ext_prefix):
 async def _api_not_found(_path: str):
     raise HTTPException(status_code=404, detail='Not Found')
 
-
+# niceview styles only the chrome it draws itself; "every button of this app looks
+# like that" is NiceGUI's own default_props. The icon shape is the one thing the
+# chrome has to be told: an icon-only chrome button is round here.
+niceview.set_chrome_style(toolbar_icon_button_props='dense round')
+niceview.set_chrome_style(form_icon_button_props='dense flat')
+niceview.set_chrome_style(button_group=False)
+niceview.set_chrome_style(form_row_classes='w-full items-center gap-2')
+niceview.set_field_style(default_classes='w-full')
+niceview.set_field_style(input_props='dense outlined hide-bottom-space')
 ui.run_with(app, title="nice4iot", storage_secret=app_config.nicegui_storage_secret)
 
 

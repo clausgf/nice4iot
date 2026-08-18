@@ -119,6 +119,6 @@ def _archive_row(archive: Path) -> None:
         ui.icon('archive').classes('text-grey-7 text-sm')
         ui.label(label).classes('grow text-body2')
         ui.label(size_str).classes('text-caption text-grey-7')
-        ui.button(icon='download').props('flat dense size=sm').tooltip('Download').on_click(
+        ui.button(icon='download').props('dense flat size=sm').tooltip('Download').on_click(
             lambda _, p=archive: _download_log(p)
         )

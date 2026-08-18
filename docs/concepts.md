@@ -51,6 +51,8 @@ On provisioning, the platform can optionally auto-create the device record (`is_
 
 Each device may hold at most **32 active tokens** simultaneously. When the cap is reached, the token with the oldest `last_use_at` is evicted before the new one is stored.
 
+On each successful provisioning the device also records **which provisioning token it used**: a short, non-reversible fingerprint of the token (`last_provisioning_token_fingerprint`) plus the token's expiry (`last_provisioning_token_expires_at`). The shared secret itself is never copied onto the device. Because the expiry travels with the device record, *"which devices are affected by a token expiring soon"* is answerable by filtering devices directly — even after the token is removed from `.provisioning.json`. Each `AuthToken` carries the same derived `fingerprint` (recomputed from its value on every change), so a device's recorded fingerprint can be matched back to a concrete provisioning token.
+
 ## Device Lifecycle
 
 ```
@@ -58,6 +60,7 @@ Provisioning request (provisioning token)
   → device created (if autocreate) or looked up
   → approval checked
   → device token issued (old expired tokens purged, cap enforced)
+  → provisioning-token fingerprint + expiry recorded on the device
   → device uses device token for telemetry / log / file / forward endpoints
   → each authenticated request updates last_seen_at and token.last_use_at
 ```
@@ -167,7 +170,7 @@ Each project can define alarm rules that are evaluated whenever telemetry arrive
 
 **Metric rules** — configured under *Project → General → Alarms*. Each rule specifies a telemetry kind, metric name, comparison operator (`<`, `=`, `>`), and threshold. The *Kind* and *Metric* fields are comboboxes seeded from the names actually seen in the local telemetry store (the *Metric* list follows the selected *Kind*); a not-yet-observed name can still be typed in. When the condition is met the first time an `AlarmEvent` is created with `is_active=True`. When the condition clears the event is resolved (`is_active=False`). Condition re-fires re-open a resolved event rather than creating a duplicate.
 
-**Device offline rule** — built-in rule that fires when a device's `last_seen_at` is older than the project's online threshold (configured under *Project → General*). Enabled/disabled under *Project → General → Alarms*.
+**Device offline rule** — built-in rule that fires when a device's `last_seen_at` is older than the online threshold. Both the threshold and the on/off switch are configured under *Project → General → Alarms → Device Offline*; the threshold is what the project and device dashboards use to show a device as online or offline.
 
 **Acknowledgment** — operators acknowledge individual events or all events at once. An acknowledged and resolved event is automatically pruned from storage on the next save. The **Device → Alarms** tab shows all events for one device; the **Project Dashboard** alarm panel shows project-wide events.
 

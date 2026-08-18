@@ -60,7 +60,16 @@ def app_version() -> str:
 
 FILENAME_REGEX = r'^[a-zA-Z0-9_\-+]+$'
 NAME_REGEX = r'^[a-zA-Z_][a-zA-Z0-9_]*$'
-URL_REGEX = r'^(https?://)?([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(/.*)?$'
+# Optional http(s) scheme, a host, an optional port, and anything after the first
+# '/', '?' or '#'. The host is a dotted or single-label name, or a bracketed IPv6
+# address — a single label covers 'localhost' and container names like 'influx',
+# which are the usual forwarding targets inside a compose network. IPv4 falls out
+# of the name rule. The scheme stays optional so configs written before this keep
+# validating.
+_URL_HOST = (r'(?:\[[0-9A-Fa-f:]+\]'
+             r'|[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?'
+             r'(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*)')
+URL_REGEX = rf'^(?:https?://)?{_URL_HOST}(?::\d{{1,5}})?(?:[/?#].*)?$'
 UPLOAD_FILENAME_REGEX = r'^[a-zA-Z0-9][a-zA-Z0-9_\-.]*$'
 
 def is_valid_filename(filename: str) -> bool:

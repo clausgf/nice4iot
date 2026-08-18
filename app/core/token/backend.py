@@ -10,7 +10,11 @@ from pydantic import TypeAdapter
 from app.exceptions import AuthError
 from app.paths import project_dir
 from app.util import atomic_write
-from app.core.token.models import AuthToken, TOKEN_CHARS, TOKEN_MIN_LENGTH
+# token_fingerprint lives in models (next to the AuthToken field it feeds) and is
+# re-exported here, where its historical callers import it from.
+from app.core.token.models import (
+    AuthToken, TOKEN_CHARS, TOKEN_MIN_LENGTH, token_fingerprint,
+)
 from niceview.dataadapter import lenient_list_load
 
 ###############################################################################
@@ -35,11 +39,10 @@ def generate_token(length: int = 32) -> str:
     return ''.join(secrets.choice(TOKEN_CHARS) for _ in range(length))
 
 
-def create_token(expires_in: datetime.timedelta, length: int = 32, name: str = "") -> AuthToken:
+def create_token(expires_in: datetime.timedelta, length: int = 32) -> AuthToken:
     """Create a new AuthToken with the given expiry and length."""
     now = datetime.datetime.now(datetime.timezone.utc)
     return AuthToken(
-        name=name,
         value=generate_token(length),
         expires_at=now + expires_in,
         created_at=now,

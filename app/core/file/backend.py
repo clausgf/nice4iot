@@ -268,7 +268,7 @@ async def file_watcher_loop() -> None:
                 config = await anyio.to_thread.run_sync(
                     lambda pn=project.name: get_file_config(pn)
                 )
-                interval = max(10, config.mqtt_check_interval_s)
+                interval = max(10.0, config.mqtt_check_interval.total_seconds())
             except Exception:
                 interval = 60
 

@@ -19,6 +19,12 @@ class Project(BaseModel):
     by presenting a provisioning token.
     """
 
+    is_active: Annotated[bool,
+            Field(description='Inactive projects are rejected: provisioning returns 403; '
+                              'device API requests return 401 (all auth failures are normalised to 401).'),
+            niceview.Field(label='', tooltip='Whether the project is active or not.')
+        ] = True
+
     name: Annotated[str,
             Field(min_length=1,
                   pattern=NAME_REGEX,
@@ -32,12 +38,6 @@ class Project(BaseModel):
             Field(description='Human-readable description of the project.'),
             niceview.Field(widget_type='ui.textarea')
         ] = ""
-
-    is_active: Annotated[bool,
-            Field(title='Active',
-                  description='Inactive projects are rejected: provisioning returns 403; '
-                              'device API requests return 401 (all auth failures are normalised to 401).')
-        ] = True
 
     owner: Annotated[str,
             Field(description='Owner or responsible person for this project.')
@@ -88,24 +88,15 @@ class Project(BaseModel):
                               'Leading slashes and double slashes are normalized automatically.')
         ] = '/nice4iot/{project}/{device}'
 
-    device_tokens_expire_in: Annotated[int,
-            Field(default=7,
+    device_tokens_expire_in: Annotated[datetime.timedelta,
+            Field(default=datetime.timedelta(days=7),
                   description='Lifetime of bearer tokens issued to devices (days). '
                               'Devices must re-provision before their token expires.'),
-            niceview.Field(widget_type='ui.number')
         ]
 
     device_token_length: Annotated[int,
             Field(default=32,
                   description='Length of bearer tokens issued to devices during provisioning.'),
-            niceview.Field(widget_type='ui.number')
-        ]
-
-    device_online_threshold_s: Annotated[int,
-            Field(default=120,
-                  title='Online threshold (s)',
-                  description='Seconds since last contact after which a device is shown as offline. '
-                              'Set to match the expected telemetry or keep-alive interval.'),
             niceview.Field(widget_type='ui.number')
         ]
 
@@ -120,15 +111,17 @@ class Project(BaseModel):
 
     @field_validator('device_tokens_expire_in', mode='before')
     @classmethod
-    def _parse_expire_in_legacy(cls, v: Any) -> int:
-        # Legacy: Pydantic v2 serialised timedelta as total seconds (float)
+    def _parse_expire_in_legacy(cls, v: Any) -> Any:
+        # Normalise legacy numeric encodings to a timedelta. A bare number returned
+        # here would be read as seconds, so build the timedelta explicitly:
+        #   * the original int field held whole days (7 -> 7 days);
+        #   * pydantic v2 later serialised the timedelta as float total-seconds.
+        # timedelta instances and ISO 8601 strings pass through to pydantic unchanged.
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, int):
+            return datetime.timedelta(days=v)
         if isinstance(v, float):
-            return round(v) // 86400
-        if isinstance(v, datetime.timedelta):
-            return v.days
-        return int(v)
+            return datetime.timedelta(seconds=v)
+        return v
 
-    class Meta:
-        description = (
-            "General project settings."
-        )

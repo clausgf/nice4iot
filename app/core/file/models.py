@@ -15,12 +15,16 @@ class FileConfig(BaseModel):
     updated_at: Annotated[datetime.datetime | None, niceview.Field(editable=False)] = None
 
     # MQTT download (server → device) settings
-    mqtt_check_interval_s: int = Field(
-        default=60,
-        title="File check interval (s)",
-        description="How often nice4iot checks for file changes to notify devices via MQTT. "
-                    "Set to match your expected update cadence. Files changed via the UI are published immediately.",
-    )
+    mqtt_check_interval: Annotated[
+        datetime.timedelta,
+        Field(
+            title="File check interval for MQTT publishing",
+            description="How often nice4iot checks for file changes to notify devices via MQTT "
+                        "(floored at 10 seconds). "
+                        "Set to match your expected update cadence. Files changed via the UI are published immediately.",
+        ),
+        niceview.Field(),
+    ] = datetime.timedelta(seconds=60)
     mqtt_qos: Annotated[
         Literal[0, 1, 2],
         niceview.Field(
@@ -39,3 +43,9 @@ class FileConfig(BaseModel):
 
     class Meta:
         description = "File transfer settings for this project."
+        profiles = {
+            'settings': [
+                'max_upload_size', 
+                ['mqtt_check_interval', 'mqtt_qos'], 'mqtt_retain',
+            ],
+        }

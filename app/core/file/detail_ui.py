@@ -107,7 +107,7 @@ def _save_button(entry: OverlayFileEntry, on_click: Callable[[], None]) -> None:
     """The save button. Its label spells out the copy-on-write for inherited files."""
     label = 'Save as device file' if entry.inherited else 'Save'
     with ui.row().classes('w-full justify-end q-mt-sm'):
-        ui.button(label, on_click=on_click).props('color=primary')
+        ui.button(label, on_click=on_click)
 
 
 def _banner(icon: str, colour: str, tint: str, text: str):
@@ -135,7 +135,7 @@ def _schema_pending_banner(schema_path: Path, ctx: FileCtx, on_approve: Callable
             approve_schema(schema_path, ctx.project_name)
             ui.notify(f'Approved {schema_path.name}', type='positive')
             on_approve()
-        ui.button('Approve', icon='verified', on_click=_approve).props('dense color=primary')
+        ui.button('Approve', icon='verified', on_click=_approve).props('dense')
 
 
 def _editor_view(adapter: OverlayDirectoryAdapter, key: str, ctx: FileCtx,
@@ -254,11 +254,15 @@ def _render_image_preview(path: Path) -> None:
         .style('max-height: 70vh; object-fit: contain')
 
 
-def _render_download_only(path: Path, reason: str) -> None:
-    with ui.column().classes('items-start gap-2 q-mt-sm'):
-        ui.label(reason).classes('text-body2 text-grey-7')
-        ui.button('Download', icon='download',
-                  on_click=lambda: download_file(path)).props('outline')
+def _render_download_only(reason: str) -> None:
+    """A file the card cannot show inline: why, and where to get it instead.
+
+    No button of its own — Download is the detail view's title-row action, which
+    reaches every file here. The pointer to it is spelled out, because a reason
+    alone would leave the user looking for the way out.
+    """
+    ui.label(f'{reason} Use Download above to save it.') \
+        .classes('text-body2 text-grey-7 q-mt-sm')
 
 
 # ---------------------------------------------------------------------------
@@ -290,10 +294,8 @@ def file_detail(adapter: OverlayDirectoryAdapter, key: str, ctx: FileCtx) -> Non
         if entry.size <= _MAX_IMAGE_SIZE:
             _render_image_preview(entry.read_path)
         else:
-            _render_download_only(entry.read_path,
-                                  f'Image too large to preview ({human_size(entry.size)}).')
+            _render_download_only(f'Image too large to preview ({human_size(entry.size)}).')
     elif ext in _TEXT_EXTENSIONS:
-        _render_download_only(entry.read_path,
-                              f'File too large to edit ({human_size(entry.size)}).')
+        _render_download_only(f'File too large to edit ({human_size(entry.size)}).')
     else:
-        _render_download_only(entry.read_path, 'Binary file — download to view.')
+        _render_download_only('Binary file — no inline preview.')

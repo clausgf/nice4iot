@@ -93,11 +93,11 @@ class _DataExplorer:
             ui.checkbox('Auto-refresh').bind_value(self, '_auto_refresh').tooltip(
                 f'Reload every {int(_AUTO_REFRESH_INTERVAL)} s'
             )
+            self._markers_ui()
 
         self._traces_ui()
-        self._markers_ui()
-        self.summary_row = ui.row().classes('w-full items-center gap-4 q-mt-xs flex-wrap')
         self.chart = ui.plotly(go.Figure()).classes('w-full')
+        self.summary_row = ui.row().classes('w-full items-center gap-4 q-mt-xs flex-wrap')
 
         self.window_select.on_value_change(lambda e: self._on_window(e.value))
         ui.timer(_AUTO_REFRESH_INTERVAL, self._auto_refresh_tick)
@@ -122,22 +122,21 @@ class _DataExplorer:
                     'dense outlined').classes('w-48').on_value_change(
                     lambda e, t=trace: self._on_trace_metric(t, e.value))
                 ui.button(icon='delete').props(
-                    f'dense flat size=sm {"color=negative" if not only_one else "disable"}',
+                    f'dense round color=negative {"disable" if only_one else ""}',
                 ).tooltip('Remove trace').on_click(lambda _, idx=i: self._remove_trace(idx))
-        ui.button(icon='add').props('dense flat size=sm').tooltip('Add trace').on_click(self._add_trace).classes('q-mt-xs')
+                # add button in the last row only (not per-trace) to avoid confusion about which trace is added
+                if i == len(self.traces) - 1:
+                    ui.button(icon='add').props('dense round').tooltip('Add trace').on_click(self._add_trace)
 
     @ui.refreshable
     def _markers_ui(self) -> None:
         keys = self._label_keys()
         value = [k for k in self.marker_labels if k in keys]
-        with ui.row().classes('w-full items-center gap-2 q-mt-xs flex-wrap'):
-            ui.select(
-                keys, value=value, multiple=True, label='Label markers',
-            ).props('dense outlined use-chips').classes('w-72').tooltip(
-                'Overlay vertical markers where the selected labels change'
-            ).on_value_change(lambda e: self._on_markers(e.value))
-            if not keys:
-                ui.label('no labels reported').classes('text-caption text-grey-7')
+        ui.select(
+            keys, value=value, multiple=True, label='Label markers',
+        ).props('dense outlined use-chips').classes('w-48').tooltip(
+            'Overlay vertical markers where the selected labels change'
+        ).on_value_change(lambda e: self._on_markers(e.value))
 
     async def initialize(self) -> None:
         await self._refresh()
@@ -307,8 +306,7 @@ class _DataExplorer:
         else:
             with self.summary_row:
                 ui.label(
-                    'No telemetry yet. Push data via POST /api/telemetry/{project}/{device}/{kind} '
-                    'or run: python tools/device_client.py cycle …'
+                    'No telemetry yet. Push data via POST /api/telemetry/{project}/{device}/{kind}.'
                 ).classes('text-caption text-grey-7')
 
         self.chart.update_figure(fig)

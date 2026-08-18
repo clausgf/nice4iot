@@ -148,7 +148,7 @@ async def provision(request: Request, provisioning_request: ProvisioningRequest 
     automatically so the number of active tokens per device stays bounded.
     """
     try:
-        project = await anyio.to_thread.run_sync(
+        project, prov_token = await anyio.to_thread.run_sync(
             lambda: get_auth_project(provisioning_request.projectName, provisioning_request.provisioningToken)
         )
     except NotFoundError as e:
@@ -166,7 +166,8 @@ async def provision(request: Request, provisioning_request: ProvisioningRequest 
     try:
         token = await anyio.to_thread.run_sync(
             lambda: device_provision(project, provisioning_request.deviceName,
-                                     firmware_version=fw_version)
+                                     firmware_version=fw_version,
+                                     provisioning_token=prov_token)
         )
     except NotFoundError as e:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(e))

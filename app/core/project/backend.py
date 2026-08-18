@@ -8,6 +8,7 @@ from app.config import app_config
 from app.exceptions import AlreadyExistsError, ForbiddenError, NotFoundError
 from app.paths import project_dir
 from app.core.token.backend import get_provisioning_token_adapter, validate_token
+from app.core.token.models import AuthToken
 from app.core.project.models import Project
 from app.util import logger, is_valid_name
 from niceview.dataadapter import lenient_model_load
@@ -158,8 +159,12 @@ def get_projects() -> list[Project]:
 
 ###############################################################################
 
-def get_auth_project(project_name: str, provisioning_token: str) -> Project:
-    """Authenticate via provisioning token and return the project.
+def get_auth_project(project_name: str, provisioning_token: str) -> tuple[Project, AuthToken]:
+    """Authenticate via provisioning token and return ``(project, token)``.
+
+    The matched :class:`AuthToken` is returned so the caller can record which
+    provisioning token a device used (fingerprint + expiry) for later lookup of
+    devices affected by an expiring token.
 
     Raises:
         NotFoundError: Project not found.
@@ -180,4 +185,4 @@ def get_auth_project(project_name: str, provisioning_token: str) -> Project:
     token = validate_token(provisioning_token, list(token_adapter))
     token_adapter.update(token)
 
-    return project
+    return project, token

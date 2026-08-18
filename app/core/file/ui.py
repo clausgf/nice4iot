@@ -10,5 +10,6 @@ async def file_config_card(project_name: str) -> None:
     # updated_at is the config's optimistic-lock timestamp, not a setting.
     form = ModelForm.from_adapter(FileConfig, adapter, autosave=True, exclude='updated_at',
                                   base_props='outlined dense hide-bottom-space',
-                                  default_classes='w-full')
+                                  default_classes='w-full',
+                                  profile='settings',)
     form.render()

@@ -21,8 +21,11 @@ from typing import Any, Callable
 
 import anyio
 from nicegui import ui
-from niceview import DrillDownWrapper
-from niceview.util import confirm_dialog
+from niceview import ChromeText, DrillDownActionEventArguments, DrillDownWrapper, FormAction
+from niceview.style import (
+    chrome_button, chrome_dialog, chrome_dialog_buttons, chrome_dialog_title, get_chrome_style,
+)
+from niceview.text import get_chrome_text, text_of
 
 from app.core.device.backend import get_device_path
 from app.core.file.backend import get_file_config, load_file_state, publish_file_now
@@ -45,15 +48,23 @@ log = logging.getLogger('uvicorn')
 # ---------------------------------------------------------------------------
 
 def _file_list_row(entry: OverlayFileEntry, select: Callable[[], None], ctx: FileCtx,
-                   refresh: Callable[[], Any], state: dict) -> None:
+                   state: dict) -> None:
+    """One list row: what identifies a file, not what can be done to it.
+
+    Download, publish and delete are the wrapper's `chrome_actions` and live in the
+    detail view's title row (see `_file_actions`) — a row that carries no buttons of
+    its own can be clickable as a whole. What stays is what the generic ModelList
+    rows could not show: the type icon, the `project` chip, and the publish stamp
+    (which comes from `state`, not from the entry).
+    """
     path = entry.read_path
     # State is keyed by basename per device, so inherited files are covered too.
     published_at = state.get(entry.name, {}).get('published_at') if ctx.mqtt_enabled else None
 
-    with ui.row().classes('w-full items-center gap-0 q-py-xs'):
+    with ui.row().classes('w-full items-center gap-0 q-py-xs cursor-pointer').on('click', select):
         ui.icon(FILE_ICONS.get(path.suffix.lower(), 'insert_drive_file')) \
             .classes('text-grey-7 text-sm q-mr-sm')
-        with ui.column().classes('grow gap-0 cursor-pointer').on('click', select):
+        with ui.column().classes('grow gap-0'):
             with ui.row().classes('items-center gap-2 no-wrap'):
                 ui.label(entry.name).classes('text-body2')
                 if entry.inherited:
@@ -68,42 +79,6 @@ def _file_list_row(entry: OverlayFileEntry, select: Callable[[], None], ctx: Fil
                         .classes('text-caption text-grey-7')
                 except (ValueError, TypeError):
                     pass
-        ui.button(icon='download').props('flat dense size=sm').tooltip('Download') \
-            .on_click(lambda _, p=path: download_file(p))
-
-        if ctx.can_publish:
-            # Inherited files are publishable too — the watcher sends them to the
-            # device anyway, so this only forces what would happen on its own.
-            async def _publish(p=path) -> None:
-                ok = await publish_file_now(ctx.project_name, ctx.device_name, p)
-                if ok:
-                    ui.notify(f'Published {p.name} to device via MQTT', type='positive')
-                    refresh()
-                else:
-                    ui.notify('MQTT publish failed (not connected?)', type='warning')
-            ui.button(icon='cloud_upload').props('flat dense size=sm') \
-                .tooltip('Force publish to device via MQTT').on_click(_publish)
-
-        # No delete for inherited files: there is no device copy to remove, and the
-        # project file belongs to every other device as well.
-        if not entry.inherited:
-            question = (f'Delete this device\'s copy of **{entry.name}**? '
-                        'The project file will be used again.'
-                        if entry.overrides
-                        else f'Delete **{entry.name}**? This is irreversible.')
-
-            async def _delete(p=path, q=question) -> None:
-                if not await confirm_dialog('Delete File', q,
-                                            ok_label='Delete', ok_color='negative'):
-                    return
-                try:
-                    p.unlink()
-                    ui.notify(f'Deleted {p.name}', type='positive')
-                    refresh()
-                except OSError as e:
-                    ui.notify(f'Delete failed: {e}', type='negative')
-            ui.button(icon='delete').props('flat dense size=sm color=negative') \
-                .tooltip('Delete').on_click(_delete)
 
 
 # ---------------------------------------------------------------------------
@@ -173,8 +148,9 @@ async def _add_file_dialog(write_dir: Path, *, ctx: FileCtx, max_upload: int) ->
         """A name already used in write_dir. Shadowing an underlay file is fine."""
         return (write_dir / _as_json_name(raw)).exists()
 
-    with ui.dialog() as dialog, ui.card().classes('w-full'):
-        ui.label('Add File').classes('text-h6')
+    style = get_chrome_style()
+    with chrome_dialog(style) as dialog:
+        chrome_dialog_title('Add File', style)
         ui.upload(
             on_upload=_make_upload_handler(write_dir, _mark_uploaded, ctx),
             max_file_size=max_upload,
@@ -198,13 +174,86 @@ async def _add_file_dialog(write_dir: Path, *, ctx: FileCtx, max_upload: int) ->
                 if not name.validate():
                     return
                 dialog.submit(_as_json_name(name.value))
-            ui.button('Create', icon='add', on_click=_create).props('dense')
+            chrome_button('add', text_of(get_chrome_text().create_label), 'add', '', style,
+                          _create, place='dialog')
 
-        with ui.row().classes('w-full place-content-end q-mt-sm'):
-            ui.button('Done', on_click=lambda: dialog.submit(None)).props('flat dense')
+        with chrome_dialog_buttons(style):
+            chrome_button('cancel', 'Done', None, '', style,
+                          lambda: dialog.submit(None), place='dialog')
 
     created = await dialog
     return created, uploaded
+
+
+# ---------------------------------------------------------------------------
+# Detail-view title row: the actions on one file
+# ---------------------------------------------------------------------------
+
+def _file_actions(ctx: FileCtx, refresh: Callable[[], Any]) -> dict[str, FormAction]:
+    """The wrapper's `chrome_actions` — our own buttons in the detail title row.
+
+    niceview hides them in the list view on its own and hands each handler the item
+    on screen, so they need no key of their own. Delete is *not* among them — it is
+    niceview's own button, see `_build_wrapper`.
+
+    `requires_valid` is not an option here — the wrapper raises for it, because a
+    `render_detail` of ours owns the detail view and there is no form to ask.
+
+    Publish is card-level constant, so it is simply absent where it cannot work.
+    """
+    def _download(e: DrillDownActionEventArguments) -> None:
+        download_file(e.item.read_path)
+
+    # Inherited files are publishable too — the watcher sends them to the device
+    # anyway, so this only forces what would happen on its own.
+    async def _publish(e: DrillDownActionEventArguments) -> None:
+        path = e.item.read_path
+        if await publish_file_now(ctx.project_name, ctx.device_name, path):
+            ui.notify(f'Published {path.name} to device via MQTT', type='positive')
+            refresh()
+        else:
+            ui.notify('MQTT publish failed (not connected?)', type='warning')
+
+    actions = {'download': FormAction(label='', icon='download', tooltip='Download',
+                                      on_click=_download)}
+    if ctx.can_publish:
+        actions['publish'] = FormAction(label='', icon='cloud_upload',
+                                        tooltip='Force publish to device via MQTT',
+                                        on_click=_publish)
+    return actions
+
+
+def _delete_texts(current: Callable[[], OverlayFileEntry | None]) -> ChromeText:
+    """niceview's delete texts, worded for a file — and for *which* file.
+
+    A ChromeText slot takes a callable, resolved when the text is rendered, which
+    for the confirmation is the moment the button is clicked. So the one thing
+    that kept Delete out of niceview's own button — that our question differs per
+    entry — is expressible after all: dropping a device copy so the project file
+    applies again is not the irreversible delete of a plain file, and the dialog
+    renders the message as markdown either way.
+
+    *current* reports the entry on screen; `_build_wrapper`'s render_detail keeps
+    it up to date, so this needs none of the wrapper's internals.
+    """
+    def _message() -> str:
+        entry = current()
+        if entry is None:
+            return 'Delete this file?'
+        if entry.overrides:
+            return (f'Delete this device\'s copy of **{entry.name}**? '
+                    'The project file will be used again.')
+        return f'Delete **{entry.name}**? This is irreversible.'
+
+    def _deleted() -> str:
+        entry = current()
+        return f'Deleted {entry.name}' if entry is not None else 'File deleted'
+
+    return ChromeText.derived(delete_item_title='Delete File',
+                              delete_item_tooltip='Delete',
+                              delete_item_message=_message,
+                              item_deleted=_deleted,
+                              delete_failed='Delete failed: {error}')
 
 
 # ---------------------------------------------------------------------------
@@ -222,21 +271,47 @@ def _build_wrapper(adapter: OverlayDirectoryAdapter, *, title: str, ctx: FileCtx
 
     Add is the wrapper's own title-row button driving `on_add` (niceview 0.15.0+
     awaits an async handler, so it can open a dialog and act on the answer).
-    Delete stays a per-row action: the wrapper's button is detail-view only and
-    would need to be conditional per entry — inherited files have no own copy to
-    delete — with a confirmation text that differs per entry.
+
+    Delete is niceview's own button, not one of our actions. It routes through
+    `DirectoryAdapter.delete()`, which only ever touches the card's own directory
+    — exactly the device copy we mean — and notifies its change listeners, so the
+    list refreshes itself and the wrapper navigates back on its own. It also picks
+    up the `delete` chrome role, instead of an action of ours spelling out
+    `color=negative` and going around the cascade that exists to hold it.
+    The per-entry wording it used to cost us is `_delete_texts` above.
+
+    Its button is hidden for an inherited entry, which has no device copy to
+    remove (deleting one would raise KeyError in the adapter — the button is not
+    merely pointless there, it cannot work). That works because niceview updates
+    the title row *before* it refreshes the body on every navigation (`open`,
+    `_back`, `_set_detail_key`, `render`), so a visibility set from render_detail
+    is the last word and holds until the next navigation decides it again.
     """
-    return DrillDownWrapper.from_adapter(
+    wrapper: DrillDownWrapper | None = None
+    shown: OverlayFileEntry | None = None
+
+    def _render_detail(a: OverlayDirectoryAdapter, key: str, _set: Callable[[str], None]) -> None:
+        nonlocal shown
+        try:
+            shown = a.read(key)
+        except (KeyError, ValueError):
+            shown = None
+        if wrapper is not None and wrapper.delete_button is not None:
+            wrapper.delete_button.set_visibility(shown is not None and not shown.inherited)
+        file_detail(a, key, ctx)
+
+    wrapper = DrillDownWrapper.from_adapter(
         OverlayFileEntry, adapter,
-        list_title=title,
-        description=description,
+        list_title=title, description=description,
         item_title_field='name',
-        add_button='New', delete_button=None,
+        chrome_actions=_file_actions(ctx, refresh),
+        chrome_text=_delete_texts(lambda: shown),
         on_add=on_add,
         render_list_item=lambda _key, item, select: _file_list_row(
-            item, select, ctx, refresh, state),
-        render_detail=lambda a, key, _set: file_detail(a, key, ctx),
+            item, select, ctx, state),
+        render_detail=_render_detail,
     )
+    return wrapper
 
 
 def _files_card(write_dir: Path, *, title: str, description: str, ctx: FileCtx) -> None:
@@ -290,9 +365,11 @@ def _files_card(write_dir: Path, *, title: str, description: str, ctx: FileCtx) 
 
 _DEVICE_DESC = ('Every file this device is served — its own plus the project files '
                 'it inherits, marked with a `project` chip. Editing an inherited file '
-                'saves a copy for this device; the project file stays unchanged.')
+                'saves a copy for this device; the project file stays unchanged. '
+                'No auto-save, **do not forget to hit the save button after editing!**')
 _PROJECT_DESC = ('Shared files in the project directory. '
-                 'Served to devices as a fallback when no device-specific copy exists.')
+                 'Served to devices as a fallback when no device-specific copy exists.'
+                'No auto-save, **do not forget to hit the save button after editing!**')
 
 
 async def device_files_panel(project_name: str, device_name: str) -> None:

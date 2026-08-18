@@ -40,7 +40,7 @@ async def firmware_source_card(dir_path: Path, *, project_name: str, device_name
 
     async def _set_visibility() -> None:
         form.widgets['pinned_tag'].set_visibility(config.channel == 'pinned')
-        form.widgets['auto_pull_interval_min'].set_visibility(config.auto_pull_enabled)
+        form.widgets['auto_pull_interval'].set_visibility(config.auto_pull_enabled)
 
     async def _on_change(_e) -> None:
         await _save()
@@ -51,10 +51,10 @@ async def firmware_source_card(dir_path: Path, *, project_name: str, device_name
     # firmware fact — excluded from the form to avoid confusion.
     form = ModelForm.from_item(config, exclude='updated_at', on_change=_on_change,
                                base_props='outlined dense hide-bottom-space',
-                               default_classes='w-full')
+                               default_classes='w-full', profile='settings')
     form.render()
     form.widgets['pinned_tag'].set_visibility(config.channel == 'pinned')
-    form.widgets['auto_pull_interval_min'].set_visibility(config.auto_pull_enabled)
+    form.widgets['auto_pull_interval'].set_visibility(config.auto_pull_enabled)
 
     @ui.refreshable
     def github_path() -> None:
@@ -112,5 +112,5 @@ async def firmware_source_card(dir_path: Path, *, project_name: str, device_name
             ui.notify(f'Pull failed: {e}', type='negative')
 
     with ui.row().classes('gap-2 q-mt-xs'):
-        ui.button('Pull now', icon='download', on_click=_pull_now).props('dense')
-        ui.button('Check latest', icon='refresh', on_click=_check_latest).props('dense flat')
+        ui.button('Check latest', icon='refresh', on_click=_check_latest)
+        ui.button('Pull now', icon='download', on_click=_pull_now)

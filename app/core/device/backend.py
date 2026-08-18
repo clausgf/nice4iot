@@ -13,7 +13,7 @@ from app.exceptions import AlreadyExistsError, ForbiddenError, NotFoundError
 from app.paths import device_dir
 from app.core.token.backend import (
     create_token, device_token_lock, load_device_tokens,
-    purge_expired_tokens, save_device_tokens, validate_token,
+    purge_expired_tokens, save_device_tokens, token_fingerprint, validate_token,
 )
 from app.core.device.models import Device, DeviceRuntime
 from app.core.project.backend import get_project, get_project_path
@@ -112,12 +112,12 @@ def read_last_seen(project_name: str, device_name: str) -> datetime.datetime | N
 ###############################################################################
 
 
-def is_device_online(device, threshold_s: int) -> bool:
-    """Return True if the device was last seen within threshold_s seconds."""
+def is_device_online(device, threshold: datetime.timedelta) -> bool:
+    """Return True if the device was last seen within the offline threshold."""
     if device.last_seen_at is None:
         return False
     delta = datetime.datetime.now(datetime.timezone.utc) - device.last_seen_at
-    return delta.total_seconds() <= threshold_s
+    return delta <= threshold
 
 
 def get_device_path(project_name: str, device_name: str, check_device_exists: bool = True) -> Path:
@@ -330,13 +330,18 @@ def get_auth_project_device(project_name: str, device_name: str, device_token: s
 MAX_DEVICE_TOKENS = 32
 
 def device_provision(project: Project, device_name: str,
-                     firmware_version: str | None = None):
+                     firmware_version: str | None = None,
+                     provisioning_token: 'AuthToken | None' = None):
     """Provision a device and return the new bearer AuthToken.
 
     firmware_version are optionally reported by the device at
     provisioning (X-Firmware-Version header); when present they
     are recorded in the runtime sidecar. This guarantees a known version at least at
     every token refresh, even if a device omits the header on regular requests.
+
+    provisioning_token is the project provisioning token that authenticated this
+    call. When given, its fingerprint and expiry are recorded on the device so an
+    operator can later find which devices are affected by a soon-expiring token.
 
     Raises:
         NotFoundError: Device not found and autocreate is disabled.
@@ -368,7 +373,7 @@ def device_provision(project: Project, device_name: str,
         update_device(device)
         raise ForbiddenError(f"Device {device_name} is not approved for provisioning.")
 
-    token = create_token(datetime.timedelta(days=project.device_tokens_expire_in), project.device_token_length)
+    token = create_token(project.device_tokens_expire_in, project.device_token_length)
 
     with device_token_lock(project.name, device_name):
         tokens = load_device_tokens(project.name, device_name)
@@ -390,6 +395,9 @@ def device_provision(project: Project, device_name: str,
         save_device_tokens(project.name, device_name, tokens)
 
     device.last_provisioned_at = now
+    if provisioning_token is not None:
+        device.last_provisioning_token_fingerprint = token_fingerprint(provisioning_token.value)
+        device.last_provisioning_token_expires_at = provisioning_token.expires_at
     update_device(device)
 
     if firmware_version is not None:

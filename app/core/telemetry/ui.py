@@ -35,6 +35,7 @@ class TelemetryCard:
             return
         sub_config = getattr(self.config, self.config.backend)
         form = ModelForm.from_item(sub_config, on_change=lambda e: self._save(),
-                                   base_props='outlined dense hide-bottom-space', default_classes='w-full')
+                                   base_props='outlined dense hide-bottom-space', default_classes='w-full',
+                                   profile='settings')
         with ui.card().classes('w-full q-mt-sm'):
             form.render()

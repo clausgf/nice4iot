@@ -6,6 +6,237 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-08-18
+
+### Added
+
+- **Provisioning-token bookkeeping per device.** Each device now records which
+  provisioning token it last provisioned with, so an operator can find the devices
+  affected by a soon-expiring token. Two read-only fields are added to `Device`:
+  **`last_provisioning_token_fingerprint`** (a short, non-reversible SHA-256
+  fingerprint of the token value — the shared secret itself is never stored on the
+  device) and **`last_provisioning_token_expires_at`** (the token's expiry). The
+  device carries the expiry directly, so *"which devices use a token expiring within
+  N days"* is answerable by filtering device records alone — even after the token has
+  been removed from `.provisioning.json`.
+
+  - `token.models.token_fingerprint(value)` is the new helper producing the
+    fingerprint (12 hex chars of the SHA-256 digest; `""` for an empty value). It is
+    re-exported from `token.backend` for existing importers.
+  - **`AuthToken` gains a derived `fingerprint` field.** It is recomputed from `value`
+    on construction, on load, and — via `validate_assignment` on the model — on every
+    in-place field edit (the UI form assigns fields rather than reconstructing the
+    model). Any `fingerprint` stored in a token file is ignored and recomputed on load.
+    The field is read-only in the UI (`niceview.Field(editable=False)`); it is not
+    placed in the token card's layout by default.
+  - `project.backend.get_auth_project()` now returns **`(project, token)`** instead of
+    just `project`, so the provisioning flow knows which token authenticated the call.
+  - `device.backend.device_provision()` gains an optional
+    **`provisioning_token: AuthToken | None`** keyword; when supplied it records the
+    fingerprint and expiry on the device. Omitting it (the default) leaves the fields
+    empty, keeping existing callers working unchanged.
+  - UI: the device Timeline card shows *Provisioning token expires* (with the
+    fingerprint in a tooltip); the project Devices table gains a sortable *Token
+    Expires* column.
+
+- **Built-in "provisioning token expiring" alarm.** A new
+  `ProvisioningTokenExpiryAlarm` (in `AlarmConfig.provisioning_expiry`) and
+  `alarm.backend.evaluate_provisioning_expiry(project_name)` fire one alarm per active
+  device whose recorded provisioning-token expiry is within a configurable lead time
+  (`token_expiration_threshold`, default 7 days) — read straight from the device
+  record, so no token lookup is needed. With `only_tokens_in_active_use=False`,
+  project provisioning tokens that no device uses are flagged too, keyed by
+  fingerprint. Evaluated on the same 60 s background loop as the device-offline rule.
+
+### Changed
+
+- **`MetricAlarmRule.description` is removed.** The free-text override is gone; a
+  triggered metric alarm's message is now always auto-generated from the rule
+  (`"<metric> <comparison> <threshold> (got <value>)"`). Files still carrying a
+  `description` load fine (pydantic ignores the unknown key) and drop it on next write.
+
+- **Duration fields become `datetime.timedelta` instead of int seconds/days/minutes.**
+  Following the device-offline threshold, the remaining interval/lifetime settings move
+  to `timedelta`, so niceview 0.21.3 renders its tolerant duration widget (`7d`,
+  `2h30m`, ISO 8601) for them:
+  - `FirmwareSource.auto_pull_interval_min` (int minutes) → **`auto_pull_interval`**
+    (`timedelta`, default 1 h, floored at 5 min).
+  - `FileConfig.mqtt_check_interval_s` (int seconds) → **`mqtt_check_interval`**
+    (`timedelta`, default 60 s, floored at 10 s).
+  - `AppConfig.device_token_expires_in` (int days) → **`timedelta`** (default 7 d),
+    matching `provisioning_token_expires_in`.
+
+  Two migration bugs in the earlier int→`timedelta` change are fixed: creating a bearer
+  token no longer wraps the already-`timedelta` `device_tokens_expire_in` in
+  `timedelta(days=…)` (which crashed provisioning), and `Project`'s legacy parser for
+  that field now maps a legacy int to whole days and a pydantic-serialised float to
+  seconds (both previously collapsed to a few seconds). HTTP request timeouts stay
+  plain int seconds by design.
+
+- **`device_online_threshold_s` moves from `Project` to the device-offline alarm
+  config.** The threshold decides when a device counts as offline, which is the one
+  thing the device-offline alarm rule is about — and the switch that turns that rule
+  on already lived in `AlarmConfig.device_offline`. Splitting the two across
+  `project.json` and `.alarm_config.json` meant editing an alarm in two cards.
+  `DeviceOfflineConfig` is renamed to **`DeviceOfflineAlarm`** and gains the field, now a
+  **`datetime.timedelta`** named **`device_offline_threshold`** (default 1 day) instead of
+  an int-seconds `device_online_threshold_s`; `Project.device_online_threshold_s` is
+  removed, together with its slot in the `settings` profile. Readers outside the alarm
+  module (project and device dashboards) go through the new
+  **`alarm.backend.get_device_offline_threshold(project_name)`**, which returns a
+  `timedelta` and falls back to the model default if the config cannot be read.
+  `device.backend.is_device_online(device, threshold)` now takes a `timedelta`.
+  In the UI, the Device Offline block of the alarm config card is a single `ModelForm`
+  over the whole model, rendering the activation checkbox (label suppressed) and the
+  threshold input side by side in one row.
+
+  *Migration:* a project's stored `device_online_threshold_s` is dropped when
+  `project.json` is next read, and the alarm config starts at the 1-day default.
+  Projects that used a custom threshold have to set it again on the alarm card.
+
+- **niceview 0.16.0 → 0.22.0.** Chrome button styling gained a second axis: props are
+  layered `{place} → shape → role`, where the place is `toolbar`, `form` or `dialog`.
+  Two of its breaking changes reach us:
+
+  - `ChromeStyle.button_props` is gone — a base layer below the places no longer
+    exists, because "every button of this app is dense" is a statement about a type
+    and NiceGUI owns it (`ui.button.default_props`). `app/main.py` therefore drops
+    `set_chrome_style(button_props='')` and keeps only the icon shape, now scoped to
+    the place it applies to: `set_chrome_style(toolbar_icon_button_props='dense round')`.
+    This reverses the note in 0.27.0 that `set_chrome_style()` is deliberately not
+    called — with icon-only chrome buttons wanted round, there is now something to say.
+  - `confirm_dialog(ok_color=…)` → `ok_role=…`, which picks the confirm button from
+    the role layer instead of handing it a color. The three delete confirmations
+    (device, project, file) now pass `ok_role='delete'` instead of
+    `ok_color='negative'`, so they follow whatever delete buttons look like.
+
+  Also in 0.19.0, unused here so far: `ChromeText` for replacing every string
+  niceview shows, an application-wide `FieldStyle`, dialog and notification chrome,
+  and `'## Title'` for a form section heading without a card.
+
+  0.20.0 and 0.21.0 are purely additive and reach us as an opportunity rather than
+  as work: **`FormAction`** puts a button that is not a field into a form (placed as
+  `'@name'` in a layout) and, via **`chrome_actions=`**, into the title row of every
+  wrapper — `EditFormWrapper`, `EditGridWrapper` and `DrillDownWrapper` alike. On a
+  drill-down the actions belong to the detail view and are hidden in the list, with
+  a `DrillDownActionEventArguments` naming the item on screen. That is the way our
+  own buttons get into niceview's chrome instead of sitting beside it; the Files
+  card's per-row Download/Delete are the first candidates.
+
+  0.21.1 is purely additive too: `ChromeStyle` form-container knobs
+  (`form_row_classes`, `form_column_classes`, `form_card_classes`, `form_card_props`)
+  and two `FieldStyle` knobs (`caption_classes`, `checkbox_group_classes`); defaults
+  unchanged, no code change needed.
+
+  0.21.2 fixes `niceview.Field(label='')` in a model annotation to actually suppress
+  the label (previously indistinguishable from unset). `AuthToken.is_active` now
+  carries `niceview.Field(label='', …)` on the field itself instead of relying on the
+  token card's `field_infos`.
+
+  0.21.3 makes `timedelta` fields accept tolerant input (`7d`, `2h30m`, ISO 8601),
+  rewritten to canonical form on blur — the input side of the int-seconds → `timedelta`
+  migration of duration fields (e.g. the device-offline threshold above).
+
+  0.22.0 adds **`BoundFieldAdapter(parent, field_name)`**, an `ItemAdapter` that focuses a
+  parent adapter onto one embedded sub-model — exactly what the alarm card needed. The
+  alarm UI drops its own `_SubAdapter` and binds the Device-Offline and
+  Provisioning-Expiry forms to `BoundFieldAdapter(alarm_adapter, 'device_offline'|'provisioning_expiry')`.
+
+- **nicepaper 0.15.1 → 0.16.0.** Internal restructure of the e-paper editor plus a fix for
+  an Image widget crashing its form in a project with no image files yet. nice4iot only
+  references nicepaper by name (version display, SBOM), so no code change is needed.
+
+- **`URL_REGEX` accepts the forwarding targets people actually use.** It required a
+  dotted hostname, which ruled out every address a container talks to inside its own
+  network — `http://influx:8086/write`, `http://localhost:8086/write`, and any IP.
+  The example in `ForwardingConfig`'s own docstring was among the rejects.
+
+  It now takes a single-label host, an IPv4 or a bracketed IPv6 address, an optional
+  port, and anything after the first `/`, `?` or `#`. The scheme stays optional, so a
+  `forward_url` stored before this keeps validating. Malformed input is still refused
+  (`javascript:`, `ftp://`, `file://`, a host with no name, labels edged with hyphens),
+  and the pattern backtracks linearly — 80 labels resolve in well under a millisecond.
+  `URL_REGEX` reaches only `ForwardingConfig.forward_url`.
+
+- **The token and forwarding cards render as one form instead of field by field.**
+  Both used to place their inputs with `render_field()` calls interleaved with plain
+  `ui.button`s, because a callback cannot live in a layout string. niceview 0.20.0's
+  `FormAction` closes that gap: the buttons are declared in `actions=` and placed by
+  `'@delete'` / `'@copy'` in `layout=`, so each card is a single `render()`.
+
+  Their handlers take the token or rule off `e.form.item` rather than off a
+  late-bound default argument, and `render_nonfield_errors()` is no longer called by
+  hand — `render()` does it. `TokenListCard._unique_name()` is gone with the label it
+  seeded; the forwarding one stays, where the name reaches the device-facing URL.
+
+  Worth knowing when editing these layouts: a field's or action's `':classes'`
+  **replace** what niceview would apply, including the alignment it gives an action
+  in a row (`self-center`, plus `mb-5` next to an input that reserves message space).
+
+- **The Files card's row actions move into the detail title row.** Download, Publish
+  and Delete were three buttons on every list row. Download and Publish are now the
+  wrapper's `chrome_actions`, so they sit in niceview's chrome instead of beside it
+  and act on the one file the detail view is about; **Delete is niceview's own
+  button**, no longer suppressed with `delete_button=None`. The rows lose their
+  buttons and become clickable as a whole; what stays in them is what the generic
+  `ModelList` rows cannot express and is why `render_list_item` is still ours — the
+  type icon, the `project` chip, and the publish stamp (which comes from the card's
+  file state, not from the entry).
+
+  Handing Delete back to niceview removes code rather than adding it: the wrapper
+  routes through `DirectoryAdapter.delete()`, which only ever touches the card's own
+  directory — exactly the device copy meant — and notifies its change listeners, so
+  the list refreshes and the view navigates back without our help. The button also
+  picks up the `delete` chrome role instead of an action of ours spelling out
+  `color=negative` and bypassing the cascade that exists to hold it.
+
+  What used to argue against it was the confirmation text, which differs per entry:
+  dropping a device copy so the project file applies again is not the irreversible
+  delete of a plain file. A `ChromeText` slot takes a **callable** resolved when the
+  text is rendered, so that survives — `_delete_texts()` words the question from the
+  entry on screen, and the dialog renders it as markdown either way.
+
+  Two conditions, handled at the level each belongs to: **Publish** is constant per
+  card and is therefore absent altogether where it cannot work, while **Delete** is
+  per file and is hidden for an inherited entry, which has no device copy to remove
+  (the adapter would raise `KeyError` — the button is not merely pointless there, it
+  cannot work). Hiding it is sound because niceview updates the title row *before*
+  refreshing the body on every navigation, so a visibility set from `render_detail`
+  holds — a test pins that ordering, since a niceview change reversing it would
+  silently offer Delete on a file it cannot delete.
+
+- **`AuthToken.name` is removed.** Nothing ever read it: authentication matches on
+  `value`/`is_active`/`expires_at`, the adapter keys by list position rather than by a
+  field, and no API returned it. Device tokens never had one — they are minted by
+  `provision_device()`.
+
+  **Existing token files keep working.** Pydantic ignores unknown keys, so a
+  `.provisioning.json` or `.tokens.json` still carrying a `"name"` loads as before; the
+  key is dropped on the next write. Device token files heal on their own at the first
+  authentication, which rewrites them anyway to record `last_use_at`. niceview logs one
+  `Unknown field 'name' ignored` per stale entry per read until then — noise, not an
+  error. `tests/test_token_name_removal.py` pins both directions.
+
+  The UI loses more than the input: `TokenListCard.show_name` existed only for this
+  field and forked the card between provisioning and device tokens. It is gone, together
+  with `_unique_name()`, the `name or value[:8]` fallback in the delete notification,
+  and the `name=` parameter of `create_token()`.
+
+- **The download-only detail views lose their own Download button**, now that the
+  title row has one that reaches every file. They state the reason and point at it
+  ("Binary file — no inline preview. Use Download above to save it."), so the text
+  no longer dangles where the button used to be.
+
+- **Button props across the UI are normalised.** `flat dense` → `dense flat`, the
+  redundant `color=primary` is dropped (a `ui.button` is primary anyway), and
+  icon-only buttons are `round`. The alarm acknowledge actions become icon buttons
+  with explaining tooltips, the "OK" chip is outlined, and the Files card's Add
+  button loses its label.
+
+- **The data explorer's layout is rearranged**: label markers move up into the
+  controls row, the summary row moves below the chart, and Add trace sits in the
+  last trace row instead of under the list, so it is clear which trace it follows.
+
 ## [0.27.0] - 2026-08-13
 
 ### Changed

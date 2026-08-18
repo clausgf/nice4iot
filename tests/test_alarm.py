@@ -17,10 +17,10 @@ from app.config import app_config
 from app.core.project.backend import create_project
 from app.core.device.backend import create_device, get_device, update_device
 from app.core.device.models import Device
-from app.core.alarm.models import MetricAlarmRule, DeviceOfflineConfig
+from app.core.alarm.models import MetricAlarmRule, DeviceOfflineAlarm, ProvisioningTokenExpiryAlarm
 from app.core.device.backend import flush_device_list_cache
 from app.core.alarm.backend import (
-    get_alarm_config_adapter,
+    get_alarm_adapter,
     load_alarm_events,
     evaluate_metric_rules,
     evaluate_device_offline,
@@ -28,9 +28,14 @@ from app.core.alarm.backend import (
     acknowledge_all_alarms,
     get_pending_alarms,
     get_alarm_count,
-    BUILTIN_DEVICE_OFFLINE,
+    get_device_offline_threshold,
+    evaluate_provisioning_expiry,
 )
 from app.health import set_health, get_health, get_project_health
+
+# The built-in rules carry their own fixed name; source it from the models.
+BUILTIN_DEVICE_OFFLINE = DeviceOfflineAlarm().name
+BUILTIN_PROVISIONING_EXPIRY = ProvisioningTokenExpiryAlarm().name
 
 
 # ---------------------------------------------------------------------------
@@ -64,7 +69,7 @@ def device(project):
 @pytest.fixture
 def rule(project):
     """Add one active metric rule: temperature < 5."""
-    adapter = get_alarm_config_adapter(PROJECT)
+    adapter = get_alarm_adapter(PROJECT)
     config = adapter.read()
     config.rules = [
         MetricAlarmRule(
@@ -74,7 +79,6 @@ def rule(project):
             metric='temperature',
             comparison='<',
             threshold=5.0,
-            description='Temperature too low',
         )
     ]
     adapter.save(config)
@@ -95,7 +99,8 @@ def test_metric_rule_triggers_on_breach(project, device, rule):
     assert e.is_active is True
     assert e.is_acknowledged is False
     assert e.last_value == pytest.approx(2.0)
-    assert 'Temperature too low' in e.message
+    # message is auto-generated from the rule now that free-text descriptions are gone
+    assert e.message == 'sensors.temperature < 5.0 (got 2.0)'
 
 
 def test_metric_rule_no_alarm_below_threshold(project, device, rule):
@@ -132,7 +137,7 @@ def test_metric_rule_retriggers_after_clear(project, device, rule):
 
 
 def test_metric_rule_inactive_rule_not_evaluated(project, device, project_no_active_rule=None):
-    adapter = get_alarm_config_adapter(PROJECT)
+    adapter = get_alarm_adapter(PROJECT)
     config = adapter.read()
     config.rules = [
         MetricAlarmRule(
@@ -160,7 +165,7 @@ def test_metric_rule_missing_metric_ignored(project, device, rule):
 
 
 def test_metric_rule_equality(project, device):
-    adapter = get_alarm_config_adapter(PROJECT)
+    adapter = get_alarm_adapter(PROJECT)
     config = adapter.read()
     config.rules = [
         MetricAlarmRule(name='exact', is_active=True,
@@ -176,7 +181,7 @@ def test_metric_rule_equality(project, device):
 
 
 def test_metric_rule_greater_than(project, device):
-    adapter = get_alarm_config_adapter(PROJECT)
+    adapter = get_alarm_adapter(PROJECT)
     config = adapter.read()
     config.rules = [
         MetricAlarmRule(name='high_temp', is_active=True,
@@ -195,14 +200,14 @@ def test_metric_rule_greater_than(project, device):
 # ---------------------------------------------------------------------------
 
 def test_device_offline_triggers(project, device):
-    # Mark device as last seen a long time ago
+    # Mark device as last seen a long time ago (beyond the 1-day default threshold)
     d = get_device(PROJECT, DEVICE)
-    d.last_seen_at = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)
+    d.last_seen_at = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=2)
     update_device(d)
 
-    config = get_alarm_config_adapter(PROJECT).read()
-    config.device_offline = DeviceOfflineConfig(is_active=True)
-    get_alarm_config_adapter(PROJECT).save(config)
+    config = get_alarm_adapter(PROJECT).read()
+    config.device_offline = DeviceOfflineAlarm(is_active=True)
+    get_alarm_adapter(PROJECT).save(config)
 
     evaluate_device_offline(PROJECT)
     events = load_alarm_events(PROJECT)
@@ -217,9 +222,9 @@ def test_device_offline_does_not_trigger_if_online(project, device):
     d.last_seen_at = datetime.datetime.now(datetime.timezone.utc)
     update_device(d)
 
-    config = get_alarm_config_adapter(PROJECT).read()
-    config.device_offline = DeviceOfflineConfig(is_active=True)
-    get_alarm_config_adapter(PROJECT).save(config)
+    config = get_alarm_adapter(PROJECT).read()
+    config.device_offline = DeviceOfflineAlarm(is_active=True)
+    get_alarm_adapter(PROJECT).save(config)
 
     evaluate_device_offline(PROJECT)
     assert load_alarm_events(PROJECT) == []
@@ -230,9 +235,9 @@ def test_device_offline_inactive_rule_skipped(project, device):
     d.last_seen_at = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)
     update_device(d)
 
-    config = get_alarm_config_adapter(PROJECT).read()
-    config.device_offline = DeviceOfflineConfig(is_active=False)
-    get_alarm_config_adapter(PROJECT).save(config)
+    config = get_alarm_adapter(PROJECT).read()
+    config.device_offline = DeviceOfflineAlarm(is_active=False)
+    get_alarm_adapter(PROJECT).save(config)
 
     evaluate_device_offline(PROJECT)
     assert load_alarm_events(PROJECT) == []
@@ -240,12 +245,12 @@ def test_device_offline_inactive_rule_skipped(project, device):
 
 def test_device_offline_resolves_when_back_online(project, device):
     d = get_device(PROJECT, DEVICE)
-    d.last_seen_at = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)
+    d.last_seen_at = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=2)
     update_device(d)
 
-    config = get_alarm_config_adapter(PROJECT).read()
-    config.device_offline = DeviceOfflineConfig(is_active=True)
-    get_alarm_config_adapter(PROJECT).save(config)
+    config = get_alarm_adapter(PROJECT).read()
+    config.device_offline = DeviceOfflineAlarm(is_active=True)
+    get_alarm_adapter(PROJECT).save(config)
 
     evaluate_device_offline(PROJECT)
     assert load_alarm_events(PROJECT)[0].is_active is True
@@ -259,18 +264,93 @@ def test_device_offline_resolves_when_back_online(project, device):
     assert load_alarm_events(PROJECT)[0].is_active is False
 
 
-def test_device_offline_no_duplicate_on_repeated_eval(project, device):
+def test_device_offline_uses_the_threshold_from_the_alarm_config(project, device):
     d = get_device(PROJECT, DEVICE)
-    d.last_seen_at = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)
+    d.last_seen_at = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=5)
     update_device(d)
 
-    config = get_alarm_config_adapter(PROJECT).read()
-    config.device_offline = DeviceOfflineConfig(is_active=True)
-    get_alarm_config_adapter(PROJECT).save(config)
+    config = get_alarm_adapter(PROJECT).read()
+    config.device_offline = DeviceOfflineAlarm(is_active=True,
+                                                     device_offline_threshold=datetime.timedelta(hours=1))
+    get_alarm_adapter(PROJECT).save(config)
+    assert get_device_offline_threshold(PROJECT) == datetime.timedelta(hours=1)
+
+    evaluate_device_offline(PROJECT)
+    assert load_alarm_events(PROJECT) == []  # 5 min < 1 h threshold
+
+
+def test_device_offline_threshold_falls_back_to_the_default(projects_dir):
+    assert get_device_offline_threshold('nosuchproject') == datetime.timedelta(days=1)
+
+
+def test_device_offline_no_duplicate_on_repeated_eval(project, device):
+    d = get_device(PROJECT, DEVICE)
+    d.last_seen_at = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=2)
+    update_device(d)
+
+    config = get_alarm_adapter(PROJECT).read()
+    config.device_offline = DeviceOfflineAlarm(is_active=True)
+    get_alarm_adapter(PROJECT).save(config)
 
     evaluate_device_offline(PROJECT)
     evaluate_device_offline(PROJECT)
     assert len(load_alarm_events(PROJECT)) == 1
+
+
+# ---------------------------------------------------------------------------
+# Built-in rule: provisioning token expiry
+# ---------------------------------------------------------------------------
+
+def _set_token_expiry(delta: datetime.timedelta | None) -> None:
+    """Record a provisioning-token expiry `delta` from now on the test device."""
+    d = get_device(PROJECT, DEVICE)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    d.last_provisioning_token_fingerprint = 'abc123def456'
+    d.last_provisioning_token_expires_at = now + delta if delta is not None else None
+    update_device(d)
+    flush_device_list_cache()  # bypass the get_devices TTL cache
+
+
+def test_provisioning_expiry_triggers(project, device):
+    _set_token_expiry(datetime.timedelta(days=3))  # within the 7-day default threshold
+    evaluate_provisioning_expiry(PROJECT)
+    events = load_alarm_events(PROJECT)
+    assert len(events) == 1
+    assert events[0].rule_name == BUILTIN_PROVISIONING_EXPIRY
+    assert events[0].device_name == DEVICE
+    assert events[0].is_active is True
+
+
+def test_provisioning_expiry_not_triggered_when_far_out(project, device):
+    _set_token_expiry(datetime.timedelta(days=90))  # well beyond the 7-day threshold
+    evaluate_provisioning_expiry(PROJECT)
+    assert load_alarm_events(PROJECT) == []
+
+
+def test_provisioning_expiry_resolves_when_reprovisioned(project, device):
+    _set_token_expiry(datetime.timedelta(days=3))
+    evaluate_provisioning_expiry(PROJECT)
+    assert load_alarm_events(PROJECT)[0].is_active is True
+
+    _set_token_expiry(datetime.timedelta(days=90))  # e.g. re-provisioned with a fresh token
+    evaluate_provisioning_expiry(PROJECT)
+    assert load_alarm_events(PROJECT)[0].is_active is False
+
+
+def test_provisioning_expiry_skipped_when_device_has_no_token(project, device):
+    _set_token_expiry(None)
+    evaluate_provisioning_expiry(PROJECT)
+    assert load_alarm_events(PROJECT) == []
+
+
+def test_provisioning_expiry_inactive_rule_skipped(project, device):
+    _set_token_expiry(datetime.timedelta(days=3))
+    config = get_alarm_adapter(PROJECT).read()
+    config.provisioning_expiry.is_active = False
+    get_alarm_adapter(PROJECT).save(config)
+
+    evaluate_provisioning_expiry(PROJECT)
+    assert load_alarm_events(PROJECT) == []
 
 
 # ---------------------------------------------------------------------------

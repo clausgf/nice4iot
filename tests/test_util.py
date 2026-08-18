@@ -5,12 +5,15 @@ Project and device names are restricted to valid identifiers
 always a valid Prometheus metric name and no backend-specific escaping is
 needed. is_valid_filename stays looser (kind, forwarding, extension names).
 """
+import re
+
 import pytest
 
 from pydantic import ValidationError
 
-from app.util import is_valid_filename, is_valid_name
+from app.util import URL_REGEX, is_valid_filename, is_valid_name
 from app.core.device.models import Device
+from app.core.forwarding.models import ForwardingConfig
 from app.core.project.models import Project
 
 
@@ -38,6 +41,46 @@ def test_is_valid_filename_still_allows_hyphen_and_plus():
     # kind / forwarding / extension names keep the looser rule.
     assert is_valid_filename("my-kind+1") is True
     assert is_valid_filename("123kind") is True
+
+
+# ---------------------------------------------------------------------------
+# URL_REGEX — forwarding targets
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("url", [
+    "http://influx:8086/write",          # container name in a compose network
+    "http://localhost:8086/write",       # single label, no dot
+    "http://192.168.1.10:8086/write",    # IPv4
+    "http://[::1]:8086/write",           # IPv6, bracketed
+    "http://my-service/write",           # hyphen inside a label
+    "http://example.com/api",
+    "https://api.example.co.uk:443/v1/write?db=mydb",
+    "example.com/api",                   # scheme stays optional
+    "example.com",
+])
+def test_url_regex_accepts_real_forwarding_targets(url):
+    assert re.match(URL_REGEX, url) is not None
+
+
+@pytest.mark.parametrize("url", [
+    "javascript:alert(1)",
+    "ftp://example.com",
+    "file:///etc/passwd",
+    "http://",                # no host
+    "",
+    "http:// example.com",    # space
+    "http://exa mple.com/x",
+    "-bad.example.com",       # label starts with a hyphen
+    "http://bad-.com",        # label ends with one
+])
+def test_url_regex_rejects_malformed(url):
+    assert re.match(URL_REGEX, url) is None
+
+
+def test_forwarding_model_accepts_the_url_from_its_own_docstring():
+    """The Meta example used to fail the model's own validation."""
+    ForwardingConfig(name='influx', forward_url='http://influx:8086/write',
+                     forward_method='POST')
 
 
 @pytest.mark.parametrize("bad", ["my-proj", "123proj", "my+proj"])
