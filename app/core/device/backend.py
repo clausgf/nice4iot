@@ -13,8 +13,9 @@ from app.exceptions import AlreadyExistsError, ForbiddenError, NotFoundError
 from app.paths import device_dir
 from app.core.token.backend import (
     create_token, device_token_lock, load_device_tokens,
-    purge_expired_tokens, save_device_tokens, token_fingerprint, validate_token,
+    purge_expired_tokens, save_device_tokens, validate_token,
 )
+from app.core.token.models import token_fingerprint
 from app.core.device.models import Device, DeviceRuntime
 from app.core.project.backend import get_project, get_project_path
 from app.core.project.models import Project
@@ -396,7 +397,7 @@ def device_provision(project: Project, device_name: str,
 
     device.last_provisioned_at = now
     if provisioning_token is not None:
-        device.last_provisioning_token_fingerprint = token_fingerprint(provisioning_token.value)
+        device.last_provisioning_token_fingerprint = provisioning_token.fingerprint
         device.last_provisioning_token_expires_at = provisioning_token.expires_at
     update_device(device)
 
