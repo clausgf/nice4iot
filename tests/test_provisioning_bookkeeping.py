@@ -8,11 +8,8 @@ secret) plus the token's expiry, filterable directly on the device record.
 import datetime
 
 from app.core.device.backend import device_provision, get_device
-from app.core.token.backend import (
-    create_token,
-    get_provisioning_token_adapter,
-    token_fingerprint,
-)
+from app.core.token.backend import create_token, get_provisioning_token_adapter
+from app.core.token.models import token_fingerprint
 from tests.conftest import setup_project
 
 

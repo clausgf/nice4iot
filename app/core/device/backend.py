@@ -15,7 +15,6 @@ from app.core.token.backend import (
     create_token, device_token_lock, load_device_tokens,
     purge_expired_tokens, save_device_tokens, validate_token,
 )
-from app.core.token.models import token_fingerprint
 from app.core.device.models import Device, DeviceRuntime
 from app.core.project.backend import get_project, get_project_path
 from app.core.project.models import Project

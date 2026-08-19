@@ -6,6 +6,16 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-08-19
+
+### Fixed
+
+- **CI is green again.** `token_fingerprint` is no longer re-exported from
+  `app.core.token.backend`; `device_provision` reads the token's own `fingerprint`
+  field and the last importer (`test_provisioning_bookkeeping.py`) now imports the
+  helper from `app.core.token.models`. Removes the last unused imports that
+  `ruff check` flagged and the stale import that broke test collection.
+
 ## [0.28.0] - 2026-08-18
 
 ### Added
