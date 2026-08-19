@@ -13,7 +13,7 @@ from app.util import atomic_write
 # token_fingerprint lives in models (next to the AuthToken field it feeds) and is
 # re-exported here, where its historical callers import it from.
 from app.core.token.models import (
-    AuthToken, TOKEN_CHARS, TOKEN_MIN_LENGTH, token_fingerprint,
+    AuthToken, TOKEN_CHARS, TOKEN_MIN_LENGTH,
 )
 from niceview.dataadapter import lenient_list_load
 

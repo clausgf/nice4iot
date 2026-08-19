@@ -3,7 +3,7 @@ from collections.abc import Callable
 
 from nicegui import ui
 from niceview.dataadapter import JsonListAdapter
-from niceview import Field, FormAction, FormActionEventArguments, ModelForm
+from niceview import FormAction, FormActionEventArguments, ModelForm
 
 from app.core.token.backend import create_token
 from app.core.token.models import AuthToken
