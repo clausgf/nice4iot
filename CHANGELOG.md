@@ -6,6 +6,16 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-08-20
+
+### Changed
+
+- **nicepaper updated** (pin `b465d23` → `950d1a3`, still 0.16.0). The optional
+  `epaper` extension's iCal datasource now sends a fixed browser `User-Agent`
+  header on its HTTP session (some calendar servers reject the default aiohttp
+  agent) and additionally extracts the optional `CATEGORIES` field from each
+  event. No change to nice4iot's own API.
+
 ## [0.29.0] - 2026-08-19
 
 ### Fixed
