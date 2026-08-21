@@ -27,6 +27,7 @@ from app.extensions import (
     get_project_page,
     get_project_tabs,
     get_registered_extension_names,
+    get_user_menu_items,
     is_extension_enabled,
     mount_extension_router,
     register_device_card,
@@ -36,6 +37,7 @@ from app.extensions import (
     register_project_card,
     register_project_page,
     register_project_tab,
+    register_user_menu_item,
     registering,
 )
 from app.mqtt.backend import (
@@ -191,6 +193,41 @@ def test_get_global_cards_returns_a_copy():
     cards = get_global_cards()
     cards.append(('Other', lambda: None))
     assert len(get_global_cards()) == 1
+
+
+# ---------------------------------------------------------------------------
+# User menu
+# ---------------------------------------------------------------------------
+
+def test_user_menu_item_returned_regardless_of_enablement(project):
+    fn = lambda: None
+    with registering('ext1'):
+        register_user_menu_item('Screens', fn, icon='tv')
+
+    # not enabled for any project — still returned, since it isn't project-scoped
+    assert get_user_menu_items() == [('Screens', 'tv', fn)]
+
+
+def test_user_menu_item_icon_is_optional():
+    fn = lambda: None
+    with registering('ext1'):
+        register_user_menu_item('Screens', fn)
+
+    assert get_user_menu_items() == [('Screens', None, fn)]
+
+
+def test_register_user_menu_item_outside_context_raises():
+    with pytest.raises(RuntimeError):
+        register_user_menu_item('Screens', lambda: None)
+
+
+def test_get_user_menu_items_returns_a_copy():
+    with registering('ext1'):
+        register_user_menu_item('Screens', lambda: None)
+
+    items = get_user_menu_items()
+    items.append(('Other', None, lambda: None))
+    assert len(get_user_menu_items()) == 1
 
 
 # ---------------------------------------------------------------------------

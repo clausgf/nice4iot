@@ -7,7 +7,7 @@ from fastapi.responses import RedirectResponse
 
 from app.core.project.ui import all_projects_subpage, project_subpage
 from app.core.device.ui import device_subpage
-from app.extensions import get_global_cards, maybe_await
+from app.extensions import get_global_cards, get_user_menu_items, maybe_await
 from app.mqtt.ui import MqttStatusCard
 from app.routes import (
     about_url, login_url, preferences_url, project_url, projects_url,
@@ -63,6 +63,8 @@ def login_redirect():
 
 
 def _user_menu() -> None:
+    """Render nice4iot's top-right user menu (the person-icon dropdown).
+    """
     provider = get_auth_provider()
     username = provider.get_user(context.client.request)
 
@@ -85,8 +87,19 @@ def _user_menu() -> None:
                         ui.label('Logout')
                 ui.separator()
             with ui.menu_item().classes('items-center gap-x-2'):
+                ui.icon('home').props('size=large')
+                ui.link('Home', projects_url()).classes('no-underline text-inherit')
+            with ui.menu_item().classes('items-center gap-x-2'):
                 ui.icon('settings').props('size=large')
                 ui.link('Preferences', preferences_url()).classes('no-underline text-inherit')
+            menu_items = get_user_menu_items()
+            if menu_items:
+                for label, icon, on_click in menu_items:
+                    with ui.menu_item(on_click=on_click).classes('items-center gap-x-2'):
+                        if icon:
+                            ui.icon(icon).props('size=large')
+                        ui.label(label)
+                ui.separator()
             with ui.menu_item().classes('items-center gap-x-2'):
                 ui.icon('light_mode').props('size=large')
                 ui.label('Light Mode').on('click', dark.disable)

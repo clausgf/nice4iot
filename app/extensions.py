@@ -31,6 +31,7 @@ _project_general_cards: list[tuple[str, str, Callable[[str], Any]]] = []  # (ext
 _device_dashboard_cards: list[tuple[str, Callable[[str, str], Any]]] = []
 _device_general_cards: list[tuple[str, str, Callable[[str, str], Any]]] = []
 _global_cards: list[tuple[str, str, Callable[[], Any]]] = []  # (extension_name, title, render_fn)
+_user_menu_items: list[tuple[str, str, str | None, Callable[[], Any]]] = []  # (extension_name, label, icon, on_click)
 
 _project_tabs: list[tuple[str, str, Callable[[str], Any]]] = []  # (extension_name, label, render_fn)
 _device_tabs: list[tuple[str, str, Callable[[str, str], Any]]] = []
@@ -199,6 +200,45 @@ def get_global_cards() -> list[tuple[str, Callable[[], Any]]]:
 
 
 # ---------------------------------------------------------------------------
+# User menu
+# ---------------------------------------------------------------------------
+
+def register_user_menu_item(label: str, on_click: Callable[[], Any], *,
+                             icon: str | None = None) -> None:
+    """Register an item in the top-right user menu (the person-icon dropdown).
+
+    Rendered on every page, in the extensions' own section of the menu. label
+    and the optional icon get nice4iot's uniform menu-item chrome; on_click is
+    the click handler (call ui.navigate.to(...) inside it to link somewhere).
+    Like global cards, it is project-independent and **not** gated by
+    per-project enablement — the user menu belongs to no project, so it shows as
+    soon as the extension is installed. on_click may be sync or async.
+    """
+    _user_menu_items.append((_extension_name(), label, icon, on_click))
+
+
+def get_user_menu_items() -> list[tuple[str, str | None, Callable[[], Any]]]:
+    """Return (label, icon, on_click) for every registered user-menu item, in registration order."""
+    return [(label, icon, on_click) for _ext, label, icon, on_click in _user_menu_items]
+
+
+def render_user_menu() -> None:
+    """Render nice4iot's standard user menu (the top-right person-icon dropdown).
+
+    For extensions building their own page chrome (a standalone project page,
+    docs/extensions.md) that want the built-in menu — Home, Preferences, dark
+    mode, About, and every registered extension item — in their own layout.
+    Call it inside a UI context, wherever a ui.button fits.
+
+    Thin wrapper over app.frontend so the extension API stays in this one
+    module; imported lazily (at call time, on the event loop) because
+    app.frontend imports this module.
+    """
+    from app.frontend import _user_menu
+    _user_menu()
+
+
+# ---------------------------------------------------------------------------
 # Tabs
 # ---------------------------------------------------------------------------
 
@@ -353,6 +393,7 @@ def _clear_registries() -> None:
     _device_dashboard_cards.clear()
     _device_general_cards.clear()
     _global_cards.clear()
+    _user_menu_items.clear()
     _project_tabs.clear()
     _device_tabs.clear()
     _project_pages.clear()

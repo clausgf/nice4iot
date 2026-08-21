@@ -6,10 +6,10 @@ from nicegui import PageArguments, ui
 
 from app.routes import device_url, project_url
 from app.ui import config_expansion, refresh_breadcrumbs, status_avatar
-from app.core.device.models import Device
+from app.core.device.models import Device, DeviceRuntime
 from app.core.device.backend import (
     create_device, delete_device, device_adapter, get_device, get_devices,
-    is_device_online, rename_device,
+    is_device_online, read_runtime, rename_device,
 )
 from app.core.file.browser_ui import device_files_panel
 from app.core.device.data_ui import device_data_panel
@@ -81,9 +81,10 @@ async def device_dashboard_panel(project_name: str, device_name: str) -> None:
         device = get_device(project_name, device_name)
         threshold = await anyio.to_thread.run_sync(lambda: get_device_offline_threshold(project_name))
         labels = await anyio.to_thread.run_sync(lambda: latest_labels(project_name, device_name))
+        runtime = await anyio.to_thread.run_sync(lambda: read_runtime(project_name, device_name))
 
         with ui.grid().classes('grid-cols-1 sm:grid-cols-2 gap-4 w-full'):
-            await _status_card(device, project_name, threshold, labels)
+            await _status_card(device, project_name, threshold, labels, runtime)
             await _timeline_card(device)
             for render_fn in await anyio.to_thread.run_sync(lambda: get_device_dashboard_cards(project_name)):
                 await maybe_await(render_fn(project_name, device_name))
@@ -93,8 +94,17 @@ async def device_dashboard_panel(project_name: str, device_name: str) -> None:
     await dashboard_alarms_card(project_name, device_name)
 
 
+def _format_metric(v: float) -> str:
+    """Compact display for a cached numeric metric: no trailing '.0' for integral
+    values (wifi_rssi -67, boot_count 42), trimmed decimals otherwise (battery 3.71)."""
+    if v == int(v):
+        return str(int(v))
+    return f'{v:.3f}'.rstrip('0').rstrip('.')
+
+
 async def _status_card(device: Device, project_name: str, offline_threshold: datetime.timedelta,
-                       labels: dict[str, str] | None = None) -> None:
+                       labels: dict[str, str] | None = None,
+                       runtime: DeviceRuntime | None = None) -> None:
     from app.core.alarm.backend import get_alarm_count
     online = is_device_online(device, offline_threshold)
     alarm_count = get_alarm_count(project_name, device.name)
@@ -145,6 +155,20 @@ async def _status_card(device: Device, project_name: str, offline_threshold: dat
                 for k, v in sorted(extra.items()):
                     ui.label(k).classes('text-caption text-grey-7')
                     ui.label(v).tooltip(v).classes('text-body2 overflow-hidden text-ellipsis')
+
+            # Latest system-telemetry snapshot (battery_V, wifi_rssi, ...), cached
+            # in the runtime sidecar — the last 'system' push's numeric values.
+            if runtime and runtime.system_metrics:
+                ui.separator().classes('q-mt-xs q-mb-xs')
+                with ui.row().classes('items-center w-full gap-1'):
+                    ui.label('System').classes('text-caption text-grey-7')
+                    ui.space()
+                    ui.label(render_datetime_age(runtime.system_reported_at)) \
+                        .classes('text-caption text-grey-7')
+                with ui.grid(columns='auto 1fr').classes('grid-cols-2 gap-y-1 q-mt-xs'):
+                    for k, v in sorted(runtime.system_metrics.items()):
+                        ui.label(k).classes('text-caption text-grey-7')
+                        ui.label(_format_metric(v)).classes('text-body2')
 
 
 async def _timeline_card(device: Device) -> None:

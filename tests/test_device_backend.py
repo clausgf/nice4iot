@@ -10,6 +10,7 @@ from app.core.device.backend import (
     DEVICE_FILE_NAME,
     _FW_MAX_LEN,
     _RUNTIME_FILE,
+    _SYSTEM_METRICS_MAX,
     create_device,
     device_adapter,
     get_auth_project_device,
@@ -238,6 +239,51 @@ def test_firmware_string_is_stripped_and_capped(device, project):
     write_runtime(project, device.name, firmware_version='  ' + 'x' * (_FW_MAX_LEN + 20) + '  ')
     rt = read_runtime(project, device.name)
     assert rt.firmware_version == 'x' * _FW_MAX_LEN
+
+
+def test_write_runtime_records_system_snapshot(device, project):
+    now = datetime.datetime(2025, 6, 1, 12, 0, 0, tzinfo=datetime.timezone.utc)
+    write_runtime(project, device.name,
+                  system_metrics={'battery_V': 3.71, 'wifi_rssi': -67.0},
+                  system_labels={'firmware_id': 'app', 'firmware_sha256': 'abc'},
+                  system_reported_at=now)
+    rt = read_runtime(project, device.name)
+    assert rt.system_metrics == {'battery_V': 3.71, 'wifi_rssi': -67.0}
+    assert rt.system_labels == {'firmware_id': 'app', 'firmware_sha256': 'abc'}
+    assert rt.system_reported_at == now
+
+
+def test_system_snapshot_replaces_wholesale(device, project):
+    """A later system push replaces the whole snapshot — a field it omits is gone,
+    not stale (replace semantics, not merge)."""
+    t1 = datetime.datetime(2025, 6, 1, 12, 0, 0, tzinfo=datetime.timezone.utc)
+    t2 = datetime.datetime(2025, 6, 1, 13, 0, 0, tzinfo=datetime.timezone.utc)
+    write_runtime(project, device.name, system_metrics={'battery_V': 3.7, 'wifi_rssi': -60.0},
+                  system_reported_at=t1)
+    write_runtime(project, device.name, system_metrics={'wifi_rssi': -70.0},
+                  system_reported_at=t2)
+    rt = read_runtime(project, device.name)
+    assert rt.system_metrics == {'wifi_rssi': -70.0}  # battery_V dropped
+    assert rt.system_reported_at == t2
+
+
+def test_system_snapshot_preserved_by_other_writes(device, project):
+    """last_seen/firmware writes (no system_reported_at) keep the snapshot untouched."""
+    now = datetime.datetime(2025, 6, 1, 12, 0, 0, tzinfo=datetime.timezone.utc)
+    write_runtime(project, device.name, system_metrics={'battery_V': 3.7},
+                  system_reported_at=now)
+    write_runtime(project, device.name, firmware_version='v2')
+    rt = read_runtime(project, device.name)
+    assert rt.system_metrics == {'battery_V': 3.7}
+    assert rt.firmware_version == 'v2'
+
+
+def test_system_metrics_capped(device, project):
+    now = datetime.datetime(2025, 6, 1, 12, 0, 0, tzinfo=datetime.timezone.utc)
+    many = {f'm{i:03d}': float(i) for i in range(_SYSTEM_METRICS_MAX + 10)}
+    write_runtime(project, device.name, system_metrics=many, system_reported_at=now)
+    rt = read_runtime(project, device.name)
+    assert len(rt.system_metrics) == _SYSTEM_METRICS_MAX
 
 
 def test_get_device_populates_firmware(device, project):

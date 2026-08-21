@@ -8,7 +8,7 @@ import datetime
 import pytest
 
 import app.core.telemetry.backend as telemetry_backend
-from app.core.device.backend import create_device
+from app.core.device.backend import create_device, read_runtime
 from app.core.device.models import Device
 from app.core.project.backend import create_project
 from app.core.telemetry.backend import (
@@ -572,3 +572,27 @@ def test_write_telemetry_splits_and_passes_labels_to_backend(proj_dev, monkeypat
     asyncio.run(write_telemetry(p, d, {"temp": 22.4, "site": "hall2"}, kind="sensors"))
     assert captured['values'] == {"temp": 22.4}
     assert captured['labels'] == {"site": "hall2"}
+
+
+# ---------------------------------------------------------------------------
+# System-telemetry runtime snapshot
+# ---------------------------------------------------------------------------
+
+def test_system_kind_caches_snapshot_in_runtime(proj_dev):
+    """A kind='system' push snapshots its numerics and labels into the runtime sidecar."""
+    p, d = proj_dev
+    asyncio.run(write_telemetry(p, d, {"battery_V": 3.71, "wifi_rssi": -67,
+                                       "firmware_id": "app"}, kind="system"))
+    rt = read_runtime(p, d)
+    assert rt.system_metrics == {"battery_V": 3.71, "wifi_rssi": -67}
+    assert rt.system_labels == {"firmware_id": "app"}
+    assert rt.system_reported_at is not None
+
+
+def test_non_system_kind_leaves_snapshot_empty(proj_dev):
+    """Only kind='system' feeds the snapshot; a sensors push must not touch it."""
+    p, d = proj_dev
+    asyncio.run(write_telemetry(p, d, {"temp": 22.4}, kind="sensors"))
+    rt = read_runtime(p, d)
+    assert rt.system_metrics == {}
+    assert rt.system_reported_at is None

@@ -27,8 +27,11 @@ data/projects/
         ├── .firmware.state.json    # Last firmware pull for this device
         ├── .runtime.json       # device-reported runtime state: last_seen_at (written on
         │                       # every API auth) + firmware_version/commit (reported via
-        │                       # X-Firmware-* headers). Kept separate so device.json is only
-        │                       # written on explicit user/provisioning actions (avoids lock conflict)
+        │                       # X-Firmware-* headers) + system_metrics/system_labels/
+        │                       # system_reported_at (snapshot of the last kind='system'
+        │                       # telemetry push: battery_V, wifi_rssi, firmware_* labels).
+        │                       # Kept separate so device.json is only written on explicit
+        │                       # user/provisioning actions (avoids lock conflict)
         ├── .tokens.json        # Device bearer token list (file-locked on write)
         ├── .device.log         # File logging backend output (rotated)
         ├── .device_metrics.jsonl  # Local telemetry ring buffer (max 2 000 lines)
@@ -145,6 +148,10 @@ Requests exceeding the limit are rejected with **413 Content Too Large**.
 ## Local Telemetry Store
 
 Every call to `POST /api/telemetry` also appends a line to `<device>/.device_metrics.jsonl` (in addition to forwarding to any configured remote backend). The file is capped at 2 000 lines (oldest removed first). The **Device → Data** tab reads this file and renders an interactive Plotly chart with configurable time window and metric selector.
+
+### System-telemetry snapshot
+
+A push with `kind=system` (arduino4iot's `postSystemTelemetry`) additionally has its numeric values (`battery_V`, `wifi_rssi`, `boot_count`, …) and string labels (`firmware_id`, `firmware_sha256`, …) snapshotted into `.runtime.json` as `system_metrics` / `system_labels` / `system_reported_at`. The snapshot is **replaced wholesale** on each `system` push (never merged), so it always mirrors the last write — a field a push omits (e.g. `battery_V` on a device without a battery pin) is simply absent. This gives O(1) access to a device's current system state (shown on the Device Dashboard, and cheap to read one-per-row in a device table) without scanning the JSONL. Only `kind=system` feeds it; other kinds don't touch it. Metrics are capped at 32 per device to bound the file.
 
 ## UI Generation via niceview
 

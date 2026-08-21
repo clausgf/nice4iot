@@ -302,7 +302,7 @@ def _build_wrapper(adapter: OverlayDirectoryAdapter, *, title: str, ctx: FileCtx
 
     wrapper = DrillDownWrapper.from_adapter(
         OverlayFileEntry, adapter,
-        list_title=title, description=description,
+        title=title, description=description,
         item_title_field='name',
         chrome_actions=_file_actions(ctx, refresh),
         chrome_text=_delete_texts(lambda: shown),

@@ -18,6 +18,10 @@ from app.core.telemetry.influxdb.backend import InfluxLineBackend
 
 TEL_FILE = '.telemetry.json'
 DATA_VIEW_FILE = '.data_view.json'
+# The kind whose latest push is snapshotted into the device runtime sidecar
+# (battery_V, wifi_rssi, firmware_* labels, ...). arduino4iot's
+# postSystemTelemetry() uses exactly this kind.
+SYSTEM_TELEMETRY_KIND = 'system'
 LOCAL_METRICS_FILE = '.device_metrics.jsonl'
 LOCAL_METRICS_MAX_LINES = 2000
 _TRIM_EVERY_N = 10  # trim JSONL only every N writes to amortise O(n) read cost
@@ -357,6 +361,15 @@ async def write_telemetry(project_name: str, device_name: str, values: dict,
     await anyio.to_thread.run_sync(
         lambda: _append_local_metrics(project_name, device_name, kind, numeric, now, labels=labels)
     )
+    # Cache the latest *system* push into the device runtime sidecar, so the current
+    # battery/rssi/firmware values are O(1) to read (e.g. a device table) without
+    # scanning the JSONL. Only this one kind; replaced wholesale each time.
+    if kind == SYSTEM_TELEMETRY_KIND:
+        from app.core.device.backend import write_runtime
+        await anyio.to_thread.run_sync(
+            lambda: write_runtime(project_name, device_name, system_metrics=numeric,
+                                  system_labels=labels, system_reported_at=now)
+        )
     # Alarms evaluate numeric measurements only; labels are metadata.
     await anyio.to_thread.run_sync(
         lambda: _evaluate_alarms(project_name, device_name, kind, numeric)

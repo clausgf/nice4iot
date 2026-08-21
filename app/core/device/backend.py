@@ -27,6 +27,7 @@ DEVICE_FILE_NAME = '.device.json'
 _RUNTIME_FILE = '.runtime.json'
 _LAST_SEEN_FILE = '.last_seen'  # legacy: bare-timestamp file, read-only migration fallback
 _FW_MAX_LEN = 64  # cap device-reported firmware strings (untrusted header input)
+_SYSTEM_METRICS_MAX = 32  # cap cached system metrics per device (bounds .runtime.json size)
 
 # ---------------------------------------------------------------------------
 # In-process device list cache
@@ -83,18 +84,31 @@ def read_runtime(project_name: str, device_name: str) -> DeviceRuntime:
 
 def write_runtime(project_name: str, device_name: str, *,
                   last_seen_at: datetime.datetime | None = None,
-                  firmware_version: str | None = None) -> DeviceRuntime:
+                  firmware_version: str | None = None,
+                  system_metrics: dict | None = None,
+                  system_labels: dict | None = None,
+                  system_reported_at: datetime.datetime | None = None) -> DeviceRuntime:
     """Merge-update the device runtime sidecar and write it atomically.
 
     Only the provided (non-None) fields are changed; the rest are preserved. Passing
     a firmware_version/commit stamps firmware_reported_at. Firmware strings are
-    stripped and length-capped (untrusted device input)."""
+    stripped and length-capped (untrusted device input).
+
+    Passing ``system_reported_at`` records a system-telemetry snapshot: it and the
+    accompanying ``system_metrics``/``system_labels`` **replace** the cached values
+    wholesale (they are one write's numerics and labels, already normalized and
+    label-capped by the telemetry backend), capped to ``_SYSTEM_METRICS_MAX``
+    metrics so a device can't bloat the sidecar."""
     rt = read_runtime(project_name, device_name)
     if last_seen_at is not None:
         rt.last_seen_at = last_seen_at
     if firmware_version is not None:
         rt.firmware_version = firmware_version.strip()[:_FW_MAX_LEN]
         rt.firmware_reported_at = datetime.datetime.now(datetime.timezone.utc)
+    if system_reported_at is not None:
+        rt.system_metrics = dict(sorted((system_metrics or {}).items())[:_SYSTEM_METRICS_MAX])
+        rt.system_labels = dict(system_labels or {})
+        rt.system_reported_at = system_reported_at
     path = device_dir(project_name, device_name) / _RUNTIME_FILE
     atomic_write(path, rt.model_dump_json(indent=2))
     return rt

@@ -136,3 +136,14 @@ class DeviceRuntime(BaseModel):
     last_seen_at: datetime.datetime | None = None
     firmware_version: str = ''
     firmware_reported_at: datetime.datetime | None = None
+
+    # Snapshot of the device's most recent *system* telemetry push (kind ==
+    # 'system'): the numeric measurements (battery_V, wifi_rssi, ...) and the
+    # string labels (firmware_id, firmware_sha256, ...) of that single write,
+    # cached here for O(1) access (e.g. a device table) instead of scanning the
+    # per-device metrics JSONL. Replaced wholesale on each system push, so they
+    # reflect exactly the last write — a field a push omits (e.g. battery_V on a
+    # device without a battery pin) is absent, not stale.
+    system_metrics: dict[str, float] = {}
+    system_labels: dict[str, str] = {}
+    system_reported_at: datetime.datetime | None = None

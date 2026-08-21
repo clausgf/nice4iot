@@ -265,6 +265,49 @@ it renders as soon as your extension is installed, regardless of whether
 any project has turned it on. `render_fn()` takes no arguments and may be
 sync or async.
 
+### User menu item
+
+Extensions can add their own entry to the top-right user menu (the
+person-icon dropdown), next to *Preferences*, *About*, etc.:
+
+```python
+from nicegui import ui
+from app.extensions import register_user_menu_item
+
+def register(app):
+    register_user_menu_item('Screens', lambda: ui.navigate.to('/ext/epaper'),
+                            icon='tv')
+```
+
+nice4iot renders the uniform menu-item chrome (`icon` optional) and calls
+`on_click` when the entry is selected — use `ui.navigate.to(...)` inside it
+to link somewhere, or do anything else NiceGUI allows. Like the global card,
+it is project-independent and **not** gated by per-project enablement: the
+user menu belongs to no project, so the entry appears as soon as your
+extension is installed. `on_click` may be sync or async.
+
+A [standalone project page](#standalone-project-pages) builds its own page
+chrome, so it doesn't get the built-in header (and its user menu) for free.
+To drop the *whole* standard user menu — Home, Preferences, dark mode, About,
+and every registered extension item — into your own layout, call
+`render_user_menu()`:
+
+```python
+from nicegui import ui
+from app.extensions import render_user_menu
+
+def _my_page(project_name: str) -> None:
+    with ui.header().classes('items-center'):
+        ui.label('My Extension')
+        ui.space()
+        render_user_menu()   # the same person-icon dropdown as the main app
+    ...
+```
+
+It builds a single `ui.button` holding the menu, so it fits wherever a button
+fits. The menu's first entry is a **Home** link back to the 4IoT entry page
+(the projects overview), rendered before your extension's own items.
+
 ### Tabs
 
 Tabs add a whole new tab next to the built-in ones (Dashboard, General,

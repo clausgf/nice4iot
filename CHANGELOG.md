@@ -6,6 +6,44 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.30.1] - 2026-08-21
+
+### Added
+
+- **Extensions can add an item to the user menu.** New
+  `extensions.register_user_menu_item(label, on_click, *, icon=None)` appends
+  an entry to the top-right user menu (the person-icon dropdown), rendered in
+  the extensions' own section with nice4iot's uniform menu-item chrome.
+  `get_user_menu_items()` returns `(label, icon, on_click)` in registration
+  order. Like global cards it is project-independent and not gated by
+  per-project enablement; `on_click` may be sync or async. See
+  `docs/extensions.md` → *User menu item*.
+
+- **Extensions can embed the whole user menu.** New
+  `extensions.render_user_menu()` renders nice4iot's standard person-icon
+  dropdown into an extension's own page chrome (a standalone project page),
+  keeping the whole extension API surface in `app.extensions`.
+
+- **System-telemetry snapshot cached per device.** A telemetry push with
+  `kind=system` now snapshots its numeric values (`battery_V`, `wifi_rssi`, …)
+  and string labels (`firmware_id`, `firmware_sha256`, …) into the device
+  runtime sidecar (`.runtime.json`). `DeviceRuntime` gains **`system_metrics`**,
+  **`system_labels`** and **`system_reported_at`**. The snapshot is replaced
+  wholesale on each `system` push (only that kind feeds it), capped at 32
+  metrics, giving O(1) access to a device's current battery/RSSI/firmware state
+  without scanning the metrics JSONL. Shown on the Device Dashboard status card.
+
+### Changed
+
+- **User menu gains a *Home* link** to the 4IoT entry page (the projects
+  overview), rendered at the top of the menu — before any
+  extension-registered items.
+
+- **niceview updated** 0.22.0 → 0.24.0. `DrillDownWrapper`'s `list_title=`
+  keyword was renamed to `title=` (hard cut, no alias); the Files card wrapper
+  (`app/core/file/browser_ui.py`) is updated accordingly. Also brings grid
+  choice-field rendering as inline selects and cleaner list subtitles.
+
 ## [0.30.0] - 2026-08-20
 
 ### Changed
