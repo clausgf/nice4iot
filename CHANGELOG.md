@@ -6,6 +6,17 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.30.2] - 2026-08-22
+
+### Changed
+
+- **niceview updated 0.24.0 → 0.26.2** and **nicepaper updated 0.16.0 → 0.18.1**
+  (git dependencies, no pinned nice4iot API changes). Upstream highlights:
+  additive `with_repositories` across niceview components, key-select
+  modelselect over collections, `JsonDirectoryAdapter`, `Meta.include`/`exclude`
+  for grid and list, nicepaper's simplified UI (rooms, booking systems,
+  displays) and device bindings, and mypy fixes in both projects.
+
 ## [0.30.1] - 2026-08-21
 
 ### Added

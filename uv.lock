@@ -896,7 +896,7 @@ wheels = [
 
 [[package]]
 name = "nice4iot"
-version = "0.30.1"
+version = "0.30.2"
 source = { editable = "." }
 dependencies = [
     { name = "aiomqtt" },
@@ -997,8 +997,8 @@ wheels = [
 
 [[package]]
 name = "nicepaper"
-version = "0.16.0"
-source = { git = "https://github.com/clausgf/nicepaper.git#950d1a352dbac1df63b2bd064b140475d12d34fe" }
+version = "0.18.1"
+source = { git = "https://github.com/clausgf/nicepaper.git#802eedcce21675cf2484607ca22e2a32f63ac237" }
 dependencies = [
     { name = "aiofiles" },
     { name = "aiohttp" },
@@ -1017,8 +1017,8 @@ dependencies = [
 
 [[package]]
 name = "niceview"
-version = "0.24.0"
-source = { git = "https://github.com/clausgf/niceview.git#e22bd9c9b6cea2707eda747ab73d5a2b7a623d33" }
+version = "0.26.2"
+source = { git = "https://github.com/clausgf/niceview.git#066a585ca3994ba1feb0c5995d1ecdb02256771d" }
 dependencies = [
     { name = "annotated-types" },
     { name = "nicegui" },
