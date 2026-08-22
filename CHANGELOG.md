@@ -6,6 +6,14 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.30.3] - 2026-08-22
+
+### Changed
+
+- **niceview updated 0.26.2 → 0.26.3.** Fixes `DrillDownWrapper` replaying its
+  slide-in animation on every data change instead of only on list<->detail
+  navigation.
+
 ## [0.30.2] - 2026-08-22
 
 ### Changed
