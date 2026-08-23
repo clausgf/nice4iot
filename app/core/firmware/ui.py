@@ -41,6 +41,7 @@ async def firmware_source_card(dir_path: Path, *, project_name: str, device_name
     async def _set_visibility() -> None:
         form.widgets['pinned_tag'].set_visibility(config.channel == 'pinned')
         form.widgets['auto_pull_interval'].set_visibility(config.auto_pull_enabled)
+        form.widgets['dest_filename'].set_visibility(not config.asset_is_wildcard)
 
     async def _on_change(_e) -> None:
         await _save()
@@ -55,6 +56,7 @@ async def firmware_source_card(dir_path: Path, *, project_name: str, device_name
     form.render()
     form.widgets['pinned_tag'].set_visibility(config.channel == 'pinned')
     form.widgets['auto_pull_interval'].set_visibility(config.auto_pull_enabled)
+    form.widgets['dest_filename'].set_visibility(not config.asset_is_wildcard)
 
     @ui.refreshable
     def github_path() -> None:

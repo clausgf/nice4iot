@@ -6,6 +6,25 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.30.5] - 2026-08-23
+
+### Added
+
+- **Firmware source `asset_name` now accepts `*`/`?` wildcards** to match a
+  release asset without hardcoding its version-specific name (e.g.
+  `firmware-*.bin`). A wildcard must match exactly one asset in the release —
+  no match, or more than one, fails the pull with a clear error. The matched
+  asset's own name is then used as the file written into the directory, and
+  the `dest_filename` field is hidden in the UI (and ignored by the backend)
+  while `asset_name` is a wildcard pattern.
+
+### Fixed
+
+- Pre-existing `mypy` error in `app/core/firmware/backend.py`'s auto-pull
+  loop (unrelated to the above): a default-arg lambda passed to
+  `anyio.to_thread.run_sync` that mypy couldn't infer the type of, replaced
+  with `functools.partial`.
+
 ## [0.30.4] - 2026-08-23
 
 ### Changed

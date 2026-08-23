@@ -63,6 +63,17 @@ def test_filename_validator_defaults_and_rejects():
         FirmwareSource(dest_filename='../evil')
 
 
+def test_asset_name_wildcard_accepted_dest_filename_still_strict():
+    src = FirmwareSource(asset_name='firmware-*.bin')
+    assert src.asset_name == 'firmware-*.bin'
+    assert src.asset_is_wildcard is True
+    assert FirmwareSource(asset_name='firmware.bin').asset_is_wildcard is False
+    with pytest.raises(ValidationError):
+        FirmwareSource(dest_filename='fw-*.bin')  # wildcards not allowed here
+    with pytest.raises(ValidationError):
+        FirmwareSource(asset_name='../evil-*.bin')
+
+
 def test_validate_repo_helper():
     assert _validate_repo(' owner/name ') == 'owner/name'
     with pytest.raises(FirmwareError):
@@ -91,6 +102,25 @@ def test_pick_asset_found_and_missing():
     assert _pick_asset(rel, 'firmware.bin')['name'] == 'firmware.bin'
     with pytest.raises(FirmwareError):
         _pick_asset(rel, 'other.bin')
+
+
+def test_pick_asset_wildcard_matches_single():
+    rel = {'tag_name': 'v1', 'assets': [{'name': 'firmware-v1.2.3.bin', 'url': 'u'},
+                                        {'name': 'firmware-v1.2.3.bin.sha256', 'url': 'u2'}]}
+    assert _pick_asset(rel, 'firmware-*.bin')['name'] == 'firmware-v1.2.3.bin'
+
+
+def test_pick_asset_wildcard_no_match():
+    rel = {'tag_name': 'v1', 'assets': [{'name': 'other.bin', 'url': 'u'}]}
+    with pytest.raises(FirmwareError):
+        _pick_asset(rel, 'firmware-*.bin')
+
+
+def test_pick_asset_wildcard_ambiguous():
+    rel = {'tag_name': 'v1', 'assets': [{'name': 'firmware-a.bin', 'url': 'u'},
+                                        {'name': 'firmware-b.bin', 'url': 'u2'}]}
+    with pytest.raises(FirmwareError):
+        _pick_asset(rel, 'firmware-*.bin')
 
 
 def test_should_pull_matrix():
@@ -188,3 +218,21 @@ def test_pull_not_modified_304(tmp_path, monkeypatch):
 def test_pull_requires_repo(tmp_path):
     with pytest.raises(FirmwareError):
         asyncio.run(backend.pull_firmware(tmp_path, FirmwareSource(repo=''), project_name='p'))
+
+
+def test_pull_wildcard_asset_writes_under_matched_name(tmp_path, monkeypatch):
+    data = b'FIRMWARE-CONTENT'
+    digest = 'sha256:' + hashlib.sha256(data).hexdigest()
+    release = {'tag_name': 'v1.2.3',
+               'assets': [{'name': 'firmware-v1.2.3.bin', 'url': 'https://api.github.com/x',
+                          'digest': digest}]}
+    _mock_github(monkeypatch, release, (data, digest))
+
+    src = FirmwareSource(repo='owner/name', asset_name='firmware-*.bin', dest_filename='ignored.bin')
+    result = asyncio.run(backend.pull_firmware(tmp_path, src, project_name='p'))
+
+    assert result.changed is True
+    assert (tmp_path / 'firmware-v1.2.3.bin').read_bytes() == data
+    assert not (tmp_path / 'ignored.bin').exists()
+    st = load_firmware_state(tmp_path)
+    assert st.asset == 'firmware-v1.2.3.bin'

@@ -3,16 +3,19 @@ Firmware pull from public GitHub Releases.
 
 Each directory (a project dir or a device dir) may carry a ``.firmware.json``
 (:class:`FirmwareSource`) pointing at a public GitHub repo. A pull resolves a
-release, downloads a named asset, verifies its digest, and writes it atomically
-into that directory as ``dest_filename`` — from where the normal file-serving
-path (device copy overriding project copy) delivers it to devices. State is
-recorded in ``.firmware.state.json``.
+release, downloads a named (or "*"/"?" glob-matched) asset, verifies its digest,
+and writes it atomically into that directory — as ``dest_filename``, or as the
+matched asset's own name when ``asset_name`` is a wildcard — from where the
+normal file-serving path (device copy overriding project copy) delivers it to
+devices. State is recorded in ``.firmware.state.json``.
 
 No credentials are ever sent to GitHub (public repos only), so nothing can leak
 across the redirect to the asset host. All network I/O is async (httpx); the
 disk write is off-loaded to a worker thread (anyio.to_thread).
 """
 import datetime
+import fnmatch
+import functools
 import hashlib
 import time
 from dataclasses import dataclass
@@ -23,9 +26,9 @@ import anyio
 import httpx
 from niceview.dataadapter import JsonAdapter, lenient_model_load
 
-from app.core.firmware.models import REPO_RE, FirmwareSource, FirmwareState
+from app.core.firmware.models import REPO_RE, FirmwareSource, FirmwareState, is_wildcard_asset_name
 from app.paths import device_dir, project_dir
-from app.util import atomic_write, logger
+from app.util import atomic_write, is_valid_upload_filename, logger
 
 FIRMWARE_CONFIG_FILE = '.firmware.json'
 FIRMWARE_STATE_FILE = '.firmware.state.json'
@@ -189,7 +192,18 @@ async def _resolve_release_json(client: httpx.AsyncClient, src: FirmwareSource,
 
 
 def _pick_asset(release_json: dict, asset_name: str) -> dict:
-    for asset in release_json.get('assets', []):
+    assets = release_json.get('assets', [])
+    if is_wildcard_asset_name(asset_name):
+        matches = [a for a in assets if fnmatch.fnmatchcase(a.get('name', ''), asset_name)]
+        if not matches:
+            raise FirmwareError(f'no asset matches {asset_name!r} in release '
+                                f'{release_json.get("tag_name")!r}')
+        if len(matches) > 1:
+            names = ', '.join(sorted(a.get('name', '') for a in matches))
+            raise FirmwareError(f'asset pattern {asset_name!r} is ambiguous in release '
+                                f'{release_json.get("tag_name")!r}: matches {names}')
+        return matches[0]
+    for asset in assets:
         if asset.get('name') == asset_name:
             return asset
     raise FirmwareError(f'asset {asset_name!r} not found in release '
@@ -198,9 +212,12 @@ def _pick_asset(release_json: dict, asset_name: str) -> dict:
 
 def _resolved_from(release_json: dict, src: FirmwareSource) -> ResolvedAsset:
     asset = _pick_asset(release_json, src.asset_name)
+    name = asset.get('name') or src.asset_name
+    if not is_valid_upload_filename(name):
+        raise FirmwareError(f'asset name {name!r} is not a safe filename')
     return ResolvedAsset(
         tag=release_json.get('tag_name', ''),
-        asset_name=src.asset_name,
+        asset_name=name,
         download_url=asset['url'],
         digest=(asset.get('digest') or ''),
     )
@@ -298,7 +315,8 @@ async def _pull_firmware(dir_path: Path, src: FirmwareSource, *, project_name: s
     if resolved.digest and resolved.digest.lower() != actual_digest.lower():
         raise FirmwareError('asset digest mismatch — nothing written')
 
-    dest = dir_path / src.dest_filename
+    dest_name = resolved.asset_name if src.asset_is_wildcard else src.dest_filename
+    dest = dir_path / dest_name
     await anyio.to_thread.run_sync(lambda: atomic_write(dest, data))
 
     new_state = FirmwareState(
@@ -345,7 +363,7 @@ async def auto_pull_tick() -> None:
     whose interval has elapsed. Uses conditional (ETag) requests to stay cheap."""
     targets = await anyio.to_thread.run_sync(_auto_pull_targets)
     for dir_path, project_name, device_name in targets:
-        src = await anyio.to_thread.run_sync(lambda dp=dir_path: load_firmware_source(dp))
+        src = await anyio.to_thread.run_sync(functools.partial(load_firmware_source, dir_path))
         if not src.auto_pull_enabled or not src.repo.strip():
             continue
         interval_s = max(_MIN_INTERVAL, src.auto_pull_interval).total_seconds()
