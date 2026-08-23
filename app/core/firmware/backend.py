@@ -3,11 +3,14 @@ Firmware pull from public GitHub Releases.
 
 Each directory (a project dir or a device dir) may carry a ``.firmware.json``
 (:class:`FirmwareSource`) pointing at a public GitHub repo. A pull resolves a
-release, downloads a named (or "*"/"?" glob-matched) asset, verifies its digest,
-and writes it atomically into that directory — as ``dest_filename``, or as the
-matched asset's own name when ``asset_name`` is a wildcard — from where the
-normal file-serving path (device copy overriding project copy) delivers it to
-devices. State is recorded in ``.firmware.state.json``.
+release and downloads every asset ``asset_name`` matches — a plain name matches
+at most one; a "*"/"?" wildcard may match any number, e.g. a release that ships
+several board-specific files under one pattern. Each is verified against its
+digest and written atomically into that directory — as ``dest_filename`` for a
+single non-wildcard match, or under its own GitHub name when ``asset_name`` is
+a wildcard (there is no single rename target for more than one file) — from
+where the normal file-serving path (device copy overriding project copy)
+delivers it to devices. State is recorded in ``.firmware.state.json``.
 
 No credentials are ever sent to GitHub (public repos only), so nothing can leak
 across the redirect to the asset host. All network I/O is async (httpx); the
@@ -191,36 +194,37 @@ async def _resolve_release_json(client: httpx.AsyncClient, src: FirmwareSource,
     return data, new_etag
 
 
-def _pick_asset(release_json: dict, asset_name: str) -> dict:
+def _pick_assets(release_json: dict, asset_name: str) -> list[dict]:
+    """Every release asset matching `asset_name`. A wildcard may match any
+    number (>= 1) — e.g. a release shipping several board-specific files
+    under one pattern like "firmware-*.bin" — an exact name matches at most
+    one."""
     assets = release_json.get('assets', [])
     if is_wildcard_asset_name(asset_name):
         matches = [a for a in assets if fnmatch.fnmatchcase(a.get('name', ''), asset_name)]
-        if not matches:
-            raise FirmwareError(f'no asset matches {asset_name!r} in release '
-                                f'{release_json.get("tag_name")!r}')
-        if len(matches) > 1:
-            names = ', '.join(sorted(a.get('name', '') for a in matches))
-            raise FirmwareError(f'asset pattern {asset_name!r} is ambiguous in release '
-                                f'{release_json.get("tag_name")!r}: matches {names}')
-        return matches[0]
-    for asset in assets:
-        if asset.get('name') == asset_name:
-            return asset
-    raise FirmwareError(f'asset {asset_name!r} not found in release '
-                        f'{release_json.get("tag_name")!r}')
+    else:
+        matches = [a for a in assets if a.get('name') == asset_name]
+    if not matches:
+        raise FirmwareError(f'no asset matches {asset_name!r} in release '
+                            f'{release_json.get("tag_name")!r}')
+    return matches
 
 
-def _resolved_from(release_json: dict, src: FirmwareSource) -> ResolvedAsset:
-    asset = _pick_asset(release_json, src.asset_name)
-    name = asset.get('name') or src.asset_name
-    if not is_valid_upload_filename(name):
-        raise FirmwareError(f'asset name {name!r} is not a safe filename')
-    return ResolvedAsset(
-        tag=release_json.get('tag_name', ''),
-        asset_name=name,
-        download_url=asset['url'],
-        digest=(asset.get('digest') or ''),
-    )
+def _resolved_from(release_json: dict, src: FirmwareSource) -> list[ResolvedAsset]:
+    """Resolve every asset `src.asset_name` matches, in this release. Each
+    keeps its own GitHub asset name — `_pull_firmware` only renames to
+    `dest_filename` for the single, non-wildcard case."""
+    tag = release_json.get('tag_name', '')
+    resolved = []
+    for asset in _pick_assets(release_json, src.asset_name):
+        name = asset.get('name') or src.asset_name
+        if not is_valid_upload_filename(name):
+            raise FirmwareError(f'asset name {name!r} is not a safe filename')
+        resolved.append(ResolvedAsset(
+            tag=tag, asset_name=name,
+            download_url=asset['url'], digest=(asset.get('digest') or ''),
+        ))
+    return resolved
 
 
 async def _download_asset(client: httpx.AsyncClient, download_url: str,
@@ -243,14 +247,20 @@ async def _download_asset(client: httpx.AsyncClient, download_url: str,
     return bytes(buf), 'sha256:' + digest.hexdigest()
 
 
+def _combined_digest(resolved: list[ResolvedAsset]) -> str:
+    """A single comparable digest for one or more resolved assets — sorted
+    'name:digest' pairs, so reordering the same set never looks like a change."""
+    return '|'.join(f'{r.asset_name}:{r.digest}' for r in sorted(resolved, key=lambda r: r.asset_name))
+
+
 def _should_pull(src: FirmwareSource, state: FirmwareState | None,
-                 resolved: ResolvedAsset) -> bool:
+                 resolved: list[ResolvedAsset]) -> bool:
     if state is None or not state.tag:
         return True
     if src.channel == 'pinned':
         # A pinned tag is stable; re-pull only if the asset bytes changed.
-        return resolved.digest != state.digest or resolved.tag != state.tag
-    return resolved.tag != state.tag
+        return _combined_digest(resolved) != state.digest or resolved[0].tag != state.tag
+    return resolved[0].tag != state.tag
 
 
 # ---------------------------------------------------------------------------
@@ -303,37 +313,47 @@ async def _pull_firmware(dir_path: Path, src: FirmwareSource, *, project_name: s
             return PullResult(False, state.tag if state else '', 'up to date (not modified)')
 
         resolved = _resolved_from(release_json, src)
+        tag = resolved[0].tag
         if not force and not _should_pull(src, state, resolved):
             # Refresh the stored ETag so the next conditional poll stays cheap.
             if state and new_etag and new_etag != state.etag:
                 state.etag = new_etag
                 await anyio.to_thread.run_sync(lambda: save_firmware_state(dir_path, state))
-            return PullResult(False, resolved.tag, f'already at {resolved.tag}')
+            return PullResult(False, tag, f'already at {tag}')
 
-        data, actual_digest = await _download_asset(client, resolved.download_url, _MAX_FIRMWARE_SIZE)
+        downloaded = []  # (ResolvedAsset, data, actual_digest)
+        for asset in resolved:
+            data, actual_digest = await _download_asset(client, asset.download_url, _MAX_FIRMWARE_SIZE)
+            if asset.digest and asset.digest.lower() != actual_digest.lower():
+                raise FirmwareError(f'asset digest mismatch for {asset.asset_name!r} — nothing written')
+            downloaded.append((asset, data, actual_digest))
 
-    if resolved.digest and resolved.digest.lower() != actual_digest.lower():
-        raise FirmwareError('asset digest mismatch — nothing written')
-
-    dest_name = resolved.asset_name if src.asset_is_wildcard else src.dest_filename
-    dest = dir_path / dest_name
-    await anyio.to_thread.run_sync(lambda: atomic_write(dest, data))
+    # Single, non-wildcard match renames to dest_filename, same as before; a
+    # wildcard (whether it matched one asset or several) keeps each asset's
+    # own GitHub name — there is no single dest_filename to rename them to.
+    written_names = []
+    for asset, data, _digest in downloaded:
+        dest_name = asset.asset_name if src.asset_is_wildcard else src.dest_filename
+        dest = dir_path / dest_name
+        await anyio.to_thread.run_sync(functools.partial(atomic_write, dest, data))
+        written_names.append(dest_name)
 
     new_state = FirmwareState(
-        tag=resolved.tag, asset=resolved.asset_name,
-        digest=(resolved.digest or actual_digest), pulled_at=_now(), etag=new_etag,
+        tag=tag, asset=written_names[0], assets=written_names,
+        digest=_combined_digest(resolved), pulled_at=_now(), etag=new_etag,
     )
     await anyio.to_thread.run_sync(lambda: save_firmware_state(dir_path, new_state))
 
     if src.mqtt_publish_on_pull and device_name:
         from app.core.file.backend import publish_file_now
-        try:
-            await publish_file_now(project_name, device_name, dest)
-        except Exception as e:
-            logger.error(f'firmware: MQTT publish after pull failed for '
-                         f'{project_name}/{device_name}/{dest.name}: {e}')
+        for dest_name in written_names:
+            try:
+                await publish_file_now(project_name, device_name, dir_path / dest_name)
+            except Exception as e:
+                logger.error(f'firmware: MQTT publish after pull failed for '
+                             f'{project_name}/{device_name}/{dest_name}: {e}')
 
-    return PullResult(True, resolved.tag, f'pulled {resolved.tag}')
+    return PullResult(True, tag, f'pulled {tag} ({", ".join(written_names)})')
 
 
 # ---------------------------------------------------------------------------

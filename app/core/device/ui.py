@@ -215,7 +215,8 @@ async def device_general_panel(project_name: str, device_name: str) -> None:
         with config_expansion('Authentication Tokens'):
             _device_tokens_card(project_name, device_name)
         with config_expansion('Seed'):
-            await device_seed_override_card(device_dir(project_name, device_name))
+            await device_seed_override_card(device_dir(project_name, device_name),
+                                            project_name=project_name, device_name=device_name)
         for title, render_fn in await anyio.to_thread.run_sync(lambda: get_device_general_cards(project_name)):
             # Match the device page's built-in expansions (subtitle1), not the
             # config_expansion default (h6, used on the project page).
@@ -316,6 +317,29 @@ async def _delete_device(project_name: str, device_name: str) -> None:
         ui.notify(f"Delete failed: {e}", type='negative')
 
 
+async def prompt_create_device(project_name: str) -> str | None:
+    """Prompt for a device name and create the device record. Returns the new
+    device's name, or None if cancelled or creation failed. Shared by the
+    plain "New Device" action and the Web-Serial-Flash / AP+QR shortcuts,
+    which all start from the same device record (see docs/concepts.md)."""
+    name = await input_dialog(
+        'Create Device',
+        label='Device Name',
+        placeholder='enter a device name here',
+        validator=is_valid_name,
+        error_message='Invalid name: letters, digits, underscore only; must not start with a digit.',
+    )
+    if name is None:
+        return None
+    try:
+        device = create_device(Device(name=name, project_name=project_name))
+        ui.notify(f"Created device {device.name}", type='positive')
+        return device.name
+    except Exception as e:
+        ui.notify(f"Error creating device {name}: {e}", type='negative')
+        return None
+
+
 # ***************************************************************************
 # Project Devices Table (used in project Devices tab)
 # ***************************************************************************
@@ -364,21 +388,9 @@ class ProjectDevicesTable:
                     ui.icon('search')
 
                 async def _new_device():
-                    name = await input_dialog(
-                        'Create Device',
-                        label='Device Name',
-                        placeholder='enter a device name here',
-                        validator=is_valid_name,
-                        error_message='Invalid name: letters, digits, underscore only; must not start with a digit.',
-                    )
-                    if name is None:
-                        return
-                    try:
-                        device = create_device(Device(name=name, project_name=project_name))
-                        ui.notify(f"Created device {device.name}", type='positive')
+                    name = await prompt_create_device(project_name)
+                    if name is not None:
                         ui.navigate.to(device_url(project_name, name, tab='General'))
-                    except Exception as e:
-                        ui.notify(f"Error creating device {name}: {e}", type='negative')
 
                 ui.button(icon='add') \
                     .tooltip('Create Device') \

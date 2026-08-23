@@ -6,6 +6,54 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-08-23
+
+### Added
+
+- **Two new ways to seed a device, alongside the existing "New Device"
+  record-only flow** — all three start from the same device record. On the
+  project's Devices tab: "Flash Device" and "AP + Form Setup" buttons above
+  the table prompt for a device name, create it, then open the matching
+  dialog. On an existing device's own Seed card: the same two actions,
+  targeting that device.
+  - **Web-Serial-Flash** (`app.core.seed.action_dialogs.web_serial_flash_dialog`):
+    flashes esp32paper's pre-merged full-flash image for the chosen board
+    (`merged-<board>.bin`: bootloader + partition table + boot_app0 + app,
+    already merged by esp32paper's own CI at the real offsets its build
+    used — works on a blank board) plus a freshly generated NVS seed image,
+    over a USB-serial connection from the browser — via a vendored
+    [ESP Web Tools](https://github.com/esphome/esp-web-tools)
+    `<esp-web-install-button>` (`app/static/esp-web-tools/`, no CDN). The NVS
+    offset/size are parsed from that same build's own published
+    `partitions-<board>.csv` (new `app.core.seed.partition_table`), not
+    hardcoded — `app.core.seed.boards`' board registry only holds each
+    board's chip family and release-asset naming convention now, on purpose.
+    New `app.core.seed.nvs` (NVS partition image generation, shelling out to
+    the new `esp-idf-nvs-partition-gen` dependency rather than reimplementing
+    ESP-IDF's binary format) and `app.core.seed.manifest` (the ESP Web Tools
+    manifest, with both parts embedded as `data:` URIs — no new authenticated
+    file-serving endpoint needed).
+  - **AP + Form Setup** (`app.core.seed.action_dialogs.ap_qr_dialog`): shows
+    a printable QR code (new `qrcode` dependency) and deep-link URL for
+    arduino4iot's own SoftAP + captive-portal setup form — that form runs
+    entirely on the device; nice4iot only displays the code.
+  - Both resolve the device's *effective* seed — project Seed settings with
+    that device's WiFi override applied — against an operator-picked
+    provisioning token: new `app.core.seed.backend.get_effective_seed`.
+  - `app.core.device.ui.prompt_create_device` factored out of the existing
+    "New Device" flow so all three entry points share it.
+- **Firmware source `asset_name` wildcard now downloads every matching
+  release asset, not just one.** A wildcard previously required an
+  unambiguous single match, erroring otherwise; it now pulls all of them,
+  each written under its own GitHub asset name (there's no single rename
+  target for more than one file — `dest_filename` still applies only to a
+  plain, non-wildcard match). This is what a project needs to mirror a
+  release shipping several board-specific files side by side, e.g. for
+  Web-Serial-Flash above. `FirmwareState` gained `assets: list[str]`
+  (`asset` keeps the first/primary name for simple display); the up-to-date
+  check is tag-based across the whole match set (still digest-based for the
+  `pinned` channel, now over a combined digest of every matched asset).
+
 ## [0.30.6] - 2026-08-23
 
 ### Added

@@ -54,8 +54,9 @@ class FirmwareSource(BaseModel):
     asset_name: Annotated[str,
             Field(title='Asset name',
                   description='Name of the release asset to download. May contain "*"/"?" '
-                              'wildcards to match a version-specific name (e.g. "firmware-*.bin"); '
-                              'the matched asset name is then also used as the destination filename.'),
+                              'wildcards, e.g. "firmware-*.bin" or "*.bin" to pull every matching '
+                              'asset in the release (each written under its own name) — handy for a '
+                              'release that ships several board-specific files side by side.'),
             niceview.Field()
         ] = 'firmware.bin'
 
@@ -138,7 +139,10 @@ class FirmwareState(BaseModel):
     """
 
     tag: str = ''
-    asset: str = ''
-    digest: str = ''          # 'sha256:...' of the pulled asset
+    asset: str = ''           # first/primary pulled asset name — kept for simple display
+    assets: list[str] = []    # every asset name written by this pull (one entry unless
+                              # asset_name is a wildcard matching more than one release asset)
+    digest: str = ''          # 'sha256:...' of the pulled asset, or of all of them combined
+                              # (name:digest pairs, '|'-joined, sorted by name) when there's more than one
     pulled_at: datetime.datetime | None = None
     etag: str = ''            # ETag of the release API response, for conditional polling

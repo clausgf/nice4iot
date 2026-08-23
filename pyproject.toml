@@ -7,7 +7,7 @@ packages = ["app"]
 
 [project]
 name = "nice4iot"
-version = "0.30.6"
+version = "0.31.0"
 description = "IoT management platform built with NiceGUI and FastAPI"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -42,6 +42,10 @@ dependencies = [
     "niceview",
     "aiomqtt>=2.5.1",
     "bcrypt>=5.0.0",
+    # NVS partition image generation for Web-Serial-Flash seeding (app.core.seed.nvs) —
+    # shells out to its CLI rather than reimplementing ESP-IDF's NVS binary format.
+    "esp-idf-nvs-partition-gen>=0.3.0",
+    "qrcode[pil]>=8.0",
 ]
 
 [project.urls]

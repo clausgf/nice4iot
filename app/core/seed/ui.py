@@ -10,6 +10,7 @@ from pathlib import Path
 from nicegui import ui
 from niceview import ConflictError, ModelForm, StorageError
 
+from app.core.seed.action_dialogs import ap_qr_dialog, web_serial_flash_dialog
 from app.core.seed.backend import get_device_seed_override_adapter, get_seed_adapter
 from app.core.seed.models import DeviceSeedOverride, SeedSettings
 
@@ -43,9 +44,11 @@ async def seed_settings_card(dir_path: Path) -> None:
     form.widgets['ca_cert'].set_visibility(config.tls_mode == 'custom')
 
 
-async def device_seed_override_card(dir_path: Path) -> None:
+async def device_seed_override_card(dir_path: Path, *, project_name: str, device_name: str) -> None:
     """Device-level Seed override form: this device's own WiFi credentials,
-    shown and editable only while "Override project settings" is on."""
+    shown and editable only while "Override project settings" is on. Also
+    offers the two device-seeding actions (Web-Serial-Flash, AP + Form Setup)
+    for this already-existing device — see app.core.seed.action_dialogs."""
     adapter = get_device_seed_override_adapter(dir_path)
     config = adapter.read()
 
@@ -72,3 +75,9 @@ async def device_seed_override_card(dir_path: Path) -> None:
                                default_classes='w-full', profile='settings')
     form.render()
     await _set_visibility()
+
+    with ui.row().classes('gap-2 q-mt-sm'):
+        ui.button('Flash Device', icon='usb',
+                  on_click=lambda: web_serial_flash_dialog(project_name, device_name).open()).props('outline')
+        ui.button('AP + Form Setup', icon='qr_code',
+                  on_click=lambda: ap_qr_dialog(project_name, device_name).open()).props('outline')

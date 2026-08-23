@@ -7,12 +7,13 @@ from app.config import app_config
 from app.core.token.backend import get_provisioning_token_adapter
 from app.core.token.ui import TokenListCard
 from app.core.device.backend import get_devices, is_device_online
-from app.core.device.ui import ProjectDevicesTable
+from app.core.device.ui import ProjectDevicesTable, prompt_create_device
 from app.core.logging.ui import LoggingCard
 from app.core.telemetry.ui import TelemetryCard
 from app.core.forwarding.ui import ForwardingCard
 from app.core.file.browser_ui import project_files_panel
 from app.core.firmware.ui import firmware_source_card
+from app.core.seed.action_dialogs import ap_qr_dialog, web_serial_flash_dialog
 from app.core.seed.ui import seed_settings_card
 from app.paths import project_dir
 from app.core.file.ui import file_config_card
@@ -383,9 +384,34 @@ async def project_devices_panel(project_id: str):
                 Each device has its own directory and can be provisioned with a
                 short-lived bearer token.
 
-                Double-click a device to edit its settings. Use the "New" button to create a new device.
+                Double-click a device to edit its settings. Use the "New" button
+                to add a device record only (it gets seeded some other way).
+                "Flash Device" and "AP + Form Setup" below create a device record
+                *and* immediately seed it — via a USB-serial flash, or a
+                printable QR code for the device's own setup portal.
                 """).classes('text-caption q-ma-none')
-        ProjectDevicesTable(project_id)
+
+        @ui.refreshable
+        def devices_table() -> None:
+            ProjectDevicesTable(project_id)
+
+        async def _flash_new_device() -> None:
+            name = await prompt_create_device(project_id)
+            devices_table.refresh()
+            if name is not None:
+                web_serial_flash_dialog(project_id, name).open()
+
+        async def _ap_qr_new_device() -> None:
+            name = await prompt_create_device(project_id)
+            devices_table.refresh()
+            if name is not None:
+                ap_qr_dialog(project_id, name).open()
+
+        with ui.row().classes('gap-2 q-mb-sm'):
+            ui.button('Flash Device', icon='usb', on_click=_flash_new_device).props('outline')
+            ui.button('AP + Form Setup', icon='qr_code', on_click=_ap_qr_new_device).props('outline')
+
+        devices_table()
 
 
 # ***************************************************************************

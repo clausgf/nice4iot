@@ -64,6 +64,40 @@ On each successful provisioning the device also records **which provisioning tok
 
 A device's `.seed_override.json` optionally replaces just the WiFi SSID/password for that one device (`override_enabled`); the API URL and TLS settings always come from the project, since they don't vary per device.
 
+### Getting the seed onto a device
+
+The project Devices tab (and each device's own Seed card) offer three ways to
+get a device from "just created" to "actually seeded", all starting from the
+same device record (`app.core.device.ui.prompt_create_device`) — the operator
+picks a name, the device authenticates as itself once it reports one (see
+"Device Lifecycle" below):
+
+1. **New** — just the device record; seeded some other way (build-time `-D`
+   defines, a manual `nvs_partition_gen.py` run, ...). Unchanged status quo.
+2. **Flash Device** (`app.core.seed.action_dialogs.web_serial_flash_dialog`) —
+   flashes esp32paper's pre-merged full-flash image for the chosen board
+   (`merged-<board>.bin`: bootloader + partition table + boot_app0 + app,
+   merged by esp32paper's own CI at the real offsets its build used) plus a
+   freshly generated NVS image (`app.core.seed.nvs`, shelling out to
+   `esp-idf-nvs-partition-gen` rather than reimplementing ESP-IDF's NVS
+   binary format), over Web Serial via a vendored
+   [ESP Web Tools](https://github.com/esphome/esp-web-tools)
+   `<esp-web-install-button>` (`app/static/esp-web-tools/`). Works on a blank
+   board — no prior flash needed. The NVS offset/size are parsed
+   (`app.core.seed.partition_table.find_partition`) from that same build's
+   published `partitions-<board>.csv`, never hardcoded — `app.core.seed.boards`
+   only holds each board's chip family and its release-asset naming, on
+   purpose (see that module's docstring for why offsets used to live there
+   and don't anymore).
+3. **AP + Form Setup** (`app.core.seed.action_dialogs.ap_qr_dialog`) — shows
+   the explanation, a QR code, and the setup URL for arduino4iot's own
+   SoftAP + captive-portal form (see "First-time provisioning" below); the
+   form itself runs entirely on the device. Printable.
+
+Both 2 and 3 resolve the device's *effective* seed — the project's Seed
+settings with that device's WiFi override applied — against an
+operator-picked provisioning token (`app.core.seed.backend.get_effective_seed`).
+
 ## Device Lifecycle
 
 ```
@@ -123,9 +157,9 @@ Not supported: nested objects · arrays of non-strings · `$ref` · `pattern` ·
 
 ## Firmware Distribution
 
-Firmware reaches a device in two independent halves. The **device** side never changed: it fetches `firmware.bin` through `GET /api/file/{project}/{device}/firmware.bin` with the ordinary device→project fallback and ETag caching. The **admin** side is the act of getting that file into the store — either uploaded by hand, or pulled from a public GitHub release.
+Firmware reaches a device in two independent halves. The **device** side fetches its own file through `GET /api/file/{project}/{device}/{filename}` with the ordinary device→project fallback and ETag caching — `firmware.bin` by default, or (arduino4iot >= v3.5.0) `firmware-{board}.bin` with `{board}` substituted from that device's own `IOT_BOARD_ID` build define, letting several hardware variants share one project. The **admin** side is the act of getting those files into the store — either uploaded by hand, or pulled from a public GitHub release.
 
-A `.firmware.json` sidecar configures a source per project and, optionally, per device. Each one is independent and pulls into **its own directory**: the project source writes the project's `firmware.bin`, a device source that device's. Inheritance is not a configuration concern — it happens at serve time through the file fallback, so a device needs its own source only when it should track a *different* release than the project.
+A `.firmware.json` sidecar configures a source per project and, optionally, per device. Each one is independent and pulls into **its own directory**: the project source writes into the project directory, a device source into that device's. Inheritance is not a configuration concern — it happens at serve time through the file fallback, so a device needs its own source only when it should track a *different* release than the project. `asset_name` accepts a `*`/`?` wildcard, in which case *every* matching release asset is downloaded (each under its own name — there is no single rename target for more than one file) rather than requiring exactly one match; this is what lets a project mirror a release that ships several board-specific files (`firmware-<board>.bin`, and for Web-Serial-Flash also `merged-<board>.bin` / `partitions-<board>.csv` — see "Seed Data" above) side by side with one source.
 
 Which release is chosen depends on `channel`:
 

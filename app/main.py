@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
-from nicegui import ui
+from nicegui import app as nicegui_app, ui
 import niceview
 
 from app.config import app_config
@@ -191,6 +191,11 @@ niceview.set_chrome_style(button_group=False)
 niceview.set_chrome_style(form_row_classes='w-full items-center gap-2')
 niceview.set_field_style(default_classes='w-full')
 niceview.set_field_style(input_props='dense outlined hide-bottom-space')
+
+# Vendored esp-web-tools JS for the Web-Serial-Flash dialog (app.core.seed.action_dialogs)
+# — see app/static/esp-web-tools/README.md. Non-security-critical, served unauthenticated.
+nicegui_app.add_static_files('/static/esp-web-tools', 'app/static/esp-web-tools')
+
 ui.run_with(app, title="nice4iot", storage_secret=app_config.nicegui_storage_secret)
 
 
