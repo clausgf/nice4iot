@@ -20,11 +20,13 @@ data/projects/
     ├── .forwards.json          # Named HTTP forwarding rules
     ├── .firmware.json          # Firmware source (GitHub repo) for project-wide firmware.bin
     ├── .firmware.state.json    # Last firmware pull: tag, digest, pulled_at, etag
+    ├── .seed.json              # Seed data for a fresh device: WiFi, API URL, TLS trust
     ├── <shared_file>           # Project-wide fallback files served to devices
     └── <device_name>/
         ├── .device.json        # Device settings (autosave, optimistic-locked)
         ├── .firmware.json          # Optional per-device firmware source (overrides project)
         ├── .firmware.state.json    # Last firmware pull for this device
+        ├── .seed_override.json # Optional per-device WiFi override of the project's Seed settings
         ├── .runtime.json       # device-reported runtime state: last_seen_at (written on
         │                       # every API auth) + firmware_version/commit (reported via
         │                       # X-Firmware-* headers) + system_metrics/system_labels/
@@ -55,6 +57,12 @@ On provisioning, the platform can optionally auto-create the device record (`is_
 Each device may hold at most **32 active tokens** simultaneously. When the cap is reached, the token with the oldest `last_use_at` is evicted before the new one is stored.
 
 On each successful provisioning the device also records **which provisioning token it used**: a short, non-reversible fingerprint of the token (`last_provisioning_token_fingerprint`) plus the token's expiry (`last_provisioning_token_expires_at`). The shared secret itself is never copied onto the device. Because the expiry travels with the device record, *"which devices are affected by a token expiring soon"* is answerable by filtering devices directly — even after the token is removed from `.provisioning.json`. Each `AuthToken` carries the same derived `fingerprint` (recomputed from its value on every change), so a device's recorded fingerprint can be matched back to a concrete provisioning token.
+
+## Seed Data
+
+`.seed.json` holds the bootstrap data an arduino4iot device needs before it can call `POST /api/provision` and that nice4iot has no other source for: WiFi SSID/password, the server's public API URL, and — for a self-hosted/self-signed TLS setup — the CA certificate to trust. Combined with the project name and a provisioning token (above), this is what gets flashed or copied onto a fresh device. nice4iot cannot infer the API URL itself: it has no `base_url` setting and normally sits behind a reverse proxy that terminates TLS in front of it.
+
+A device's `.seed_override.json` optionally replaces just the WiFi SSID/password for that one device (`override_enabled`); the API URL and TLS settings always come from the project, since they don't vary per device.
 
 ## Device Lifecycle
 

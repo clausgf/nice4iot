@@ -13,6 +13,7 @@ from app.core.telemetry.ui import TelemetryCard
 from app.core.forwarding.ui import ForwardingCard
 from app.core.file.browser_ui import project_files_panel
 from app.core.firmware.ui import firmware_source_card
+from app.core.seed.ui import seed_settings_card
 from app.paths import project_dir
 from app.core.file.ui import file_config_card
 from app.routes import device_url, project_url, projects_url
@@ -209,6 +210,8 @@ async def project_general_panel(project_id: str):
             await project_card(project_id)
         with config_expansion('Provisioning'):
             await ProvisioningCard(project_id)
+        with config_expansion('Seed'):
+            await seed_settings_card(project_dir(project_id))
         with config_expansion('Forwarding'):
             ForwardingCard(project_id)
         with config_expansion('Telemetry'):

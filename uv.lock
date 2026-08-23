@@ -1128,7 +1128,7 @@ wheels = [
 
 [[package]]
 name = "nice4iot"
-version = "0.30.3"
+version = "0.30.6"
 source = { editable = "." }
 dependencies = [
     { name = "aiomqtt" },

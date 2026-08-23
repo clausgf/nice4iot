@@ -15,8 +15,10 @@ from app.core.file.browser_ui import device_files_panel
 from app.core.device.data_ui import device_data_panel
 from app.core.device.logs_ui import device_logs_panel
 from app.core.project.backend import get_project
+from app.core.seed.ui import device_seed_override_card
 from app.core.token.backend import get_device_token_adapter
 from app.core.token.ui import TokenListCard
+from app.paths import device_dir
 from app.util import is_valid_name, render_datetime, render_datetime_age
 from niceview import ModelForm
 from niceview.util import confirm_dialog, input_dialog
@@ -212,6 +214,8 @@ async def device_general_panel(project_name: str, device_name: str) -> None:
             _device_general_card(project_name, device_name)
         with config_expansion('Authentication Tokens'):
             _device_tokens_card(project_name, device_name)
+        with config_expansion('Seed'):
+            await device_seed_override_card(device_dir(project_name, device_name))
         for title, render_fn in await anyio.to_thread.run_sync(lambda: get_device_general_cards(project_name)):
             # Match the device page's built-in expansions (subtitle1), not the
             # config_expansion default (h6, used on the project page).

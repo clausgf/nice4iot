@@ -6,6 +6,25 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.30.6] - 2026-08-23
+
+### Added
+
+- **New "Seed" project settings section** (`app/core/seed`): the bootstrap
+  data an arduino4iot device needs before it can call `/provision` and that
+  nice4iot doesn't otherwise track — WiFi SSID/password, the server's public
+  API URL (nice4iot has no `base_url` config and normally sits behind a
+  reverse proxy, so this can't be derived automatically), and a TLS mode
+  ("Public CA" / "Self-hosted / self-signed") that reveals a CA certificate
+  field only when self-hosted/self-signed is selected. Combine with the
+  project name and a provisioning token (existing Provisioning section) to
+  seed a device. Stored as `.seed.json` in the project directory.
+- **New "Seed" device settings section** with an "Override project settings"
+  switch: off by default (WiFi SSID/password fields hidden), on reveals and
+  enables the device's own WiFi SSID/password, overriding the project's Seed
+  settings for that one device. Stored as `.seed_override.json` in the device
+  directory. API URL/TLS stay project-only — they don't vary per device.
+
 ## [0.30.5] - 2026-08-23
 
 ### Added
