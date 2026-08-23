@@ -6,6 +6,24 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.30.4] - 2026-08-23
+
+### Changed
+
+- **nicepaper updated 0.18.1 → 0.19.0** (git dependency, no pinned nice4iot
+  API changes). Upstream highlights: room-driven `RoomCalendar` widget
+  (renders whichever room the requesting device is bound to, with
+  category→color mapping and auto-generated per-panel-type templates), a
+  Room Occupancy tab in the simplified UI, a device panel-type field to
+  filter Screen choices, and a booking system header/category-color list
+  editor. Two model changes migrate existing stored data automatically:
+  `BookingSystemModel.header` (JSON string → dict) and
+  `RoomCalendarWidgetModel` (dropped `room_number`/`room_name`/`ical_url`,
+  now resolved from the rendering device's room binding).
+- **`mypy` added to the `dev` dependency group** so `mypy extensions` (per
+  `CLAUDE.md`) is actually runnable; it currently has nothing to check since
+  `extensions/` stays an empty namespace package by design.
+
 ## [0.30.3] - 2026-08-22
 
 ### Changed

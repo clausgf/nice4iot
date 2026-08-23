@@ -7,7 +7,7 @@ packages = ["app"]
 
 [project]
 name = "nice4iot"
-version = "0.30.3"
+version = "0.30.4"
 description = "IoT management platform built with NiceGUI and FastAPI"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -67,6 +67,7 @@ dev = [
     # warns (StarletteDeprecationWarning) when only the 1.x httpx is installed.
     # The app itself still uses httpx — see [project] dependencies.
     "httpx2>=2.5.0",
+    "mypy>=1.14",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
     "ruff>=0.6",
