@@ -22,11 +22,11 @@ from app.core.telemetry.backend import (
     latest_labels,
     normalize_metrics,
     observed_metrics,
-    read_data_view,
+    read_data_views,
     read_local_metrics,
     read_series,
     sanitize_metric_name,
-    save_data_view,
+    save_data_views,
     split_metrics,
     write_telemetry,
 )
@@ -491,15 +491,20 @@ def test_label_history_records_only_changes(proj_dev):
 
 def test_data_view_roundtrip_and_default(proj_dev):
     p, d = proj_dev
-    assert read_data_view(p, d) is None
-    view = DataView(window="Last 6 h",
-                    traces=[DataTrace(color="Red", kind="system", metric="battery_V")])
-    save_data_view(p, d, view)
-    got = read_data_view(p, d)
-    assert got.window == "Last 6 h"
-    assert got.traces[0].color == "Red"
-    assert got.traces[0].kind == "system"
-    assert got.traces[0].metric == "battery_V"
+    assert read_data_views(p, d) == []
+    views = [DataView(title="Battery", window="Last 6 h",
+                      traces=[DataTrace(color="Red", kind="system", metric="battery_V")]),
+             DataView(title="WiFi", show_on_dashboard=True)]
+    save_data_views(p, d, views)
+    got = read_data_views(p, d)
+    assert len(got) == 2
+    assert got[0].title == "Battery"
+    assert got[0].window == "Last 6 h"
+    assert got[0].traces[0].color == "Red"
+    assert got[0].traces[0].kind == "system"
+    assert got[0].traces[0].metric == "battery_V"
+    assert got[1].title == "WiFi"
+    assert got[1].show_on_dashboard is True
 
 
 def _series_by_name(wr):

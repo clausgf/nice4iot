@@ -8,15 +8,21 @@ API change must be recorded. Format loosely follows
 
 ## [0.32.0] - 2026-08-25
 
+### Added
+
+- **Telemetry Explorer supports a list of plots** (`app/core/device/data_ui.py`): the Data tab's "Add plot" button now works — each device can have any number of plot cards, each with its own title, time window, traces and "Show on dashboard" flag. Persisted as a JSON array in `.data_view.json` (was a single object; see `read_data_views`/`save_data_views`, replacing `read_data_view`/`save_data_view`). `DataView` gained `title` and `show_on_dashboard` fields. The per-trace Color/Kind/Metric selectors are now built with niceview's `Field`/`render_field()` (falling back to a plain `ui.select` when a Kind/Metric has no options yet — niceview treats an empty option list as undefined, which is a real transient state here). The plot title is now used as the chart's own title, not just an input.
+- **Device Dashboard shows "Show on dashboard" plots** (`app/core/device/ui.py`, `app/core/device/data_ui.py:dashboard_plot_card`): every plot with that flag set renders as a small, read-only chart card (tight margins, no controls) alongside the Status/Timeline cards.
+
 ### Changed
 
-- **Data tab UI overhaul** (`app/core/device/data_ui.py`): Replaced expansion panel with a card-based layout. Added plot title input, "Show on dashboard" toggle, and "Remove plot" button. Changed auto-refresh from checkbox to switch. Added "Add plot" button (stub).
+- **Data tab UI overhaul** (`app/core/device/data_ui.py`): Replaced expansion panel with a card-based layout. Added plot title input, "Show on dashboard" toggle, and "Remove plot" button (now wired up — see Added). Changed auto-refresh from checkbox to switch.
 - **Logs tab refactor** (`app/core/device/logs_ui.py`): Converted to class-based `_LogViewer`. Added color-coded log levels (Error/Warning/Info/Debug/Verbose). Switched to `ui.log` component for better streaming performance. Implemented position-based incremental refresh that handles log rotation. Added search filter and changed auto-refresh to switch.
 - **Firmware source simplified** (`app/core/firmware/backend.py`, `app/core/firmware/models.py`, `app/core/firmware/ui.py`): Removed wildcard asset name support (`*`/`?`). Now downloads exactly one named asset per release. Removed `asset_is_wildcard` property, multi-asset state tracking, and combined digest logic. `FirmwareState` now tracks a single `asset` and `dest_filename` is always visible/used.
 - **Project/Device settings reorganization** (`app/core/project/ui.py`, `app/core/device/ui.py`): Renamed "Seed" section to "Firmware Seed". Added separate "Firmware Download" section for the firmware pull configuration. Moved Seed override to device general panel under "Firmware Seed".
 
 ### Fixed
 
+- **Device Files JSON detail: Form/Raw tabs now share live edits** (`app/core/file/detail_ui.py`): switching tabs used to show only the on-disk content, discarding whatever was typed in the other tab. Both tabs now read from and write to one in-memory object that's updated on every tab switch (in either direction); nothing is written to disk until Save is clicked.
 - **README**: Clarified that InfluxDB line-protocol backend is write-only; Data tab uses Prometheus-compatible backends with local file fallback.
 
 ## [0.31.0] - 2026-08-23

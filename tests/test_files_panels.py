@@ -99,6 +99,7 @@ def _detail(project, device, key):
             file_detail(adapter, key, ctx)
 
     asyncio.run(run())
+    return container
 
 
 def test_detail_renders_json_with_an_inferred_form(project_with_device):
@@ -150,6 +151,84 @@ def test_detail_renders_an_inherited_file_with_its_banner(project_with_device):
     project, device = project_with_device
     (project_dir(project) / 'shared.json').write_text('{"a": 1}')
     _detail(project, device, 'shared.json')
+
+
+def _find_all(el, cls, out=None):
+    """Every descendant of *el* that is an instance of *cls*, across all slots."""
+    out = [] if out is None else out
+    for slot in el.slots.values():
+        for child in slot.children:
+            if isinstance(child, cls):
+                out.append(child)
+            _find_all(child, cls, out)
+    return out
+
+
+def test_detail_json_tabs_sync_edits_across_switch(project_with_device):
+    """Editing in one tab and switching must show the edit in the other tab —
+    without writing anything to disk (no Save was clicked)."""
+    import json
+
+    from nicegui.elements.number import Number
+    from nicegui.elements.select import Select
+    from nicegui.elements.tabs import Tabs
+    from nicegui.elements.codemirror import CodeMirror
+
+    from app.core.file.form import approve_schema
+
+    project, device = project_with_device
+    (device_dir(project, device) / 'cfg.json').write_text('{"mode": "eco", "count": 3}')
+    schema = device_dir(project, device) / 'cfg.schema.json'
+    schema.write_text("""{"type":"object","properties":{
+        "mode":  {"type":"string","enum":["eco","turbo"]},
+        "count": {"type":"integer","minimum":1,"maximum":9}}}""")
+    approve_schema(schema, project)
+
+    # Rendering AND the tab switches below all run inside one event loop, as they
+    # would for a real request/websocket callback — refreshable.refresh() needs one.
+    from app.core.file.detail_ui import file_detail
+    from app.core.file.overlay import FileCtx, OverlayDirectoryAdapter
+    from app.util import is_valid_upload_filename
+
+    ctx = FileCtx(project, device, False, underlay_dir=project_dir(project))
+    adapter = OverlayDirectoryAdapter(device_dir(project, device), project_dir(project),
+                                      suffix=None, name_filter=is_valid_upload_filename)
+    container = ui.column()
+
+    async def run() -> None:
+        # refreshable.refresh() fires a background task and asserts nicegui's
+        # global event loop is set — only true once the real server has started.
+        from nicegui import core
+        core.loop = asyncio.get_running_loop()
+
+        with container:
+            file_detail(adapter, 'cfg.json', ctx)
+
+        tabs = _find_all(container, Tabs)[0]
+        mode_select = _find_all(container, Select)[0]
+        count_number = _find_all(container, Number)[0]
+        assert mode_select.value == 'eco' and count_number.value == 3
+
+        # Edit in the (default) Form tab, then switch to Raw — the edit must show
+        # up, unsaved (the on-disk file is untouched).
+        mode_select.value = 'turbo'
+        count_number.value = 7
+        tabs.value = 'Raw'
+        await asyncio.sleep(0)  # let refreshable.refresh()'s background task run
+        raw = _find_all(container, CodeMirror)[0]
+        assert json.loads(raw.value) == {'mode': 'turbo', 'count': 7}
+        assert json.loads((device_dir(project, device) / 'cfg.json').read_text()) == \
+            {'mode': 'eco', 'count': 3}
+
+        # Edit in Raw, switch back to Form — the edit must show up there too.
+        raw.value = json.dumps({'mode': 'eco', 'count': 9})
+        tabs.value = 'Form'
+        await asyncio.sleep(0)
+        mode_select = _find_all(container, Select)[0]
+        count_number = _find_all(container, Number)[0]
+        assert mode_select.value == 'eco' and count_number.value == 9
+
+    asyncio.run(run())
 
 
 def test_detail_renders_text_image_and_binary(project_with_device):

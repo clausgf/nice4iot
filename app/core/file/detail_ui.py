@@ -12,6 +12,7 @@ download — because they all operate on a single file.
 """
 import asyncio
 import base64
+import dataclasses
 import json
 import logging
 from pathlib import Path
@@ -164,23 +165,6 @@ def _editor_view(adapter: OverlayDirectoryAdapter, key: str, ctx: FileCtx,
 # JSON detail — form and raw editor
 # ---------------------------------------------------------------------------
 
-def _json_form(entry: OverlayFileEntry, ctx: FileCtx, view: JsonView,
-               on_saved: Callable[[], Any]) -> None:
-    assert view.fields is not None  # only called for a view that has a Form tab
-    collect = render_form_fields(view.fields)
-
-    def _save() -> None:
-        if (values := collect()) is None:
-            return
-        # Merge into the existing object: overwrite only the form's keys, keep the
-        # rest (a schema may cover only part of the file).
-        merged = dict(view.data)
-        merged.update(values)
-        _commit(entry, ctx, json.dumps(merged, indent=2, ensure_ascii=False) + '\n', on_saved)
-
-    _save_button(entry, _save)
-
-
 def _json_raw_editor(entry: OverlayFileEntry, ctx: FileCtx, content: str,
                      on_saved: Callable[[], Any]) -> None:
     editor = (
@@ -199,10 +183,91 @@ def _json_raw_editor(entry: OverlayFileEntry, ctx: FileCtx, content: str,
     _save_button(entry, _save)
 
 
+def _render_json_tabs(entry: OverlayFileEntry, ctx: FileCtx, view: JsonView,
+                      refresh: Callable[[], Any]) -> None:
+    """Form + Raw tabs sharing one live (unsaved) copy of the object.
+
+    Switching tabs — in either direction — reads the outgoing tab's current
+    widgets and redraws the incoming tab from that, so edits made in one tab are
+    visible in the other. Nothing is written to disk until Save is clicked; the
+    live copy only ever feeds the two views.
+    """
+    assert view.fields is not None
+    live: dict = dict(view.data)
+    form_collect: list[Callable[..., dict | None]] = []
+    raw_editor: list[ui.codemirror] = []
+
+    @ui.refreshable
+    def form_panel() -> None:
+        fields = [dataclasses.replace(f, value=live.get(f.key, f.value)) for f in view.fields]
+        collect = render_form_fields(fields)
+        form_collect[:] = [collect]
+
+        def _save() -> None:
+            if (values := collect()) is None:
+                return
+            # Merge into the live object: overwrite only the form's keys, keep the
+            # rest (a schema may cover only part of the file).
+            merged = dict(live)
+            merged.update(values)
+            _commit(entry, ctx, json.dumps(merged, indent=2, ensure_ascii=False) + '\n', refresh)
+
+        _save_button(entry, _save)
+
+    @ui.refreshable
+    def raw_panel() -> None:
+        editor = (
+            ui.codemirror(value=json.dumps(live, indent=2, ensure_ascii=False),
+                          language='JSON', line_wrapping=True)
+            .classes('w-full border rounded').style(_EDITOR_HEIGHT)
+        )
+        raw_editor[:] = [editor]
+
+        def _save() -> None:
+            try:
+                parsed = json.loads(editor.value)
+            except json.JSONDecodeError as exc:
+                ui.notify(f'Invalid JSON: {exc}', type='negative')
+                return
+            _commit(entry, ctx, json.dumps(parsed, indent=2, ensure_ascii=False) + '\n', refresh)
+
+        _save_button(entry, _save)
+
+    with ui.tabs().classes('w-full') as tabs:
+        form_tab = ui.tab('Form')
+        raw_tab = ui.tab('Raw')
+    with ui.tab_panels(tabs, value=(form_tab if view.form_default else raw_tab)).classes('w-full'):
+        with ui.tab_panel(form_tab):
+            form_panel()
+        with ui.tab_panel(raw_tab):
+            raw_panel()
+
+    active = {'name': 'Form' if view.form_default else 'Raw'}
+
+    def _on_tab_change(e: Any) -> None:
+        previous, active['name'] = active['name'], e.value
+        if previous == e.value:
+            return
+        if previous == 'Form':
+            live.update(form_collect[0](validate=False))
+            raw_panel.refresh()
+        else:
+            try:
+                parsed = json.loads(raw_editor[0].value)
+            except json.JSONDecodeError:
+                ui.notify('Invalid JSON — form not updated', type='warning')
+                return
+            if isinstance(parsed, dict):
+                live.clear()
+                live.update(parsed)
+            form_panel.refresh()
+
+    tabs.on_value_change(_on_tab_change)
+
+
 def _render_json_detail(entry: OverlayFileEntry, ctx: FileCtx, view: JsonView,
                         refresh: Callable[[], Any]) -> None:
-    """Render the plan `plan_json_view()` produced. No live sync between the tabs —
-    each renders from the on-disk content the plan was built from."""
+    """Render the plan `plan_json_view()` produced."""
     if view.pending_schema is not None:
         _schema_pending_banner(view.pending_schema, ctx, on_approve=refresh)
     if view.note:
@@ -212,14 +277,7 @@ def _render_json_detail(entry: OverlayFileEntry, ctx: FileCtx, view: JsonView,
         _json_raw_editor(entry, ctx, view.text, refresh)
         return
 
-    with ui.tabs().classes('w-full') as tabs:
-        form_tab = ui.tab('Form')
-        raw_tab = ui.tab('Raw')
-    with ui.tab_panels(tabs, value=(form_tab if view.form_default else raw_tab)).classes('w-full'):
-        with ui.tab_panel(form_tab):
-            _json_form(entry, ctx, view, refresh)
-        with ui.tab_panel(raw_tab):
-            _json_raw_editor(entry, ctx, view.text, refresh)
+    _render_json_tabs(entry, ctx, view, refresh)
 
 
 # ---------------------------------------------------------------------------

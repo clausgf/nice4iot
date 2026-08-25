@@ -5,7 +5,7 @@ import re
 import time
 
 import anyio
-from niceview.dataadapter import JsonAdapter, lenient_model_load
+from niceview.dataadapter import JsonAdapter, lenient_list_load
 
 from app.config import app_config
 from app.paths import project_dir, device_dir
@@ -155,21 +155,22 @@ def read_local_metrics(project_name: str, device_name: str,
     return records
 
 
-def read_data_view(project_name: str, device_name: str) -> DataView | None:
-    """Load the persisted Data-tab explorer config, or None if none saved yet.
-    Blocking file IO — wrap with ``anyio.to_thread.run_sync`` in async callers."""
+def read_data_views(project_name: str, device_name: str) -> list[DataView]:
+    """Load the persisted Data-tab explorer config — one entry per plot — or []
+    if none saved yet. Blocking file IO — wrap with ``anyio.to_thread.run_sync``
+    in async callers."""
     path = device_dir(project_name, device_name) / DATA_VIEW_FILE
     try:
         text = path.read_text()
     except OSError:
-        return None
-    return lenient_model_load(DataView, text, str(path))
+        return []
+    return lenient_list_load(DataView, text, str(path))
 
 
-def save_data_view(project_name: str, device_name: str, view: DataView) -> None:
-    """Persist the Data-tab explorer config atomically. Blocking file IO."""
+def save_data_views(project_name: str, device_name: str, views: list[DataView]) -> None:
+    """Persist the Data-tab explorer config (one entry per plot) atomically. Blocking file IO."""
     path = device_dir(project_name, device_name) / DATA_VIEW_FILE
-    atomic_write(path, view.model_dump_json(indent=2))
+    atomic_write(path, json.dumps([v.model_dump(mode='json') for v in views], indent=2))
 
 
 def latest_labels(project_name: str, device_name: str,

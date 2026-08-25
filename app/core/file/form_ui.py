@@ -77,12 +77,14 @@ def _json_value(value: Any) -> Any:
     return value.isoformat() if isinstance(value, datetime.date) else value
 
 
-def render_form_fields(fields: list[FormField]) -> Callable[[], dict | None]:
+def render_form_fields(fields: list[FormField]) -> Callable[..., dict | None]:
     """Render *fields* into the current context and return a collector.
 
     Calling the collector reads the widgets and validates them; it returns the
     values, or None after reporting the first error — so a save handler is just
-    ``if (values := collect()) is None: return``.
+    ``if (values := collect()) is None: return``. Pass ``validate=False`` to read
+    the widgets as-is, with no checks and no notification — for syncing another
+    view from the current (possibly incomplete) form state.
     """
     infos = {f.key: to_field_info(f) for f in fields}
     with ui.column().classes('w-full gap-3'):
@@ -90,8 +92,10 @@ def render_form_fields(fields: list[FormField]) -> Callable[[], dict | None]:
             ui.label('Empty object — nothing to edit as a form.').classes('text-caption text-grey-7')
         widgets = {f.key: render_field(infos[f.key], f.value) for f in fields}
 
-    def collect() -> dict | None:
+    def collect(*, validate: bool = True) -> dict | None:
         values = {key: _json_value(field_value(w, infos[key])) for key, w in widgets.items()}
+        if not validate:
+            return values
         for f in fields:
             if (err := validate_field(f, values[f.key])) is not None:
                 ui.notify(err, type='negative')

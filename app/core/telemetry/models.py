@@ -35,8 +35,11 @@ class DataTrace(BaseModel):
 
 
 class DataView(BaseModel):
-    """Persisted Data-tab explorer configuration, per device (``.data_view.json``)."""
+    """One plot of the Data-tab explorer. A device persists a list of these
+    (``.data_view.json``) — one entry per plot."""
+    title: str = 'Time series'
     window: str = 'Last 24 h'
+    show_on_dashboard: bool = False
     traces: list[DataTrace] = Field(default_factory=lambda: [DataTrace()])
     marker_labels: list[str] = Field(default_factory=list)  # label keys shown as chart markers
 

@@ -12,7 +12,7 @@ from app.core.device.backend import (
     is_device_online, read_runtime, rename_device,
 )
 from app.core.file.browser_ui import device_files_panel
-from app.core.device.data_ui import device_data_panel
+from app.core.device.data_ui import dashboard_plot_card, device_data_panel
 from app.core.device.logs_ui import device_logs_panel
 from app.core.project.backend import get_project
 from app.core.seed.ui import device_seed_override_card
@@ -79,17 +79,21 @@ async def device_dashboard_panel(project_name: str, device_name: str) -> None:
     @ui.refreshable
     async def _content() -> None:
         from app.core.alarm.backend import get_device_offline_threshold
-        from app.core.telemetry.backend import latest_labels
+        from app.core.telemetry.backend import latest_labels, read_data_views
         device = get_device(project_name, device_name)
         threshold = await anyio.to_thread.run_sync(lambda: get_device_offline_threshold(project_name))
         labels = await anyio.to_thread.run_sync(lambda: latest_labels(project_name, device_name))
         runtime = await anyio.to_thread.run_sync(lambda: read_runtime(project_name, device_name))
+        plot_views = await anyio.to_thread.run_sync(lambda: read_data_views(project_name, device_name))
 
         with ui.grid().classes('grid-cols-1 sm:grid-cols-2 gap-4 w-full'):
             await _status_card(device, project_name, threshold, labels, runtime)
             await _timeline_card(device)
             for render_fn in await anyio.to_thread.run_sync(lambda: get_device_dashboard_cards(project_name)):
                 await maybe_await(render_fn(project_name, device_name))
+            for view in plot_views:
+                if view.show_on_dashboard:
+                    await dashboard_plot_card(project_name, device_name, view)
 
     await _content()
     ui.timer(10.0, _content.refresh)
