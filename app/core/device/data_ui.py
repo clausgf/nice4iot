@@ -58,13 +58,20 @@ def _select_field(label: str, options: list[str], value: str | None, classes: st
     currently no options — a plain ui.select: niceview's render_field() raises on
     an empty option list (it treats that as "undefined"), but an empty Kind/Metric
     list is a real, temporary state here (before telemetry has loaded, or a kind
-    with no metrics yet)."""
+    with no metrics yet).
+
+    classes must go into the Field(...) itself, not a later .classes(classes)
+    call: app.main.py sets niceview's app-wide default_classes='w-full', which
+    render_field() falls back to for any Field with no classes of its own —
+    chaining .classes() afterward only *adds* shrink/grow on top of that
+    leftover w-full rather than replacing it, leaving every field full-width
+    regardless of shrink/grow."""
     if options:
-        field = Field(label=label, widget_type='ui.select', field_type=str, options=options)
+        field = Field(label=label, widget_type='ui.select', field_type=str, options=options, classes=classes)
         widget = render_field(field, value)
     else:
-        widget = ui.select(options, value=value, label=label)
-    return widget.props('dense outlined').classes(classes)
+        widget = ui.select(options, value=value, label=label).classes(classes)
+    return widget.props('dense outlined')
 
 
 _DASHBOARD_CHART_HEIGHT = 180
@@ -190,9 +197,9 @@ class _DataExplorer:
                 title_input.props('dense outlined').on_value_change(lambda e: self._on_title(e.value))
 
                 window_field = Field(label='Time', widget_type='ui.select', field_type=str,
-                                     options=list(_WINDOWS.keys()))
+                                     options=list(_WINDOWS.keys()), classes='shrink')
                 self.window_select = render_field(window_field, self.window)
-                self.window_select.props('dense outlined').classes('shrink')
+                self.window_select.props('dense outlined')
 
                 ui.button(icon='refresh').props('dense flat').tooltip('Refresh').on_click(self._refresh)
                 ui.switch().bind_value(self, '_auto_refresh').tooltip(
@@ -200,7 +207,7 @@ class _DataExplorer:
                 )
                 self._markers_ui()
 
-                dashboard_field = Field(widget_type='ui.switch', field_type=bool)
+                dashboard_field = Field(widget_type='ui.switch', field_type=bool, classes='shrink')
                 dashboard_switch = render_field(dashboard_field, self._show_on_dashboard)
                 dashboard_switch.tooltip('Show on dashboard').on_value_change(
                     lambda e: self._on_show_on_dashboard(e.value))

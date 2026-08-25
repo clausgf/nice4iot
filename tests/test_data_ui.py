@@ -139,6 +139,35 @@ def test_title_edit_persists_and_is_used_as_chart_title(proj_dev):
     assert views[0].title == 'My Plot'
 
 
+def test_explorer_fields_are_not_full_width(proj_dev):
+    """Regression: app.main sets niceview's app-wide default_classes='w-full',
+    which render_field() falls back to for any Field with no classes of its
+    own. A Field built without classes= and then given .classes('shrink'/
+    'grow') afterward only *adds* that on top of the leftover w-full instead
+    of replacing it — every explorer field (Time, Show-on-dashboard, and each
+    trace's Color/Kind/Metric) ends up full-width regardless. Reproduced here
+    by setting the same app-wide style explicitly, since a narrow pytest
+    invocation may not have imported app.main (which does this as a
+    side effect) the way a full test run does."""
+    import niceview
+    niceview.set_field_style(default_classes='w-full')
+
+    project, device = proj_dev
+    save_data_views(project, device, [
+        DataView(traces=[DataTrace(color='Red', kind='system', metric='battery_V')]),
+    ])
+    container = _render(project, device)
+
+    selects = _find_all(container, ui.select)
+    switches = _find_all(container, ui.switch)
+    # window_select ('Time') plus 3 per trace (Color/Kind/Metric); the switch
+    # list also includes the plain auto-refresh one (not niceview-driven, but
+    # harmless to check — it never had a w-full leak to begin with).
+    assert len(selects) >= 4
+    for widget in selects + switches:
+        assert 'w-full' not in widget._classes, widget._classes
+
+
 # ---------------------------------------------------------------------------
 # Dashboard cards — "Show on dashboard" plots rendered on the Device Dashboard
 # ---------------------------------------------------------------------------

@@ -49,11 +49,19 @@ def config_expansion(title: str, *, value: bool = False) -> Generator[ui.expansi
 
 @dataclass(frozen=True)
 class NavItem:
-    """One row in a page sidebar. `url` is a full navigation target, e.g. from
-    app.routes.project_url() — see render_sidebar()."""
+    """One row in a page sidebar, or a two-level group of them.
+
+    A leaf has a `url` (a full navigation target, e.g. from
+    app.routes.project_url()) and no `children`. A group has `children` and
+    no `url` of its own — it renders as a plain, non-clickable header (like
+    nicepaper's own sidebar groups) with its children indented below it;
+    clicking only ever navigates to a child, never the group itself. Only one
+    level of nesting is supported, matching nicepaper's own sidebar.
+    """
     label: str
     icon: str
-    url: str
+    url: str | None = None
+    children: tuple['NavItem', ...] = ()
 
 
 def _current_path() -> str:
@@ -62,12 +70,17 @@ def _current_path() -> str:
     return UI_PREFIX + context.client.sub_pages_router.current_path.split('?')[0].rstrip('/')
 
 
+def _leaves(items: list[NavItem]) -> list[NavItem]:
+    return [item for top in items for item in ([top] if top.url is not None else top.children)]
+
+
 def render_sidebar(container: ui.element, heading: str, items: list[NavItem], *,
                    active: NavItem | None = None) -> None:
-    """(Re)populate `container`: a heading, then a flat list of clickable nav
-    rows. By default the active row is whichever item's url is the longest
-    matching prefix of the current URL (longest, not first/exact, so a
-    project tab that opens its own nested ui.sub_pages still highlights on
+    """(Re)populate `container`: a heading, then the nav rows — a leaf is one
+    clickable row, a group a non-clickable header followed by its (indented)
+    children. By default the active row is whichever leaf's url is the
+    longest matching prefix of the current URL (longest, not first/exact, so
+    a project tab that opens its own nested ui.sub_pages still highlights on
     any of its own sub-routes, while a plain leaf like Dashboard — whose url
     is every other item's own prefix — never wrongly outranks a more
     specific match). Pass `active` explicitly when the real URL doesn't share
@@ -82,8 +95,9 @@ def render_sidebar(container: ui.element, heading: str, items: list[NavItem], *,
     if active is None:
         current = _current_path()
         active = max(
-            (item for item in items if current == item.url.rstrip('/') or current.startswith(item.url.rstrip('/') + '/')),
-            key=lambda item: len(item.url), default=None,
+            (leaf for leaf in _leaves(items)
+             if current == leaf.url.rstrip('/') or current.startswith(leaf.url.rstrip('/') + '/')),
+            key=lambda leaf: len(leaf.url or ''), default=None,
         )
     container.clear()
     with container:
@@ -91,16 +105,32 @@ def render_sidebar(container: ui.element, heading: str, items: list[NavItem], *,
         ui.separator()
         with ui.list().props('padding').classes('w-full'):
             for item in items:
-                is_active = item is active
-                row = ui.item(on_click=lambda _, u=item.url: ui.navigate.to(u)) \
-                    .props('clickable dense').classes('rounded-borders')
-                if is_active:
-                    row.classes('bg-primary text-white')
-                with row:
-                    with ui.item_section().props('avatar').style('min-width: 0; padding-right: 12px'):
-                        ui.icon(item.icon).classes('' if is_active else 'text-primary')
-                    with ui.item_section():
-                        ui.item_label(item.label)
+                if item.url is not None:
+                    _nav_row(item, is_active=item is active)
+                else:
+                    with ui.item().props('dense').classes('rounded-borders'):
+                        _nav_row_content(item, is_active=False)
+                    for child in item.children:
+                        _nav_row(child, is_active=child is active, inset=True)
+
+
+def _nav_row_content(item: NavItem, *, is_active: bool) -> None:
+    with ui.item_section().props('avatar').style('min-width: 0; padding-right: 12px'):
+        ui.icon(item.icon).classes('' if is_active else 'text-primary')
+    with ui.item_section():
+        ui.item_label(item.label)
+
+
+def _nav_row(item: NavItem, *, is_active: bool, inset: bool = False) -> None:
+    assert item.url is not None
+    row = ui.item(on_click=lambda _, u=item.url: ui.navigate.to(u)) \
+        .props('clickable dense').classes('rounded-borders')
+    if inset:
+        row.props('inset-level=0.5')
+    if is_active:
+        row.classes('bg-primary text-white')
+    with row:
+        _nav_row_content(item, is_active=is_active)
 
 
 def show_sidebar(drawer: ui.element, hamburger: ui.element, container: ui.element,

@@ -14,6 +14,7 @@ operator-picked provisioning token — nothing here is persisted beyond the
 existing Seed/token files; the dialogs are pure UI plus one-shot generation.
 """
 import datetime
+import json
 import logging
 
 import anyio
@@ -43,24 +44,37 @@ if (!window.__espWebToolsLoaded) {
 }
 '''
 
-# Simple print-isolation: only .seed-print-area is visible when printing.
-# Injected via JS (not ui.add_head_html), which only affects a page's initial
-# server-rendered <head> — these dialogs are opened later, on an already-
-# connected page, so a script/style added then must be inserted client-side.
-_ENSURE_PRINT_CSS_JS = '''
-if (!window.__seedPrintCssLoaded) {
-    window.__seedPrintCssLoaded = true;
-    const style = document.createElement('style');
-    style.textContent = `
-        @media print {
-          body * { visibility: hidden; }
-          .seed-print-area, .seed-print-area * { visibility: visible; }
-          .seed-print-area { position: absolute; top: 0; left: 0; width: 100%; }
-        }
-    `;
-    document.head.appendChild(style);
-}
-'''
+def _print_qr_js(title: str, data_uri: str, url: str) -> str:
+    """Print *title*/*data_uri*/*url* in a fresh, blank popup window, not the
+    dialog in place.
+
+    An in-place '@media print { body * { visibility: hidden } ... }' approach
+    printed a blank page: Quasar's QDialog renders its content
+    position: fixed, and position: fixed content is well known to not print
+    reliably (often clipped to nothing) across browsers — no CSS trick fixes
+    that from inside the dialog's own DOM subtree. A separate, unstyled
+    window sidesteps the dialog entirely.
+    """
+    return f'''
+        (function() {{
+            const win = window.open('', '_blank', 'width=420,height=560');
+            if (!win) return;
+            win.document.write(
+                '<!DOCTYPE html><html><head><title>' + {json.dumps(title)} + '</title>' +
+                '<style>body{{font-family:sans-serif;text-align:center;padding:24px}}' +
+                'img{{width:220px;height:220px}}p{{word-break:break-all;font-size:12px;color:#555}}</style>' +
+                '</head><body>' +
+                '<h3>' + {json.dumps(title)} + '</h3>' +
+                '<img src="' + {json.dumps(data_uri)} + '" />' +
+                '<p>' + {json.dumps(url)} + '</p>' +
+                '</body></html>'
+            );
+            win.document.close();
+            win.onafterprint = () => win.close();
+            win.focus();
+            win.onload = () => win.print();
+        }})();
+    '''
 
 
 def _active_token_options(project_name: str) -> dict[str, str]:
@@ -110,10 +124,10 @@ class _TokenPicker:
 
 def ap_qr_dialog(project_name: str, device_name: str) -> ui.dialog:
     """Explanation + deep-link QR for the device's own SoftAP setup portal."""
-    ui.run_javascript(_ENSURE_PRINT_CSS_JS)
+    title = f'AP + Form Setup — {device_name}'
     dialog = ui.dialog().props('persistent')
-    with dialog, ui.card().classes('seed-print-area w-full max-w-lg'):
-        ui.label(f'AP + Form Setup — {device_name}').classes('text-h6')
+    with dialog, ui.card().classes('w-full max-w-lg'):
+        ui.label(title).classes('text-h6')
         ui.markdown(
             '1. Power on the device. With no WiFi seeded, it opens its own '
             '**open** (no password) WiFi network named '
@@ -140,7 +154,9 @@ def ap_qr_dialog(project_name: str, device_name: str) -> ui.dialog:
         _refresh()
 
         with ui.row().classes('w-full justify-end gap-2 q-mt-sm'):
-            ui.button('Print', icon='print', on_click=lambda: ui.run_javascript('window.print()')) \
+            ui.button('Print', icon='print',
+                      on_click=lambda: ui.run_javascript(
+                          _print_qr_js(title, qr_image.source, url_label.text))) \
                 .props('flat')
             ui.button('Close', on_click=dialog.close).props('flat')
     return dialog

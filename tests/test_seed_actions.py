@@ -2,6 +2,7 @@
 resolver, NVS image generation, the ESP Web Tools manifest, and the AP+QR
 deep link — everything action_dialogs.py's UI wires together."""
 import base64
+import json
 
 import pytest
 
@@ -160,3 +161,21 @@ def test_qr_png_data_uri_is_decodable():
     assert uri.startswith('data:image/png;base64,')
     raw = base64.b64decode(uri.split(',', 1)[1])
     assert raw[:8] == b'\x89PNG\r\n\x1a\n'  # PNG magic bytes
+
+
+# ---------------------------------------------------------------------------
+# Print — a fresh popup window, not the dialog in place (position: fixed
+# dialog content prints blank in most browsers; see action_dialogs.py)
+# ---------------------------------------------------------------------------
+
+def test_print_qr_js_embeds_values_safely():
+    from app.core.seed.action_dialogs import _print_qr_js
+
+    # A title/url containing quotes and HTML-ish characters must not break out
+    # of the generated JS string literals or the popup's own HTML.
+    js = _print_qr_js('AP + Form Setup — "dev"', 'data:image/png;base64,AAAA', 'http://x/?a=1&b="</script>"')
+    assert 'window.open' in js
+    assert 'win.print()' in js
+    assert json.dumps('AP + Form Setup — "dev"') in js
+    assert json.dumps('data:image/png;base64,AAAA') in js
+    assert json.dumps('http://x/?a=1&b="</script>"') in js

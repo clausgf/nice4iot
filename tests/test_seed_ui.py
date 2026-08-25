@@ -1,7 +1,12 @@
-"""Smoke tests for the Firmware Seed cards' "AP based Setup" button (project- and
-device-level) — that it renders, with the right label and icon, on both cards.
-The dialog/creation logic itself (ap_qr_dialog, prompt_create_device) is covered
-elsewhere (test_seed_actions.py, app/core/device/ui.py's own callers)."""
+"""Smoke tests for the Firmware Seed cards.
+
+Device-level: has the "AP based Setup" button (QR icon) for this already-
+existing device. Project-level: deliberately has no device-seeding shortcut —
+device creation belongs on the Devices tab, not buried in Settings (see
+seed_settings_card's docstring). The dialog/creation logic itself
+(ap_qr_dialog, prompt_create_device) is covered elsewhere (test_seed_actions.py,
+app/core/device/ui.py's own callers).
+"""
 import asyncio
 
 import pytest
@@ -48,13 +53,11 @@ def _ap_setup_button(container):
                 if b._props.get('icon') == 'qr_code'), None)
 
 
-def test_project_seed_card_has_ap_based_setup_button(project_with_device):
+def test_project_seed_card_has_no_ap_based_setup_button(project_with_device):
     project, _device = project_with_device
-    container = _render(seed_settings_card(project_dir(project), project_name=project))
+    container = _render(seed_settings_card(project_dir(project)))
 
-    button = _ap_setup_button(container)
-    assert button is not None
-    assert button.text == 'AP based Setup'
+    assert _ap_setup_button(container) is None
 
 
 def test_device_seed_card_has_ap_based_setup_button(project_with_device):

@@ -89,18 +89,29 @@ def slugify_tab_label(label: str) -> str:
     return re.sub(r'[^a-z0-9]+', '-', label.lower()).strip('-') or 'tab'
 
 
-def project_nav_items(project_id: str, extension_tab_defs: list[tuple[str, str, object]]) -> list[NavItem]:
-    """The project sidebar's rows — the four built-in sections plus every
-    enabled extension project tab. Shared with device_subpage, which shows
-    the same sidebar (with 'Devices' as the active row) while drilled into a
-    device, rather than growing a third sidebar level of its own."""
+def project_nav_items(project_id: str, extension_tab_defs: list[tuple[str, str, object]],
+                      general_card_defs: list[tuple[str, object]] = ()) -> list[NavItem]:
+    """The project sidebar's rows — Dashboard/Files/Devices, every enabled
+    extension project tab, and a trailing 'Settings' group (the old General
+    tab's sections, plus any extension-registered 'general' cards, each its
+    own child page — see SETTINGS_SECTIONS). Shared with device_subpage,
+    which shows the same sidebar (with 'Devices' as the active row) while
+    drilled into a device, rather than growing a third sidebar level of its
+    own."""
+    settings_children = [
+        NavItem(label, icon, project_url(project_id, tab=f'settings/{slug}'))
+        for slug, label, icon in SETTINGS_SECTIONS
+    ] + [
+        NavItem(title, 'extension', project_url(project_id, tab=f'settings/tab/{slugify_tab_label(title)}'))
+        for title, _fn in general_card_defs
+    ]
     return [
         NavItem('Dashboard', 'dashboard', project_url(project_id)),
-        NavItem('General', 'settings', project_url(project_id, tab='general')),
         NavItem('Files', 'folder', project_url(project_id, tab='files')),
         NavItem('Devices', 'devices', project_url(project_id, tab='devices')),
         *(NavItem(label, icon, project_url(project_id, tab=f'tab/{slugify_tab_label(label)}'))
           for label, icon, _fn in extension_tab_defs),
+        NavItem('Settings', 'settings', children=tuple(settings_children)),
     ]
 
 
@@ -116,7 +127,8 @@ async def project_subpage(args: PageArguments, nav: ui.element, sidebar: ui.elem
     refresh_breadcrumbs(nav, project_id=project_id)
 
     extension_tab_defs = await anyio.to_thread.run_sync(lambda: get_project_tabs(project_id))
-    nav_items = project_nav_items(project_id, extension_tab_defs)
+    general_card_defs = await anyio.to_thread.run_sync(lambda: get_project_general_cards(project_id))
+    nav_items = project_nav_items(project_id, extension_tab_defs, general_card_defs)
     show_sidebar(drawer, hamburger, sidebar, project_id, nav_items)
     # Clicking a sidebar row navigates within this same project_subpage render
     # (the nested ui.sub_pages below swaps content in place) — project_subpage
@@ -127,9 +139,6 @@ async def project_subpage(args: PageArguments, nav: ui.element, sidebar: ui.elem
     async def _dashboard_route() -> None:
         await project_dashboard_panel(project_id, args)
 
-    async def _general_route() -> None:
-        await project_general_panel(project_id, args)
-
     async def _files_route() -> None:
         await project_files_panel(project_id)
 
@@ -137,19 +146,38 @@ async def project_subpage(args: PageArguments, nav: ui.element, sidebar: ui.elem
         await project_devices_panel(project_id)
 
     def _tab_route(render_fn):
+        """A whole extension tab: it builds its own complete UI (see
+        register_project_tab), no chrome of nice4iot's own around it."""
         async def _route() -> None:
             await maybe_await(call_with_page_args(render_fn, args, project_id))
         return _route
 
-    routes: dict = {
-        '/': _dashboard_route, '/general': _general_route,
-        '/files': _files_route, '/devices': _devices_route,
-    }
+    def _general_card_route(title, render_fn):
+        """An extension 'general' card: fields only (see register_project_card),
+        nice4iot supplies the same config_expansion chrome the old General tab
+        gave it."""
+        async def _route() -> None:
+            with config_expansion(title, value=True):
+                await maybe_await(call_with_page_args(render_fn, args, project_id))
+        return _route
+
+    routes: dict = {'/': _dashboard_route, '/files': _files_route, '/devices': _devices_route}
     for label, _icon, render_fn in extension_tab_defs:
         routes[f'/tab/{slugify_tab_label(label)}'] = _tab_route(render_fn)
 
+    settings_renderers = _settings_section_renderers(project_id)
+    for slug, _label, _icon in SETTINGS_SECTIONS:
+        routes[f'/settings/{slug}'] = settings_renderers[slug]
+    for title, render_fn in general_card_defs:
+        routes[f'/settings/tab/{slugify_tab_label(title)}'] = _general_card_route(title, render_fn)
+
     with ui.column().classes('w-full'):
-        ui.sub_pages(routes)
+        # ui.sub_pages is itself a flex column with align-items:flex-start (like
+        # ui.row/ui.column), so it shrink-wraps to its content's width unless
+        # given w-full explicitly — every route rendered through it (Dashboard,
+        # General, Files, Devices, every extension tab) inherited that missing
+        # width without this.
+        ui.sub_pages(routes).classes('w-full')
 
 # ***************************************************************************
 
@@ -245,34 +273,69 @@ async def project_dashboard_panel(project_id: str, args: PageArguments) -> None:
 
 # ***************************************************************************
 
-async def project_general_panel(project_id: str, args: PageArguments):
-    with ui.grid().classes('w-full gap-4 grid-cols-1 lg:grid-cols-2'):
-        with config_expansion('General'):
+# (slug, label, icon) for each of the "Settings" sidebar group's built-in
+# children, in sidebar order. A child's page may stack more than one of the
+# old General-tab expansions (all expanded by default, since there's only
+# ever one or a few per page now, unlike the old single crowded General tab)
+# — see _settings_section_renderers().
+SETTINGS_SECTIONS: tuple[tuple[str, str, str], ...] = (
+    ('general', 'General', 'info'),
+    ('provisioning', 'Provisioning', 'verified_user'),
+    ('forwarding', 'Forwarding', 'call_split'),
+    ('telemetry', 'Telemetry', 'insights'),
+    ('files', 'Files', 'upload_file'),
+    ('firmware', 'Firmware', 'memory'),
+    ('alarms', 'Alarms', 'notifications'),
+)
+
+
+def _settings_section_renderers(project_id: str) -> dict[str, object]:
+    """One render_fn per Settings child (see SETTINGS_SECTIONS) — each wraps
+    its card(s) in the same config_expansion chrome the old General tab used,
+    now always expanded (value=True): there are at most a few per page,
+    unlike the old single crowded General tab, so folding them away by
+    default would just hide content the user came here to see."""
+    async def _general() -> None:
+        with config_expansion('General', value=True):
             await project_card(project_id)
-        with config_expansion('Provisioning'):
+        with config_expansion('Extensions', value=True):
+            await extensions_card(project_id)
+        with config_expansion('Danger Zone', value=True):
+            await danger_card(project_id)
+
+    async def _provisioning() -> None:
+        with config_expansion('Provisioning', value=True):
             await ProvisioningCard(project_id)
-        with config_expansion('Forwarding'):
+
+    async def _forwarding() -> None:
+        with config_expansion('Forwarding', value=True):
             ForwardingCard(project_id)
-        with config_expansion('Telemetry'):
+
+    async def _telemetry() -> None:
+        with config_expansion('Telemetry', value=True):
             TelemetryCard(project_id)
-        with config_expansion('Logging'):
+        with config_expansion('Logging', value=True):
             LoggingCard(project_id)
-        with config_expansion('Files'):
+
+    async def _files() -> None:
+        with config_expansion('Files', value=True):
             await file_config_card(project_id)
-        with config_expansion('Firmware Seed'):
-            await seed_settings_card(project_dir(project_id), project_name=project_id)
-        with config_expansion('Firmware Download'):
+
+    async def _firmware() -> None:
+        with config_expansion('Firmware Seed', value=True):
+            await seed_settings_card(project_dir(project_id))
+        with config_expansion('Firmware Download', value=True):
             await firmware_source_card(project_dir(project_id),
                                        project_name=project_id, device_name=None)
-        with config_expansion('Alarms'):
+
+    async def _alarms() -> None:
+        with config_expansion('Alarms', value=True):
             await alarm_config_card(project_id)
-        with config_expansion('Extensions'):
-            await extensions_card(project_id)
-        for title, render_fn in await anyio.to_thread.run_sync(lambda: get_project_general_cards(project_id)):
-            with config_expansion(title):
-                await maybe_await(call_with_page_args(render_fn, args, project_id))
-        with config_expansion('Danger Zone'):
-            await danger_card(project_id)
+
+    return {
+        'general': _general, 'provisioning': _provisioning, 'forwarding': _forwarding,
+        'telemetry': _telemetry, 'files': _files, 'firmware': _firmware, 'alarms': _alarms,
+    }
 
 # ***************************************************************************
 

@@ -24,7 +24,7 @@ from niceview import ModelForm
 from niceview.util import confirm_dialog, input_dialog
 from app.extensions import (
     call_with_page_args, get_device_dashboard_cards, get_device_general_cards, get_device_tabs,
-    get_project_tabs, maybe_await,
+    get_project_general_cards, get_project_tabs, maybe_await,
 )
 
 import logging
@@ -55,7 +55,8 @@ async def device_subpage(
 
     from app.core.project.ui import project_nav_items  # local: project.ui imports this module
     project_tab_defs = await anyio.to_thread.run_sync(lambda: get_project_tabs(project_id))
-    items = project_nav_items(project_id, project_tab_defs)
+    general_card_defs = await anyio.to_thread.run_sync(lambda: get_project_general_cards(project_id))
+    items = project_nav_items(project_id, project_tab_defs, general_card_defs)
     devices_item = next(item for item in items if item.label == 'Devices')
     show_sidebar(drawer, hamburger, sidebar, project_id, items, active=devices_item)
 

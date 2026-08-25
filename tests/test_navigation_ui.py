@@ -91,14 +91,74 @@ def test_slugify_tab_label(label, expected):
 
 
 def test_project_nav_items_built_in_and_extension():
-    items = project_nav_items('proj', [('E-Paper', 'tv', object())])
+    items = project_nav_items('proj', [('E-Paper', 'tv', object())],
+                              [('Some Card', object())])
     labels = [i.label for i in items]
-    assert labels == ['Dashboard', 'General', 'Files', 'Devices', 'E-Paper']
+    assert labels == ['Dashboard', 'Files', 'Devices', 'E-Paper', 'Settings']
     assert items[0].url == project_url('proj')
-    assert items[1].url == project_url('proj', tab='general')
-    assert items[3].url == project_url('proj', tab='devices')
-    assert items[4].url == project_url('proj', tab='tab/e-paper')
-    assert items[4].icon == 'tv'
+    assert items[1].url == project_url('proj', tab='files')
+    assert items[2].url == project_url('proj', tab='devices')
+    assert items[3].url == project_url('proj', tab='tab/e-paper')
+    assert items[3].icon == 'tv'
+
+    settings = items[4]
+    assert settings.url is None  # a group, not a leaf — see app.ui.NavItem
+    child_labels = [c.label for c in settings.children]
+    assert child_labels[:2] == ['General', 'Provisioning']
+    assert 'Some Card' in child_labels
+    general_child = next(c for c in settings.children if c.label == 'General')
+    assert general_child.url == project_url('proj', tab='settings/general')
+    card_child = next(c for c in settings.children if c.label == 'Some Card')
+    assert card_child.url == project_url('proj', tab='settings/tab/some-card')
+
+
+# ---------------------------------------------------------------------------
+# render_sidebar — two-level groups (Settings and its children)
+# ---------------------------------------------------------------------------
+
+def test_render_sidebar_group_header_is_not_clickable_only_children_are():
+    from app.ui import NavItem, render_sidebar
+
+    container = ui.column()
+    items = [
+        NavItem('Dashboard', 'dashboard', '/ui/project/proj'),
+        NavItem('Settings', 'settings', children=(
+            NavItem('General', 'info', '/ui/project/proj/settings/general'),
+            NavItem('Alarms', 'notifications', '/ui/project/proj/settings/alarms'),
+        )),
+    ]
+    render_sidebar(container, 'proj', items)
+
+    items_found = _find_all(container, ui.item)
+    # every ui.item() we build is clickable via .props('clickable ...') except
+    # the group header, which omits it.
+    group_header = next(i for i in items_found if _labels(i) == ['Settings'])
+    assert 'clickable' not in group_header._props
+    general_row = next(i for i in items_found if _labels(i) == ['General'])
+    assert 'clickable' in general_row._props
+
+
+def test_render_sidebar_highlights_active_child_and_indents_children():
+    from app.ui import NavItem, render_sidebar
+    from nicegui import context
+
+    context.client.sub_pages_router.current_path = '/project/proj/settings/alarms'
+    container = ui.column()
+    items = [
+        NavItem('Dashboard', 'dashboard', '/ui/project/proj'),
+        NavItem('Settings', 'settings', children=(
+            NavItem('General', 'info', '/ui/project/proj/settings/general'),
+            NavItem('Alarms', 'notifications', '/ui/project/proj/settings/alarms'),
+        )),
+    ]
+    render_sidebar(container, 'proj', items)
+
+    items_found = _find_all(container, ui.item)
+    alarms_row = next(i for i in items_found if _labels(i) == ['Alarms'])
+    general_row = next(i for i in items_found if _labels(i) == ['General'])
+    assert 'bg-primary' in alarms_row._classes
+    assert 'bg-primary' not in general_row._classes
+    assert alarms_row._props.get('inset-level') == '0.5'
 
 
 # ---------------------------------------------------------------------------
@@ -144,6 +204,13 @@ def test_project_subpage_shows_sidebar_and_dashboard_by_default(project_with_dev
     # Dashboard is the default (root) route.
     assert 'Device Health' in _labels(container)
 
+    # Regression: ui.sub_pages is itself a flex column with align-items:
+    # flex-start, so every route rendered through it (General's two-column
+    # grid, extension tabs, ...) silently shrink-wraps without this.
+    from nicegui.elements.sub_pages import SubPages
+    sub_pages = _find_all(container, SubPages)[0]
+    assert 'w-full' in sub_pages._classes
+
 
 def test_project_subpage_dashboard_row_is_active_by_default(project_with_device):
     project, _device = project_with_device
@@ -174,17 +241,54 @@ def test_project_subpage_general_route(project_with_device):
         core.loop = asyncio.get_running_loop()
         with container:
             from nicegui import context
-            context.client.sub_pages_router.current_path = '/general'
+            context.client.sub_pages_router.current_path = '/settings/general'
             await project_subpage(_page_args(), nav, sidebar, drawer, hamburger, project)
         await _drain()
 
     asyncio.run(run())
     # config_expansion() titles are Quasar-rendered (not plain ui.label text),
-    # so assert on genuine General-tab content instead — a project_card()
-    # field and the MQTT status card's own label, both absent from Dashboard.
+    # so assert on genuine content instead — project_card()'s own MQTT-toggle
+    # description, absent from Dashboard.
     labels = _labels(container)
     assert any('MQTT broker' in label for label in labels)
     assert 'Device Health' not in labels
+
+
+def test_project_subpage_extension_general_card_gets_config_expansion_chrome(project_with_device):
+    """Regression: an extension 'general' card (register_project_card) renders
+    fields only — nice4iot must supply the config_expansion chrome, same as
+    the old flat General tab gave it. A first cut of the Settings routing
+    reused the plain (chrome-less) extension-tab route for these too."""
+    from app.extensions import register_project_card, registering
+    from app.core.project.backend import project_adapter
+
+    project, _device = project_with_device
+    with registering('ext1'):
+        register_project_card('general', lambda project_name: ui.label('card body'), title='Ext Card')
+    adapter = project_adapter(project)
+    p = adapter.read()
+    p.enabled_extensions.append('ext1')
+    adapter.save(p)
+
+    nav = ui.row()
+    sidebar = ui.column()
+    drawer = _FakeToggle()
+    hamburger = _FakeToggle()
+    container = ui.column()
+
+    async def run() -> None:
+        core.loop = asyncio.get_running_loop()
+        with container:
+            from nicegui import context
+            context.client.sub_pages_router.current_path = '/settings/tab/ext-card'
+            await project_subpage(_page_args(), nav, sidebar, drawer, hamburger, project)
+        await _drain()
+
+    asyncio.run(run())
+    from nicegui.elements.expansion import Expansion
+    expansions = _find_all(container, Expansion)
+    assert any(e.text == 'Ext Card' for e in expansions)
+    assert 'card body' in _labels(container)
 
 
 # ---------------------------------------------------------------------------

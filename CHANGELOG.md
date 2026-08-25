@@ -6,6 +6,22 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-08-25
+
+### Fixed
+
+- **Project sidebar content was shrink-wrapped instead of full-width** (`app/core/project/ui.py`): `ui.sub_pages` is itself a flex column with `align-items: flex-start` (same as `ui.row`/`ui.column`), so it shrink-wraps to its content's width unless given `w-full` explicitly — the nested `ui.sub_pages` project_subpage constructs was missing it, so every route rendered through it (Dashboard, Settings, Files, Devices, every extension tab) was affected, including extension UI (e.g. nicepaper's tabs).
+- **Extension 'general' cards lost their `config_expansion` chrome** under the new Settings routing (see below) — they'd briefly reused the plain, chrome-less extension-*tab* route instead of the one that wraps them in the same foldable card the old General tab gave them.
+- **AP+QR "Print" produced a blank page** (`app/core/seed/action_dialogs.py`): the previous `@media print { body * { visibility: hidden } ... }` approach printed the dialog in place, but Quasar's `QDialog` renders its content `position: fixed`, and `position: fixed` content is well known to not print reliably (often clipped to nothing) — no CSS trick from inside the dialog's own DOM subtree fixes that. Print now opens a small, plain popup window with just the title/QR/URL and prints that instead, sidestepping the dialog entirely.
+- **Device Data tab: explorer fields (Time, Show-on-dashboard, each trace's Color/Kind/Metric) had gone full-width** (`app/core/device/data_ui.py`): `app/main.py` sets niceview's app-wide `default_classes='w-full'`, which `render_field()` falls back to for any `Field` with no `classes=` of its own — the affected fields built one without, then chained `.classes('shrink'/'grow')` afterward, which only *adds* to the leftover `w-full` instead of replacing it. `classes=` now goes into the `Field(...)` call itself for every one of them.
+
+### Changed
+
+- **Project-level Firmware Seed card no longer offers "AP based Setup"**: that shortcut (create a device, then show the AP+QR dialog) belongs on the Devices tab, not buried in Settings → Firmware → Firmware Seed. `seed_settings_card()` lost its `project_name` keyword accordingly. The device-level Firmware Seed card is unaffected — it still offers "AP based Setup" for the device it's already on.
+
+- **General tab reorganized into a "Settings" sidebar group** (`app/core/project/ui.py`, `app/core/device/ui.py`, `app/ui.py`): the project sidebar's flat "General" row is now a trailing two-level "Settings" group (`NavItem` gained `children`; a group renders as a non-clickable header with its children indented below, same as nicepaper's own sidebar groups) — General/Extensions/Danger Zone combined under "General", Telemetry/Logging under "Telemetry", Firmware Seed/Firmware Download under "Firmware" (each combo is multiple `config_expansion(..., value=True)` blocks stacked on one page, now expanded by default since there are only one or a few per page); Provisioning, Forwarding, Files and Alarms stay standalone. Every child is its own bookmarkable route (`.../project/<id>/settings/<slug>`); extension-registered 'general' cards (`register_project_card`) get their own route each at `.../settings/tab/<slug>`. `project_general_panel()` is gone, replaced by `SETTINGS_SECTIONS` + `_settings_section_renderers()`; `project_nav_items()` gained an optional `general_card_defs` parameter.
+- `nicepaper` (optional `epaper` extra) bumped v0.23.0 → v0.26.1: Displays list drill-down chevron, palette-restricted booking-system category colors (with a plain-black fallback instead of a nearest-color guess on panels that can't show one exactly), Display Detail live/last-delivered preview, and optional `WeatherChart` metrics — all internal to nicepaper, no further nice4iot changes needed.
+
 ## [0.33.0] - 2026-08-25
 
 ### Added
