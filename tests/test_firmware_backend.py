@@ -9,7 +9,6 @@ from pydantic import ValidationError
 from app.core.firmware import backend
 from app.core.firmware.backend import (
     FirmwareError,
-    _pick_assets,
     _should_pull,
     _validate_repo,
     github_release_url,
@@ -63,17 +62,6 @@ def test_filename_validator_defaults_and_rejects():
         FirmwareSource(dest_filename='../evil')
 
 
-def test_asset_name_wildcard_accepted_dest_filename_still_strict():
-    src = FirmwareSource(asset_name='firmware-*.bin')
-    assert src.asset_name == 'firmware-*.bin'
-    assert src.asset_is_wildcard is True
-    assert FirmwareSource(asset_name='firmware.bin').asset_is_wildcard is False
-    with pytest.raises(ValidationError):
-        FirmwareSource(dest_filename='fw-*.bin')  # wildcards not allowed here
-    with pytest.raises(ValidationError):
-        FirmwareSource(asset_name='../evil-*.bin')
-
-
 def test_validate_repo_helper():
     assert _validate_repo(' owner/name ') == 'owner/name'
     with pytest.raises(FirmwareError):
@@ -94,51 +82,21 @@ def test_github_release_url():
 
 
 # ---------------------------------------------------------------------------
-# asset selection + should-pull decision
+# should-pull decision
 # ---------------------------------------------------------------------------
-
-def test_pick_assets_found_and_missing():
-    rel = _release(asset='firmware.bin')
-    matches = _pick_assets(rel, 'firmware.bin')
-    assert [a['name'] for a in matches] == ['firmware.bin']
-    with pytest.raises(FirmwareError):
-        _pick_assets(rel, 'other.bin')
-
-
-def test_pick_assets_wildcard_matches_single():
-    rel = {'tag_name': 'v1', 'assets': [{'name': 'firmware-v1.2.3.bin', 'url': 'u'},
-                                        {'name': 'firmware-v1.2.3.bin.sha256', 'url': 'u2'}]}
-    matches = _pick_assets(rel, 'firmware-*.bin')
-    assert [a['name'] for a in matches] == ['firmware-v1.2.3.bin']
-
-
-def test_pick_assets_wildcard_no_match():
-    rel = {'tag_name': 'v1', 'assets': [{'name': 'other.bin', 'url': 'u'}]}
-    with pytest.raises(FirmwareError):
-        _pick_assets(rel, 'firmware-*.bin')
-
-
-def test_pick_assets_wildcard_matches_multiple():
-    # A release shipping several board-specific files under one pattern —
-    # all of them are downloaded, not an error.
-    rel = {'tag_name': 'v1', 'assets': [{'name': 'firmware-a.bin', 'url': 'u'},
-                                        {'name': 'firmware-b.bin', 'url': 'u2'}]}
-    matches = _pick_assets(rel, 'firmware-*.bin')
-    assert {a['name'] for a in matches} == {'firmware-a.bin', 'firmware-b.bin'}
-
 
 def test_should_pull_matrix():
     from app.core.firmware.backend import ResolvedAsset
     stable = FirmwareSource(repo='a/b', channel='stable')
     pinned = FirmwareSource(repo='a/b', channel='pinned', pinned_tag='v1')
-    r = [ResolvedAsset(tag='v1', asset_name='firmware.bin', download_url='u', digest='sha256:aa')]
+    r = ResolvedAsset(tag='v1', asset_name='firmware.bin', download_url='u', digest='sha256:aa')
 
     assert _should_pull(stable, None, r) is True                      # no state
     assert _should_pull(stable, FirmwareState(tag='v1'), r) is False  # same tag
     assert _should_pull(stable, FirmwareState(tag='v0'), r) is True   # newer tag
     # pinned: re-pull only when the asset bytes (digest) change
-    assert _should_pull(pinned, FirmwareState(tag='v1', digest='firmware.bin:sha256:aa'), r) is False
-    assert _should_pull(pinned, FirmwareState(tag='v1', digest='firmware.bin:sha256:bb'), r) is True
+    assert _should_pull(pinned, FirmwareState(tag='v1', digest='sha256:aa'), r) is False
+    assert _should_pull(pinned, FirmwareState(tag='v1', digest='sha256:bb'), r) is True
 
 
 # ---------------------------------------------------------------------------
@@ -146,13 +104,12 @@ def test_should_pull_matrix():
 # ---------------------------------------------------------------------------
 
 def _mock_github(monkeypatch, release_json, download):
-    """`download` is either one (data, digest) tuple (every asset "downloads"
-    the same bytes) or a {url: (data, digest)} dict for per-asset control."""
+    """`download` is (data, digest) tuple for the single asset."""
     async def fake_resolve(client, src, etag):
         return release_json, 'etag-xyz'
 
     async def fake_download(client, url, max_size):
-        return download[url] if isinstance(download, dict) else download
+        return download
 
     monkeypatch.setattr(backend, '_resolve_release_json', fake_resolve)
     monkeypatch.setattr(backend, '_download_asset', fake_download)
@@ -169,8 +126,8 @@ def test_pull_writes_file_and_records_state(tmp_path, monkeypatch):
     assert result.changed is True and result.tag == 'v1.2.3'
     assert (tmp_path / 'firmware.bin').read_bytes() == data
     st = load_firmware_state(tmp_path)
-    assert st.tag == 'v1.2.3' and st.digest == f'firmware.bin:{digest}' and st.etag == 'etag-xyz'
-    assert st.assets == ['firmware.bin']
+    assert st.tag == 'v1.2.3' and st.digest == digest and st.etag == 'etag-xyz'
+    assert st.asset == 'firmware.bin'
 
 
 def test_pull_digest_mismatch_writes_nothing(tmp_path, monkeypatch):
@@ -227,63 +184,17 @@ def test_pull_requires_repo(tmp_path):
         asyncio.run(backend.pull_firmware(tmp_path, FirmwareSource(repo=''), project_name='p'))
 
 
-def test_pull_wildcard_asset_writes_under_matched_name(tmp_path, monkeypatch):
+def test_pull_respects_dest_filename(tmp_path, monkeypatch):
     data = b'FIRMWARE-CONTENT'
     digest = 'sha256:' + hashlib.sha256(data).hexdigest()
-    release = {'tag_name': 'v1.2.3',
-               'assets': [{'name': 'firmware-v1.2.3.bin', 'url': 'https://api.github.com/x',
-                          'digest': digest}]}
-    _mock_github(monkeypatch, release, (data, digest))
+    _mock_github(monkeypatch, _release(tag='v1.2.3', digest=digest, asset='release.bin'), (data, digest))
 
-    src = FirmwareSource(repo='owner/name', asset_name='firmware-*.bin', dest_filename='ignored.bin')
+    src = FirmwareSource(repo='owner/name', asset_name='release.bin', dest_filename='custom.bin')
     result = asyncio.run(backend.pull_firmware(tmp_path, src, project_name='p'))
 
     assert result.changed is True
-    assert (tmp_path / 'firmware-v1.2.3.bin').read_bytes() == data
-    assert not (tmp_path / 'ignored.bin').exists()
+    assert (tmp_path / 'custom.bin').read_bytes() == data
+    assert not (tmp_path / 'release.bin').exists()
     st = load_firmware_state(tmp_path)
-    assert st.asset == 'firmware-v1.2.3.bin'
-
-
-def test_pull_wildcard_matching_multiple_downloads_all(tmp_path, monkeypatch):
-    data_a, data_b = b'BOARD-A-CONTENT', b'BOARD-B-CONTENT'
-    digest_a = 'sha256:' + hashlib.sha256(data_a).hexdigest()
-    digest_b = 'sha256:' + hashlib.sha256(data_b).hexdigest()
-    release = {'tag_name': 'v2.0.0',
-               'assets': [{'name': 'firmware-board_a.bin', 'url': 'https://api.github.com/a', 'digest': digest_a},
-                         {'name': 'firmware-board_b.bin', 'url': 'https://api.github.com/b', 'digest': digest_b}]}
-    _mock_github(monkeypatch, release, {
-        'https://api.github.com/a': (data_a, digest_a),
-        'https://api.github.com/b': (data_b, digest_b),
-    })
-
-    src = FirmwareSource(repo='owner/name', asset_name='firmware-*.bin')
-    result = asyncio.run(backend.pull_firmware(tmp_path, src, project_name='p'))
-
-    assert result.changed is True
-    assert (tmp_path / 'firmware-board_a.bin').read_bytes() == data_a
-    assert (tmp_path / 'firmware-board_b.bin').read_bytes() == data_b
-    st = load_firmware_state(tmp_path)
-    assert set(st.assets) == {'firmware-board_a.bin', 'firmware-board_b.bin'}
-
-
-def test_pull_wildcard_multiple_digest_mismatch_writes_nothing(tmp_path, monkeypatch):
-    """One asset's digest mismatches — nothing from this pull is written, not
-    even the other, valid asset."""
-    data_a, data_b = b'GOOD', b'BAD'
-    digest_a = 'sha256:' + hashlib.sha256(data_a).hexdigest()
-    claimed_b = 'sha256:' + 'f' * 64
-    actual_b = 'sha256:' + hashlib.sha256(data_b).hexdigest()
-    release = {'tag_name': 'v2.0.0',
-               'assets': [{'name': 'firmware-a.bin', 'url': 'https://api.github.com/a', 'digest': digest_a},
-                         {'name': 'firmware-b.bin', 'url': 'https://api.github.com/b', 'digest': claimed_b}]}
-    _mock_github(monkeypatch, release, {
-        'https://api.github.com/a': (data_a, digest_a),
-        'https://api.github.com/b': (data_b, actual_b),
-    })
-
-    src = FirmwareSource(repo='owner/name', asset_name='firmware-*.bin')
-    with pytest.raises(FirmwareError):
-        asyncio.run(backend.pull_firmware(tmp_path, src, project_name='p'))
-    assert not (tmp_path / 'firmware-a.bin').exists()
-    assert not (tmp_path / 'firmware-b.bin').exists()
+    assert st.asset == 'release.bin'  # state records the release asset name
+    assert (tmp_path / 'custom.bin').exists()  # file is written with dest_filename

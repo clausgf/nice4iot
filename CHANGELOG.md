@@ -6,6 +6,19 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-08-25
+
+### Changed
+
+- **Data tab UI overhaul** (`app/core/device/data_ui.py`): Replaced expansion panel with a card-based layout. Added plot title input, "Show on dashboard" toggle, and "Remove plot" button. Changed auto-refresh from checkbox to switch. Added "Add plot" button (stub).
+- **Logs tab refactor** (`app/core/device/logs_ui.py`): Converted to class-based `_LogViewer`. Added color-coded log levels (Error/Warning/Info/Debug/Verbose). Switched to `ui.log` component for better streaming performance. Implemented position-based incremental refresh that handles log rotation. Added search filter and changed auto-refresh to switch.
+- **Firmware source simplified** (`app/core/firmware/backend.py`, `app/core/firmware/models.py`, `app/core/firmware/ui.py`): Removed wildcard asset name support (`*`/`?`). Now downloads exactly one named asset per release. Removed `asset_is_wildcard` property, multi-asset state tracking, and combined digest logic. `FirmwareState` now tracks a single `asset` and `dest_filename` is always visible/used.
+- **Project/Device settings reorganization** (`app/core/project/ui.py`, `app/core/device/ui.py`): Renamed "Seed" section to "Firmware Seed". Added separate "Firmware Download" section for the firmware pull configuration. Moved Seed override to device general panel under "Firmware Seed".
+
+### Fixed
+
+- **README**: Clarified that InfluxDB line-protocol backend is write-only; Data tab uses Prometheus-compatible backends with local file fallback.
+
 ## [0.31.0] - 2026-08-23
 
 ### Added

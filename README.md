@@ -153,6 +153,7 @@ The production files run nice4iot behind an external reverse proxy (it joins a `
 - **Telemetry read from InfluxDB** — the Data tab reads from Prometheus-compatible backends (Prometheus, VictoriaMetrics, Mimir) with local fallback; a read path for the InfluxDB line-protocol backend (InfluxQL/Flux) is not implemented.
 - **MQTT device commands** — `{base}/cmd/{name}` downlink topic for server-to-device commands is planned.
 - **MQTT authentication** — currently managed by the broker. A future version will integrate with Mosquitto's Dynamic Security Plugin for per-device credential provisioning from the UI.
+- **device/data_ui.py** - which backend shall we use? Influx is write only, thus now we no use the file backend which is always active.
 
 ---
 

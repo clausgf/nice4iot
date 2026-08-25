@@ -214,7 +214,7 @@ async def device_general_panel(project_name: str, device_name: str) -> None:
             _device_general_card(project_name, device_name)
         with config_expansion('Authentication Tokens'):
             _device_tokens_card(project_name, device_name)
-        with config_expansion('Seed'):
+        with config_expansion('Firmware Seed'):
             await device_seed_override_card(device_dir(project_name, device_name),
                                             project_name=project_name, device_name=device_name)
         for title, render_fn in await anyio.to_thread.run_sync(lambda: get_device_general_cards(project_name)):

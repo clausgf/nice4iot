@@ -53,11 +53,12 @@ _MARKER_COLORS = ['#7f7f7f', '#8c564b', '#bcbd22', '#17becf', '#e377c2', '#9467b
 async def device_data_panel(project_name: str, device_name: str) -> None:
     """Content of the Data tab."""
     view = await anyio.to_thread.run_sync(lambda: read_data_view(project_name, device_name))
-    with ui.card().classes('w-full'):
-        with ui.expansion('Telemetry Explorer', value=True).classes('w-full').props(
-                'dense header-class="text-subtitle1 font-bold"'):
-            explorer = _DataExplorer(project_name, device_name, view)
-            await explorer.initialize()
+    with ui.row().classes('w-full'):
+        ui.label('Telemetry explorer').classes('text-h6')
+        ui.space()
+        ui.button(icon='add').tooltip('Add plot').props('round')
+    explorer = _DataExplorer(project_name, device_name, view)
+    await explorer.initialize()
 
 
 class _DataExplorer:
@@ -80,27 +81,33 @@ class _DataExplorer:
             else [{'color': 'Blue', 'kind': None, 'metric': None}]
         )
         self.marker_labels: list[str] = list(view.marker_labels) if view else []
+        self._title: str = 'Time series'
         self._series: list[MetricSeries] = []
         self._source: str = 'local'
         self._history: dict[str, list[tuple[datetime.datetime, str]]] = {}
         self._auto_refresh = False
+        self._show_on_dashboard = False
 
-        with ui.row().classes('w-full items-center gap-4 q-mt-xs flex-wrap'):
-            self.window_select = ui.select(
-                list(_WINDOWS.keys()), value=self.window, label='Time window',
-            ).props('dense outlined').classes('w-36')
-            ui.button(icon='refresh').props('dense flat').tooltip('Refresh').on_click(self._refresh)
-            ui.checkbox('Auto-refresh').bind_value(self, '_auto_refresh').tooltip(
-                f'Reload every {int(_AUTO_REFRESH_INTERVAL)} s'
-            )
-            self._markers_ui()
+        with ui.card().classes('w-full'):
+            with ui.row().classes('w-full items-center gap-4 q-mt-xs flex-wrap'):
+                ui.input(value=self._title, label='Title').props('dense outlined').classes('grow')
+                self.window_select = ui.select(
+                    list(_WINDOWS.keys()), value=self.window, label='Time',
+                ).props('dense outlined').classes('shrink')
+                ui.button(icon='refresh').props('dense flat').tooltip('Refresh').on_click(self._refresh)
+                ui.switch().bind_value(self, '_auto_refresh').tooltip(
+                    f'Reload every {int(_AUTO_REFRESH_INTERVAL)} s'
+                )
+                self._markers_ui()
+                ui.switch().bind_value(self, '_show_on_dashboard').tooltip('Show on dashboard')
+                ui.button(icon='delete').props('dense round color=negative').tooltip('Remove plot')
 
-        self._traces_ui()
-        self.chart = ui.plotly(go.Figure()).classes('w-full')
-        self.summary_row = ui.row().classes('w-full items-center gap-4 q-mt-xs flex-wrap')
+            self._traces_ui()
+            self.chart = ui.plotly(go.Figure()).classes('w-full')
+            self.summary_row = ui.row().classes('w-full items-center gap-4 q-mt-xs flex-wrap')
 
-        self.window_select.on_value_change(lambda e: self._on_window(e.value))
-        ui.timer(_AUTO_REFRESH_INTERVAL, self._auto_refresh_tick)
+            self.window_select.on_value_change(lambda e: self._on_window(e.value))
+            ui.timer(_AUTO_REFRESH_INTERVAL, self._auto_refresh_tick)
 
     @ui.refreshable
     def _traces_ui(self) -> None:
@@ -110,16 +117,16 @@ class _DataExplorer:
             metrics = self._metrics_for(trace['kind'])
             with ui.row().classes('w-full items-center gap-2 q-mt-xs flex-wrap'):
                 ui.select(_TRACE_COLORS, value=trace['color'], label='Color').props(
-                    'dense outlined').classes('w-28').on_value_change(
+                    'dense outlined').classes('shrink').on_value_change(
                     lambda e, t=trace: self._on_trace_color(t, e.value))
                 # value must be a current option or NiceGUI raises — on the first
                 # render (before data loads) a restored kind/metric may not be in
                 # the options yet; _refresh() reloads and refreshes with valid values.
                 ui.select(kinds, value=trace['kind'] if trace['kind'] in kinds else None, label='Kind').props(
-                    'dense outlined').classes('w-40').on_value_change(
+                    'dense outlined').classes('grow').on_value_change(
                     lambda e, t=trace: self._on_trace_kind(t, e.value))
                 ui.select(metrics, value=trace['metric'] if trace['metric'] in metrics else None, label='Metric').props(
-                    'dense outlined').classes('w-48').on_value_change(
+                    'dense outlined').classes('grow').on_value_change(
                     lambda e, t=trace: self._on_trace_metric(t, e.value))
                 ui.button(icon='delete').props(
                     f'dense round color=negative {"disable" if only_one else ""}',

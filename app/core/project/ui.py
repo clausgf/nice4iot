@@ -211,8 +211,6 @@ async def project_general_panel(project_id: str):
             await project_card(project_id)
         with config_expansion('Provisioning'):
             await ProvisioningCard(project_id)
-        with config_expansion('Seed'):
-            await seed_settings_card(project_dir(project_id))
         with config_expansion('Forwarding'):
             ForwardingCard(project_id)
         with config_expansion('Telemetry'):
@@ -221,7 +219,9 @@ async def project_general_panel(project_id: str):
             LoggingCard(project_id)
         with config_expansion('Files'):
             await file_config_card(project_id)
-        with config_expansion('Firmware'):
+        with config_expansion('Firmware Seed'):
+            await seed_settings_card(project_dir(project_id))
+        with config_expansion('Firmware Download'):
             await firmware_source_card(project_dir(project_id),
                                        project_name=project_id, device_name=None)
         with config_expansion('Alarms'):

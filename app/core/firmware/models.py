@@ -10,18 +10,6 @@ from app.util import is_valid_upload_filename
 # owner/name only — never a URL (SSRF guard). Letters, digits, dot, underscore, hyphen.
 REPO_RE = re.compile(r'^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$')
 
-# Same charset as a plain filename, plus '*'/'?' glob wildcards for asset_name.
-ASSET_NAME_RE = re.compile(r'^[A-Za-z0-9*?][A-Za-z0-9_\-.*?]*$')
-
-
-def is_valid_asset_name(name: str) -> bool:
-    """Filename or glob pattern ('*'/'?') safe to match against release asset names."""
-    return bool(ASSET_NAME_RE.match(name)) and '..' not in name
-
-
-def is_wildcard_asset_name(name: str) -> bool:
-    return any(c in name for c in '*?')
-
 
 class FirmwareSource(BaseModel):
     """Per-directory firmware source: a public GitHub repository whose release
@@ -53,17 +41,13 @@ class FirmwareSource(BaseModel):
 
     asset_name: Annotated[str,
             Field(title='Asset name',
-                  description='Name of the release asset to download. May contain "*"/"?" '
-                              'wildcards, e.g. "firmware-*.bin" or "*.bin" to pull every matching '
-                              'asset in the release (each written under its own name) — handy for a '
-                              'release that ships several board-specific files side by side.'),
+                  description='Name of the release asset to download.'),
             niceview.Field()
         ] = 'firmware.bin'
 
     dest_filename: Annotated[str,
             Field(title='Destination filename',
-                  description='Filename written into this directory (served to devices). '
-                              'Ignored when Asset name is a wildcard pattern.'),
+                  description='Filename written into this directory (served to devices).'),
             niceview.Field()
         ] = 'firmware.bin'
 
@@ -99,25 +83,13 @@ class FirmwareSource(BaseModel):
             raise ValueError('repo must be "owner/name" (letters, digits, . _ - only) — not a URL')
         return v
 
-    @field_validator('asset_name')
+    @field_validator('asset_name', 'dest_filename')
     @classmethod
-    def _validate_asset_name(cls, v: str) -> str:
-        v = v.strip()
-        if v and not is_valid_asset_name(v):
-            raise ValueError('invalid asset name')
-        return v or 'firmware.bin'
-
-    @field_validator('dest_filename')
-    @classmethod
-    def _validate_dest_filename(cls, v: str) -> str:
+    def _validate_filename(cls, v: str) -> str:
         v = v.strip()
         if v and not is_valid_upload_filename(v):
             raise ValueError('invalid filename')
         return v or 'firmware.bin'
-
-    @property
-    def asset_is_wildcard(self) -> bool:
-        return is_wildcard_asset_name(self.asset_name)
 
     class Meta:
         description = ('Pull a firmware asset from a **public** GitHub release into the project or device directory. '
@@ -139,10 +111,7 @@ class FirmwareState(BaseModel):
     """
 
     tag: str = ''
-    asset: str = ''           # first/primary pulled asset name — kept for simple display
-    assets: list[str] = []    # every asset name written by this pull (one entry unless
-                              # asset_name is a wildcard matching more than one release asset)
-    digest: str = ''          # 'sha256:...' of the pulled asset, or of all of them combined
-                              # (name:digest pairs, '|'-joined, sorted by name) when there's more than one
+    asset: str = ''
+    digest: str = ''          # 'sha256:...' of the pulled asset
     pulled_at: datetime.datetime | None = None
     etag: str = ''            # ETag of the release API response, for conditional polling
