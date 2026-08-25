@@ -18,6 +18,7 @@ from app.core.device.backend import create_device
 from app.core.device.models import Device
 from app.core.project.backend import create_project, project_adapter
 from app.extensions import (
+    call_with_page_args,
     get_device_dashboard_cards,
     get_device_general_cards,
     get_device_tabs,
@@ -241,7 +242,15 @@ def test_project_tab_only_returned_when_enabled(project):
 
     assert get_project_tabs(project) == []
     _enable(project, 'ext1')
-    assert get_project_tabs(project) == [('Extra', fn)]
+    assert get_project_tabs(project) == [('Extra', 'extension', fn)]
+
+
+def test_project_tab_custom_icon(project):
+    fn = lambda project_name: None
+    with registering('ext1'):
+        register_project_tab('Extra', fn, icon='star')
+    _enable(project, 'ext1')
+    assert get_project_tabs(project) == [('Extra', 'star', fn)]
 
 
 def test_device_tab_only_returned_when_enabled(project):
@@ -251,7 +260,56 @@ def test_device_tab_only_returned_when_enabled(project):
 
     assert get_device_tabs(project) == []
     _enable(project, 'ext1')
-    assert get_device_tabs(project) == [('Extra', fn)]
+    assert get_device_tabs(project) == [('Extra', 'extension', fn)]
+
+
+def test_device_tab_custom_icon(project):
+    fn = lambda project_name, device_name: None
+    with registering('ext1'):
+        register_device_tab('Extra', fn, icon='star')
+    _enable(project, 'ext1')
+    assert get_device_tabs(project) == [('Extra', 'star', fn)]
+
+
+# ---------------------------------------------------------------------------
+# call_with_page_args — routing info for tabs/cards that want it
+# ---------------------------------------------------------------------------
+
+def _page_args():
+    from starlette.datastructures import QueryParams
+    from nicegui import PageArguments
+    return PageArguments(path='/here', frame=None, path_parameters={}, query_parameters=QueryParams(), data={})
+
+
+def test_call_with_page_args_omits_args_for_plain_render_fn():
+    calls = []
+    call_with_page_args(lambda project_name: calls.append(project_name), _page_args(), 'proj')
+    assert calls == ['proj']
+
+
+def test_call_with_page_args_passes_args_when_annotated():
+    from nicegui import PageArguments
+    calls = []
+
+    def render_fn(project_name, args: PageArguments):
+        calls.append((project_name, args))
+
+    page_args = _page_args()
+    call_with_page_args(render_fn, page_args, 'proj')
+    assert calls == [('proj', page_args)]
+
+
+def test_call_with_page_args_finds_annotated_param_by_position():
+    """The PageArguments parameter need not be named 'args' — matched by annotation."""
+    from nicegui import PageArguments
+    calls = []
+
+    def render_fn(project_name, device_name, routing: PageArguments):
+        calls.append((project_name, device_name, routing))
+
+    page_args = _page_args()
+    call_with_page_args(render_fn, page_args, 'proj', 'dev')
+    assert calls == [('proj', 'dev', page_args)]
 
 
 # ---------------------------------------------------------------------------
@@ -275,6 +333,24 @@ def test_register_project_page_twice_raises():
         register_project_page(lambda project_name: None)
         with pytest.raises(RuntimeError):
             register_project_page(lambda project_name: None)
+
+
+def test_extension_page_pattern_matches_bare_and_deep_paths():
+    """Standalone pages route the whole /ext/<name>/... subtree to render_fn, so an
+    extension can nest its own ui.sub_pages for deep links (docs/extensions.md)."""
+    from app.frontend import _EXTENSION_PAGE_PATTERN
+
+    for path, project_id, extension_name in [
+        ('/ui/project/demo/ext/epaper', 'demo', 'epaper'),
+        ('/ui/project/demo/ext/epaper/', 'demo', 'epaper'),
+        ('/ui/project/demo/ext/epaper/screens/5', 'demo', 'epaper'),
+    ]:
+        m = _EXTENSION_PAGE_PATTERN.match(path)
+        assert m is not None, path
+        assert m.group('project_id') == project_id
+        assert m.group('extension_name') == extension_name
+
+    assert _EXTENSION_PAGE_PATTERN.match('/ui/project/demo/device/dev1') is None
 
 
 # ---------------------------------------------------------------------------

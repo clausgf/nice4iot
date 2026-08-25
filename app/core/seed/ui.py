@@ -15,8 +15,11 @@ from app.core.seed.backend import get_device_seed_override_adapter, get_seed_ada
 from app.core.seed.models import DeviceSeedOverride, SeedSettings
 
 
-async def seed_settings_card(dir_path: Path) -> None:
-    """Project-level Seed settings form: WiFi/API URL/TLS bootstrap data."""
+async def seed_settings_card(dir_path: Path, *, project_name: str) -> None:
+    """Project-level Seed settings form: WiFi/API URL/TLS bootstrap data, plus a
+    shortcut to try it out — "AP based Setup" creates a device and immediately
+    opens the same ap_qr_dialog the project's Devices tab opens after creating a
+    device that way (see app.core.seed.action_dialogs)."""
     adapter = get_seed_adapter(dir_path)
     config = adapter.read()
 
@@ -42,6 +45,15 @@ async def seed_settings_card(dir_path: Path) -> None:
                                default_classes='w-full', profile='settings')
     form.render()
     form.widgets['ca_cert'].set_visibility(config.tls_mode == 'custom')
+
+    async def _new_device_ap_setup() -> None:
+        from app.core.device.ui import prompt_create_device  # local: device/ui.py imports this module
+        name = await prompt_create_device(project_name)
+        if name is not None:
+            ap_qr_dialog(project_name, name).open()
+
+    with ui.row().classes('gap-2 q-mt-sm'):
+        ui.button('AP based Setup', icon='qr_code', on_click=_new_device_ap_setup).props('outline')
 
 
 async def device_seed_override_card(dir_path: Path, *, project_name: str, device_name: str) -> None:
@@ -79,5 +91,5 @@ async def device_seed_override_card(dir_path: Path, *, project_name: str, device
     with ui.row().classes('gap-2 q-mt-sm'):
         ui.button('Flash Device', icon='usb',
                   on_click=lambda: web_serial_flash_dialog(project_name, device_name).open()).props('outline')
-        ui.button('AP + Form Setup', icon='qr_code',
+        ui.button('AP based Setup', icon='qr_code',
                   on_click=lambda: ap_qr_dialog(project_name, device_name).open()).props('outline')

@@ -1,7 +1,8 @@
-from typing import Optional, cast
+import re
+from typing import cast
 
 import anyio
-from nicegui import PageArguments, ui
+from nicegui import context, PageArguments, ui
 
 from app.config import app_config
 from app.core.token.backend import get_provisioning_token_adapter
@@ -18,14 +19,14 @@ from app.core.seed.ui import seed_settings_card
 from app.paths import project_dir
 from app.core.file.ui import file_config_card
 from app.routes import device_url, project_url, projects_url
-from app.ui import config_expansion, refresh_breadcrumbs, status_avatar
+from app.ui import NavItem, config_expansion, hide_sidebar, refresh_breadcrumbs, render_sidebar, show_sidebar, status_avatar
 from app.util import is_valid_name, render_datetime
 from app.core.project.models import Project
 from app.core.project.backend import create_project, delete_project, get_project, get_projects, project_adapter, rename_project
 from app.core.alarm.ui import alarm_config_card, dashboard_alarms_card
 from app.exceptions import NotFoundError
 from app.extensions import (
-    get_project_dashboard_cards, get_project_general_cards,
+    call_with_page_args, get_project_dashboard_cards, get_project_general_cards,
     get_project_tabs, get_registered_extension_names, maybe_await,
 )
 from niceview import ModelForm
@@ -37,10 +38,12 @@ log = logging.getLogger("uvicorn")
 
 # ***************************************************************************
 
-async def all_projects_subpage(args: PageArguments, nav: ui.element):
+async def all_projects_subpage(args: PageArguments, nav: ui.element, sidebar: ui.element,
+                               drawer: ui.element, hamburger: ui.element):
     log.debug(f'project_main_page {args=}')
     refresh_breadcrumbs(nav)
-    
+    hide_sidebar(drawer, hamburger, sidebar)
+
     async def _new_project():
         name = await input_dialog(
             'Create Project',
@@ -53,7 +56,7 @@ async def all_projects_subpage(args: PageArguments, nav: ui.element):
             return
         project = create_project(name)
         ui.notify(f"Created project {project.name}", type='positive')
-        ui.navigate.to(project_url(project.name, tab='General'))
+        ui.navigate.to(project_url(project.name, tab='general'))
 
     with ui.grid().classes('grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 w-full'):
         for project in get_projects():
@@ -80,40 +83,77 @@ async def all_projects_subpage(args: PageArguments, nav: ui.element):
 
 # ***************************************************************************
 
-async def project_subpage(args: PageArguments, nav: ui.element, project_id: str, tab: Optional[str] = None):
+def slugify_tab_label(label: str) -> str:
+    """URL-safe path segment for an extension-registered tab's sidebar route,
+    e.g. 'E-Paper' -> 'e-paper'. See app.routes.project_url()'s tab= param."""
+    return re.sub(r'[^a-z0-9]+', '-', label.lower()).strip('-') or 'tab'
+
+
+def project_nav_items(project_id: str, extension_tab_defs: list[tuple[str, str, object]]) -> list[NavItem]:
+    """The project sidebar's rows — the four built-in sections plus every
+    enabled extension project tab. Shared with device_subpage, which shows
+    the same sidebar (with 'Devices' as the active row) while drilled into a
+    device, rather than growing a third sidebar level of its own."""
+    return [
+        NavItem('Dashboard', 'dashboard', project_url(project_id)),
+        NavItem('General', 'settings', project_url(project_id, tab='general')),
+        NavItem('Files', 'folder', project_url(project_id, tab='files')),
+        NavItem('Devices', 'devices', project_url(project_id, tab='devices')),
+        *(NavItem(label, icon, project_url(project_id, tab=f'tab/{slugify_tab_label(label)}'))
+          for label, icon, _fn in extension_tab_defs),
+    ]
+
+
+async def project_subpage(args: PageArguments, nav: ui.element, sidebar: ui.element,
+                          drawer: ui.element, hamburger: ui.element, project_id: str) -> None:
     try:
         get_project(project_id, check_active=False)
     except (ValueError, NotFoundError):
+        hide_sidebar(drawer, hamburger, sidebar)
         ui.label(f'Project "{project_id}" does not exist.').classes('text-h6 text-negative')
         return
 
     refresh_breadcrumbs(nav, project_id=project_id)
 
     extension_tab_defs = await anyio.to_thread.run_sync(lambda: get_project_tabs(project_id))
-    with ui.tabs().classes('w-full') as tabs:
-        dashboard_tab = ui.tab('Dashboard')
-        general_tab = ui.tab('General')
-        files_tab = ui.tab('Files')
-        devices_tab = ui.tab('Devices')
-        extension_tabs = [(ui.tab(label), render_fn) for label, render_fn in extension_tab_defs]
-    tab = tab if tab else dashboard_tab.label
-    tabs.on_value_change(lambda e: ui.navigate.history.replace(project_url(project_id, tab=cast(str, e.value))))
-    with ui.tab_panels(tabs, value=tab).classes('w-full'):
-        with ui.tab_panel(dashboard_tab):
-            await project_dashboard_panel(project_id)
-        with ui.tab_panel(general_tab):
-            await project_general_panel(project_id)
-        with ui.tab_panel(files_tab):
-            await project_files_panel(project_id)
-        with ui.tab_panel(devices_tab):
-            await project_devices_panel(project_id)
-        for extension_tab, render_fn in extension_tabs:
-            with ui.tab_panel(extension_tab):
-                await maybe_await(render_fn(project_id))
+    nav_items = project_nav_items(project_id, extension_tab_defs)
+    show_sidebar(drawer, hamburger, sidebar, project_id, nav_items)
+    # Clicking a sidebar row navigates within this same project_subpage render
+    # (the nested ui.sub_pages below swaps content in place) — project_subpage
+    # itself doesn't re-run, so the active row has to be recomputed on every
+    # such navigation rather than just once here (see app.ui.render_sidebar).
+    context.client.sub_pages_router.on_path_changed(lambda _: render_sidebar(sidebar, project_id, nav_items))
+
+    async def _dashboard_route() -> None:
+        await project_dashboard_panel(project_id, args)
+
+    async def _general_route() -> None:
+        await project_general_panel(project_id, args)
+
+    async def _files_route() -> None:
+        await project_files_panel(project_id)
+
+    async def _devices_route() -> None:
+        await project_devices_panel(project_id)
+
+    def _tab_route(render_fn):
+        async def _route() -> None:
+            await maybe_await(call_with_page_args(render_fn, args, project_id))
+        return _route
+
+    routes: dict = {
+        '/': _dashboard_route, '/general': _general_route,
+        '/files': _files_route, '/devices': _devices_route,
+    }
+    for label, _icon, render_fn in extension_tab_defs:
+        routes[f'/tab/{slugify_tab_label(label)}'] = _tab_route(render_fn)
+
+    with ui.column().classes('w-full'):
+        ui.sub_pages(routes)
 
 # ***************************************************************************
 
-async def project_dashboard_panel(project_id: str) -> None:
+async def project_dashboard_panel(project_id: str, args: PageArguments) -> None:
     """Overview cards shown on the project Dashboard tab (auto-refreshes every 10 s)."""
 
     @ui.refreshable
@@ -196,7 +236,7 @@ async def project_dashboard_panel(project_id: str) -> None:
 
             # Extension cards
             for render_fn in await anyio.to_thread.run_sync(lambda: get_project_dashboard_cards(project_id)):
-                await maybe_await(render_fn(project_id))
+                await maybe_await(call_with_page_args(render_fn, args, project_id))
 
     await _content()
     ui.timer(10.0, _content.refresh)
@@ -205,7 +245,7 @@ async def project_dashboard_panel(project_id: str) -> None:
 
 # ***************************************************************************
 
-async def project_general_panel(project_id: str):
+async def project_general_panel(project_id: str, args: PageArguments):
     with ui.grid().classes('w-full gap-4 grid-cols-1 lg:grid-cols-2'):
         with config_expansion('General'):
             await project_card(project_id)
@@ -220,7 +260,7 @@ async def project_general_panel(project_id: str):
         with config_expansion('Files'):
             await file_config_card(project_id)
         with config_expansion('Firmware Seed'):
-            await seed_settings_card(project_dir(project_id))
+            await seed_settings_card(project_dir(project_id), project_name=project_id)
         with config_expansion('Firmware Download'):
             await firmware_source_card(project_dir(project_id),
                                        project_name=project_id, device_name=None)
@@ -230,7 +270,7 @@ async def project_general_panel(project_id: str):
             await extensions_card(project_id)
         for title, render_fn in await anyio.to_thread.run_sync(lambda: get_project_general_cards(project_id)):
             with config_expansion(title):
-                await maybe_await(render_fn(project_id))
+                await maybe_await(call_with_page_args(render_fn, args, project_id))
         with config_expansion('Danger Zone'):
             await danger_card(project_id)
 

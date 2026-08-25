@@ -5,7 +5,7 @@ import anyio
 from nicegui import PageArguments, ui
 
 from app.routes import device_url, project_url
-from app.ui import config_expansion, refresh_breadcrumbs, status_avatar
+from app.ui import config_expansion, refresh_breadcrumbs, show_sidebar, status_avatar
 from app.core.device.models import Device, DeviceRuntime
 from app.core.device.backend import (
     create_device, delete_device, device_adapter, get_device, get_devices,
@@ -22,7 +22,10 @@ from app.paths import device_dir
 from app.util import is_valid_name, render_datetime, render_datetime_age
 from niceview import ModelForm
 from niceview.util import confirm_dialog, input_dialog
-from app.extensions import get_device_dashboard_cards, get_device_general_cards, get_device_tabs, maybe_await
+from app.extensions import (
+    call_with_page_args, get_device_dashboard_cards, get_device_general_cards, get_device_tabs,
+    get_project_tabs, maybe_await,
+)
 
 import logging
 log = logging.getLogger("uvicorn")
@@ -35,12 +38,26 @@ log = logging.getLogger("uvicorn")
 async def device_subpage(
     args: PageArguments,
     nav: ui.element,
+    sidebar: ui.element,
+    drawer: ui.element,
+    hamburger: ui.element,
     project_id: str,
     device_id: str,
     tab: Optional[str] = None,
 ) -> None:
-    """Render the device page: header nav path + tabbed panels."""
+    """Render the device page: header nav path + tabbed panels.
+
+    Shows the parent project's sidebar (Devices highlighted) rather than
+    growing a third sidebar level of its own — the device's own sections
+    stay a horizontal tab strip in the content area, same as before.
+    """
     refresh_breadcrumbs(nav, project_id=project_id, device_id=device_id)
+
+    from app.core.project.ui import project_nav_items  # local: project.ui imports this module
+    project_tab_defs = await anyio.to_thread.run_sync(lambda: get_project_tabs(project_id))
+    items = project_nav_items(project_id, project_tab_defs)
+    devices_item = next(item for item in items if item.label == 'Devices')
+    show_sidebar(drawer, hamburger, sidebar, project_id, items, active=devices_item)
 
     extension_tab_defs = await anyio.to_thread.run_sync(lambda: get_device_tabs(project_id))
     with ui.tabs().classes('w-full') as tabs:
@@ -49,14 +66,14 @@ async def device_subpage(
         files_tab     = ui.tab('Files')
         data_tab      = ui.tab('Data')
         logs_tab      = ui.tab('Logs')
-        extension_tabs = [(ui.tab(label), render_fn) for label, render_fn in extension_tab_defs]
+        extension_tabs = [(ui.tab(label, icon=icon), render_fn) for label, icon, render_fn in extension_tab_defs]
     tab = tab or dashboard_tab.label
     tabs.on_value_change(lambda e: ui.navigate.history.replace(device_url(project_id, device_id, tab=cast(str, e.value))))
     with ui.tab_panels(tabs, value=tab).classes('w-full'):
         with ui.tab_panel(dashboard_tab):
-            await device_dashboard_panel(project_id, device_id)
+            await device_dashboard_panel(project_id, device_id, args)
         with ui.tab_panel(general_tab):
-            await device_general_panel(project_id, device_id)
+            await device_general_panel(project_id, device_id, args)
         with ui.tab_panel(files_tab):
             await device_files_panel(project_id, device_id)
         with ui.tab_panel(data_tab):
@@ -65,14 +82,14 @@ async def device_subpage(
             await device_logs_panel(project_id, device_id)
         for extension_tab, render_fn in extension_tabs:
             with ui.tab_panel(extension_tab):
-                await maybe_await(render_fn(project_id, device_id))
+                await maybe_await(call_with_page_args(render_fn, args, project_id, device_id))
 
 
 # ***************************************************************************
 # Device Dashboard Panel
 # ***************************************************************************
 
-async def device_dashboard_panel(project_name: str, device_name: str) -> None:
+async def device_dashboard_panel(project_name: str, device_name: str, args: PageArguments) -> None:
     """Overview cards shown on the device Dashboard tab (auto-refreshes every 10 s)."""
     from app.core.alarm.ui import dashboard_alarms_card
 
@@ -90,7 +107,7 @@ async def device_dashboard_panel(project_name: str, device_name: str) -> None:
             await _status_card(device, project_name, threshold, labels, runtime)
             await _timeline_card(device)
             for render_fn in await anyio.to_thread.run_sync(lambda: get_device_dashboard_cards(project_name)):
-                await maybe_await(render_fn(project_name, device_name))
+                await maybe_await(call_with_page_args(render_fn, args, project_name, device_name))
             for view in plot_views:
                 if view.show_on_dashboard:
                     await dashboard_plot_card(project_name, device_name, view)
@@ -211,7 +228,7 @@ async def _timeline_card(device: Device) -> None:
 # Device General Panel (Settings → General)
 # ***************************************************************************
 
-async def device_general_panel(project_name: str, device_name: str) -> None:
+async def device_general_panel(project_name: str, device_name: str, args: PageArguments) -> None:
     """Content of the General tab — device settings, tokens, danger zone."""
     with ui.grid().classes('grid-cols-1 lg:grid-cols-2 gap-4 w-full'):
         with config_expansion('Device'):
@@ -225,7 +242,7 @@ async def device_general_panel(project_name: str, device_name: str) -> None:
             # Match the device page's built-in expansions (subtitle1), not the
             # config_expansion default (h6, used on the project page).
             with config_expansion(title):
-                await maybe_await(render_fn(project_name, device_name))
+                await maybe_await(call_with_page_args(render_fn, args, project_name, device_name))
         # Danger Zone always last, after any extension cards (matches the project page).
         with config_expansion('Danger Zone'):
             await _device_danger_card(project_name, device_name)
@@ -315,7 +332,7 @@ async def _delete_device(project_name: str, device_name: str) -> None:
     try:
         delete_device(project_name, device_name)
         ui.notify(f"Deleted device {device_name}", type='positive')
-        ui.navigate.to(project_url(project_name, tab='Devices'))
+        ui.navigate.to(project_url(project_name, tab='devices'))
     except Exception as e:
         log.exception(f"Delete failed: {e}")
         ui.notify(f"Delete failed: {e}", type='negative')

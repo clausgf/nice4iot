@@ -14,7 +14,7 @@ from app.routes import (
     UI_PREFIX, ROUTE_ABOUT, ROUTE_DEVICE, ROUTE_PREFERENCES, ROUTE_PROJECT, ROUTE_PROJECTS,
 )
 from app.auth import get_auth_provider, PasswordAuthProvider
-from app.ui import config_expansion
+from app.ui import config_expansion, hide_sidebar
 from app.util import app_version
 
 import logging
@@ -22,30 +22,6 @@ log = logging.getLogger('uvicorn')
 
 
 # ---------------------------------------------------------------------------
-
-_logo = '''<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="32" height="32">
-  <g fill="none" stroke="white" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
-    <circle cx="32" cy="32" r="15.37"/>
-    <ellipse cx="32" cy="32" rx="15.37" ry="5.13"/>
-    <ellipse cx="32" cy="32" rx="15.37" ry="10.26"/>
-    <ellipse cx="32" cy="32" rx="5.13" ry="15.37"/>
-    <ellipse cx="32" cy="32" rx="10.26" ry="15.37"/>
-    <line x1="47.37" y1="32" x2="53.33" y2="32"/>
-    <line x1="41.03" y1="17.33" x2="43.59" y2="12.11"/>
-    <line x1="22.97" y1="17.33" x2="20.41" y2="12.11"/>
-    <line x1="16.63" y1="32" x2="10.67" y2="32"/>
-    <line x1="22.97" y1="46.67" x2="20.41" y2="51.89"/>
-    <line x1="41.03" y1="46.67" x2="43.59" y2="51.89"/>
-    <circle cx="53.33" cy="32" r="1.92"/>
-    <circle cx="43.59" cy="12.11" r="1.92"/>
-    <circle cx="20.41" cy="12.11" r="1.92"/>
-    <circle cx="10.67" cy="32" r="1.92"/>
-    <circle cx="20.41" cy="51.89" r="1.92"/>
-    <circle cx="43.59" cy="51.89" r="1.92"/>
-  </g>
-</svg>'''
-
 
 def login_redirect():
     """
@@ -152,13 +128,15 @@ def page_login():
 
 # ***************************************************************************
 
-async def preferences_subpage(args: PageArguments, nav: ui.element):
+async def preferences_subpage(args: PageArguments, nav: ui.element, sidebar: ui.element,
+                              drawer: ui.element, hamburger: ui.element):
     """Global preferences (User menu → Preferences): MQTT broker status and any
     extension-registered global cards. Kept off the project list so /ui stays a
     pure list of projects."""
     nav.clear()
     with nav:
         ui.label('Preferences').classes('text-h6 text-white')
+    hide_sidebar(drawer, hamburger, sidebar)
 
     with ui.column().classes('w-full max-w-3xl mx-auto p-4 gap-4'):
         ui.label('Preferences').classes('text-h5')
@@ -170,7 +148,8 @@ async def preferences_subpage(args: PageArguments, nav: ui.element):
 
 # ***************************************************************************
 
-async def about_subpage(args: PageArguments, nav: ui.element):
+async def about_subpage(args: PageArguments, nav: ui.element, sidebar: ui.element,
+                        drawer: ui.element, hamburger: ui.element):
     """About / Software Bill of Materials, as a client-side sub-page so it routes
     through ui.sub_pages like the rest of the app (a standalone @ui.page is not
     reachable — the sub_pages router intercepts internal navigation first).
@@ -181,6 +160,7 @@ async def about_subpage(args: PageArguments, nav: ui.element):
     nav.clear()
     with nav:
         ui.label('About').classes('text-h6 text-white')
+    hide_sidebar(drawer, hamburger, sidebar)
 
     from app.sbom import app_commit_date, app_revision, collect_sbom, package_version
     packages = await anyio.to_thread.run_sync(collect_sbom)
@@ -226,7 +206,12 @@ async def about_subpage(args: PageArguments, nav: ui.element):
 
 
 _EXTENSION_PAGE_PATTERN = re.compile(
-    r'^/ui/project/(?P<project_id>[^/]+)/ext/(?P<extension_name>[^/]+)/?$')
+    r'^/ui/project/(?P<project_id>[^/]+)/ext/(?P<extension_name>[^/]+)(?:/.*)?$')
+"""Matches the standalone page's own URL AND any sub-path under it, e.g.
+/ext/<name>/screens/5 — render_fn owns the whole page, so it may open its own
+nested ui.sub_pages(routes, root_path=project_extension_url(...)) for
+deep-linkable views of its own; nice4iot only needs to route the whole
+subtree to it, not know its shape."""
 
 
 @ui.page('/ui')
@@ -256,8 +241,12 @@ async def home_page():
             return
 
     with ui.header(elevated=True).classes('items-center gap-3'):
-        ui.html(_logo).props('width=16 height=16').classes('text-white cursor-pointer shrink-0') \
-            .on('click', lambda: ui.navigate.to(projects_url()))
+        # Toggles the left drawer; only visible while a project/device sidebar
+        # exists (project_subpage/device_subpage reveal it, hide_sidebar()
+        # hides it again on the Projects list / Preferences / About).
+        hamburger = ui.button(icon='menu').props('flat color=white round dense') \
+            .classes('lg:hidden shrink-0')
+        hamburger.set_visibility(False)
         ui.label('4IoT').classes('text-h6 font-bold cursor-pointer shrink-0') \
             .on('click', lambda: ui.navigate.to(projects_url()))
         # Sub-pages populate this row with clickable path segments (e.g. project / device).
@@ -265,10 +254,24 @@ async def home_page():
         ui.space()
         _user_menu()
 
+    with ui.left_drawer(bordered=True).props('breakpoint=1024') as drawer:
+        sidebar = ui.column().classes('w-full gap-0')
+    drawer.hide()
+    hamburger.on_click(drawer.toggle)
+
     with ui.column().classes('w-full'):
         # root_path=UI_PREFIX strips the /ui prefix before matching, so the route
         # keys stay relative. The literal 'project' segment keeps project names
         # from ever colliding with /about or /preferences.
+        #
+        # show_404=False: ROUTE_PROJECT only matches the '/project/{id}' prefix —
+        # project_subpage consumes the rest (.../general, .../devices, ...) with
+        # its own nested ui.sub_pages, exactly the "wildcard routing" case
+        # nicegui's own docs point at show_404=False for. Without it, a direct
+        # load of such a URL 404s: project_subpage's async body (it awaits
+        # anyio.to_thread for the project lookup before ever reaching its nested
+        # ui.sub_pages) can't outrun the single event-loop tick this SubPages
+        # instance waits before deciding the path was left unresolved.
         ui.sub_pages(
             {
                 ROUTE_PROJECTS:    all_projects_subpage,
@@ -277,6 +280,7 @@ async def home_page():
                 ROUTE_PROJECT:     project_subpage,
                 ROUTE_DEVICE:      device_subpage,
             },
-            data={'nav': nav},
+            data={'nav': nav, 'sidebar': sidebar, 'drawer': drawer, 'hamburger': hamburger},
             root_path=UI_PREFIX,
+            show_404=False,
         ).classes('w-full')

@@ -20,6 +20,7 @@ from typing import Any, Callable, Literal
 
 import anyio
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
+from nicegui import PageArguments
 
 from app.core.device.models import Device
 from app.util import logger
@@ -33,8 +34,8 @@ _device_general_cards: list[tuple[str, str, Callable[[str, str], Any]]] = []
 _global_cards: list[tuple[str, str, Callable[[], Any]]] = []  # (extension_name, title, render_fn)
 _user_menu_items: list[tuple[str, str, str | None, Callable[[], Any]]] = []  # (extension_name, label, icon, on_click)
 
-_project_tabs: list[tuple[str, str, Callable[[str], Any]]] = []  # (extension_name, label, render_fn)
-_device_tabs: list[tuple[str, str, Callable[[str, str], Any]]] = []
+_project_tabs: list[tuple[str, str, str, Callable[[str], Any]]] = []  # (extension_name, label, icon, render_fn)
+_device_tabs: list[tuple[str, str, str, Callable[[str, str], Any]]] = []
 
 _project_pages: dict[str, Callable[[str], Any]] = {}  # extension_name -> render_fn
 
@@ -103,6 +104,25 @@ async def maybe_await(result: Any) -> None:
         await result
 
 
+def call_with_page_args(render_fn: Callable[..., Any], args: PageArguments, *positional: str) -> Any:
+    """Call render_fn(*positional), additionally passing *args* as a keyword when render_fn
+    declares a parameter annotated PageArguments — the same convention ui.sub_pages() route
+    builders use (nicegui's PageArguments.build_kwargs).
+
+    A tab/card render_fn that doesn't care about routing keeps its existing (project_name) /
+    (project_name, device_name) signature unchanged. One that wants deep-linkable sub-views of
+    its own adds e.g. `def render_fn(project_name: str, args: PageArguments) -> None` and opens
+    a nested `ui.sub_pages(routes)` inside it — nesting under the page's own ui.sub_pages derives
+    root_path automatically, no extension bookkeeping required.
+    """
+    page_args_name = next(
+        (name for name, p in inspect.signature(render_fn).parameters.items()
+         if p.annotation is PageArguments), None)
+    if page_args_name is None:
+        return render_fn(*positional)
+    return render_fn(*positional, **{page_args_name: args})
+
+
 # ---------------------------------------------------------------------------
 # Cards
 # ---------------------------------------------------------------------------
@@ -112,7 +132,8 @@ def register_project_card(section: CardSection, render_fn: Callable[[str], Any],
     """Register a card rendered on the project Dashboard or General tab.
 
     render_fn(project_name) is called while a surrounding ui.grid() is being
-    built. May be sync or async.
+    built. May be sync or async. Add a trailing PageArguments-annotated
+    parameter for routing info (see call_with_page_args()).
 
     'dashboard' cards create their own ui.card() inside render_fn (a
     compact, always-visible summary — no title= here). 'general' cards do
@@ -242,26 +263,42 @@ def render_user_menu() -> None:
 # Tabs
 # ---------------------------------------------------------------------------
 
-def register_project_tab(label: str, render_fn: Callable[[str], Any]) -> None:
-    """Register a whole extra tab on the project page, addressed via ?tab=<label>."""
-    _project_tabs.append((_extension_name(), label, render_fn))
+_DEFAULT_TAB_ICON = 'extension'
 
 
-def register_device_tab(label: str, render_fn: Callable[[str, str], Any]) -> None:
-    """Register a whole extra tab on the device page, addressed via ?tab=<label>."""
-    _device_tabs.append((_extension_name(), label, render_fn))
+def register_project_tab(label: str, render_fn: Callable[[str], Any], *, icon: str = _DEFAULT_TAB_ICON) -> None:
+    """Register a whole extra section on the project page's sidebar.
+
+    icon is a Material icon name for the sidebar row (defaults to a generic
+    'extension' icon if you don't have a more fitting one).
+
+    Add a trailing PageArguments-annotated parameter for routing info — the tab
+    then runs inside nice4iot's own ui.sub_pages, so a nested ui.sub_pages(routes)
+    of your own gets deep-linkable sub-views without any root_path bookkeeping
+    (see call_with_page_args()).
+    """
+    _project_tabs.append((_extension_name(), label, icon, render_fn))
 
 
-def get_project_tabs(project_name: str) -> list[tuple[str, Callable[[str], Any]]]:
-    """Return (label, render_fn) for tabs enabled for project_name."""
+def register_device_tab(label: str, render_fn: Callable[[str, str], Any], *, icon: str = _DEFAULT_TAB_ICON) -> None:
+    """Register a whole extra tab on the device page, addressed via ?tab=<label>.
+
+    icon is a Material icon name (defaults to a generic 'extension' icon).
+    Same PageArguments option as register_project_tab().
+    """
+    _device_tabs.append((_extension_name(), label, icon, render_fn))
+
+
+def get_project_tabs(project_name: str) -> list[tuple[str, str, Callable[[str], Any]]]:
+    """Return (label, icon, render_fn) for tabs enabled for project_name."""
     enabled = _enabled_extensions(project_name)
-    return [(label, fn) for ext, label, fn in _project_tabs if ext in enabled]
+    return [(label, icon, fn) for ext, label, icon, fn in _project_tabs if ext in enabled]
 
 
-def get_device_tabs(project_name: str) -> list[tuple[str, Callable[[str, str], Any]]]:
-    """Return (label, render_fn) for tabs enabled for project_name."""
+def get_device_tabs(project_name: str) -> list[tuple[str, str, Callable[[str, str], Any]]]:
+    """Return (label, icon, render_fn) for tabs enabled for project_name."""
     enabled = _enabled_extensions(project_name)
-    return [(label, fn) for ext, label, fn in _device_tabs if ext in enabled]
+    return [(label, icon, fn) for ext, label, icon, fn in _device_tabs if ext in enabled]
 
 
 # ---------------------------------------------------------------------------

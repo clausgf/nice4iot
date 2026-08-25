@@ -175,6 +175,12 @@ def test_dashboard_plot_card_renders_placeholder_without_data(proj_dev):
     assert 'No data' in labels
 
 
+def _page_args():
+    from starlette.datastructures import QueryParams
+    from nicegui import PageArguments
+    return PageArguments(path='', frame=None, path_parameters={}, query_parameters=QueryParams(), data={})
+
+
 def test_device_dashboard_panel_includes_cards_for_show_on_dashboard_plots(proj_dev):
     from app.core.device.ui import device_dashboard_panel
 
@@ -185,7 +191,7 @@ def test_device_dashboard_panel_includes_cards_for_show_on_dashboard_plots(proj_
 
         async def run() -> None:
             with container:
-                await device_dashboard_panel(project, device)
+                await device_dashboard_panel(project, device, _page_args())
 
         asyncio.run(run())
         return len(_find_all(container, ui.card))

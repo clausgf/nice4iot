@@ -1,10 +1,11 @@
 """Shared NiceGUI presentation helpers used across nice4iot's own UI and by extensions."""
 from contextlib import contextmanager
+from dataclasses import dataclass
 from typing import Generator
 
-from nicegui import ui
+from nicegui import context, ui
 
-from app.routes import device_url, project_url
+from app.routes import UI_PREFIX, device_url, project_url
 
 # ***************************************************************************
 
@@ -45,6 +46,81 @@ def config_expansion(title: str, *, value: bool = False) -> Generator[ui.expansi
             yield expansion
 
 # ***************************************************************************
+
+@dataclass(frozen=True)
+class NavItem:
+    """One row in a page sidebar. `url` is a full navigation target, e.g. from
+    app.routes.project_url() — see render_sidebar()."""
+    label: str
+    icon: str
+    url: str
+
+
+def _current_path() -> str:
+    """The browser's current path (UI_PREFIX-prefixed, no query string), for
+    comparing against a NavItem's url."""
+    return UI_PREFIX + context.client.sub_pages_router.current_path.split('?')[0].rstrip('/')
+
+
+def render_sidebar(container: ui.element, heading: str, items: list[NavItem], *,
+                   active: NavItem | None = None) -> None:
+    """(Re)populate `container`: a heading, then a flat list of clickable nav
+    rows. By default the active row is whichever item's url is the longest
+    matching prefix of the current URL (longest, not first/exact, so a
+    project tab that opens its own nested ui.sub_pages still highlights on
+    any of its own sub-routes, while a plain leaf like Dashboard — whose url
+    is every other item's own prefix — never wrongly outranks a more
+    specific match). Pass `active` explicitly when the real URL doesn't share
+    a prefix with any item's own — device_subpage does this: a device's own
+    URL (.../device/<id>) shares no prefix with the Devices item's
+    (.../devices), so it can't be found this way.
+
+    Call again whenever client-side sub_pages navigation changes the path,
+    since the active row can change without this page's own builder re-running
+    (see app/frontend.py's on_path_changed wiring).
+    """
+    if active is None:
+        current = _current_path()
+        active = max(
+            (item for item in items if current == item.url.rstrip('/') or current.startswith(item.url.rstrip('/') + '/')),
+            key=lambda item: len(item.url), default=None,
+        )
+    container.clear()
+    with container:
+        ui.label(heading).classes('text-subtitle1 font-bold q-pa-sm text-grey-8')
+        ui.separator()
+        with ui.list().props('padding').classes('w-full'):
+            for item in items:
+                is_active = item is active
+                row = ui.item(on_click=lambda _, u=item.url: ui.navigate.to(u)) \
+                    .props('clickable dense').classes('rounded-borders')
+                if is_active:
+                    row.classes('bg-primary text-white')
+                with row:
+                    with ui.item_section().props('avatar').style('min-width: 0; padding-right: 12px'):
+                        ui.icon(item.icon).classes('' if is_active else 'text-primary')
+                    with ui.item_section():
+                        ui.item_label(item.label)
+
+
+def show_sidebar(drawer: ui.element, hamburger: ui.element, container: ui.element,
+                 heading: str, items: list[NavItem], *, active: NavItem | None = None) -> None:
+    """Populate `container` and reveal the drawer/hamburger — the project and
+    device pages call this once per render. Call render_sidebar() again (not
+    this) to just refresh which row is highlighted after an in-page
+    navigation; re-showing/re-revealing on every such refresh is unnecessary."""
+    render_sidebar(container, heading, items, active=active)
+    drawer.show()
+    hamburger.set_visibility(True)
+
+
+def hide_sidebar(drawer: ui.element, hamburger: ui.element, container: ui.element) -> None:
+    """No project/device context: nothing to show a sidebar for (Projects
+    list, Preferences, About)."""
+    container.clear()
+    drawer.hide()
+    hamburger.set_visibility(False)
+
 
 def status_avatar(ok: bool | None, icons: str | list[str], tooltips: str | list[str]) -> None:
     index = 0 if ok is None else (1 if ok is True else 2)

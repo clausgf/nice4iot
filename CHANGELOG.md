@@ -6,6 +6,23 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-08-25
+
+### Added
+
+- **Routing control for extension UI** (`app/extensions.py`, `app/frontend.py`, docs/extensions.md): extension tabs and cards (`register_project_tab`/`register_device_tab`/`register_project_card`/`register_device_card`) may now declare a trailing parameter annotated `PageArguments`; nice4iot passes it in (see `call_with_page_args()`), letting the extension open its own nested `ui.sub_pages(...)` for deep-linkable sub-views without any root_path bookkeeping — it's rendered inside nice4iot's own `ui.sub_pages` already. Existing `render_fn`s without that parameter are unaffected. Standalone extension pages (`register_project_page`) now also route every sub-path under `/ext/<extension_name>/...` to `render_fn`, not just the bare URL, so a kiosk-style extension page can build its own `ui.sub_pages(routes, root_path=project_extension_url(...))` for deep links outside the app chrome.
+
+- **Firmware Seed cards get an "AP based Setup" shortcut** (`app/core/seed/ui.py`): the project-level Firmware Seed card now has an "AP based Setup" button (QR icon) that creates a device and opens the same AP+Form-Setup QR dialog the project's Devices tab opens after creating one that way. `seed_settings_card()` gained a required `project_name` keyword argument for this.
+
+### Changed
+
+- **Project page navigation moved to a sidebar** (`app/frontend.py`, `app/core/project/ui.py`, `app/core/device/ui.py`, `app/ui.py`, `app/routes.py`): the project page's Dashboard/General/Files/Devices tab strip is now a left `ui.left_drawer` sidebar (collapses to a hamburger menu below the 1024px breakpoint — the header's old SVG logo is gone, the hamburger sits in its place), each row a real, bookmarkable URL (`.../project/<id>/general` etc.) instead of `?tab=<label>`. Extension project tabs (`register_project_tab`) appear as additional sidebar rows at `.../tab/<slug>`, now with an optional `icon=` (Material icon name, default `'extension'`) — see docs/extensions.md. The device page is unchanged: it still shows the same sidebar (with "Devices" highlighted, since drilling into one device doesn't grow a third sidebar level) but keeps its own horizontal tab strip and `?tab=<label>` addressing in the content area. The Projects list, Preferences and About pages hide the sidebar/hamburger entirely (there's no project context for them to navigate). `project_url(project_id, tab=...)` now takes a raw path segment (e.g. `'general'`, `'devices'`, `'tab/<slug>'`) instead of a display label; `device_url(..., tab=...)` is unchanged. The app-level `ui.sub_pages` in `home_page()` now sets `show_404=False` — required for a project sub-route to resolve on a direct/cold load rather than 404ing (project_subpage's async body can't outrun nicegui's single-tick check for whether a nested `ui.sub_pages` exists yet); the trade-off is that a genuinely unmatched top-level URL now renders blank instead of a "404" label, both at HTTP 200.
+- The breadcrumb row in the header stays as-is (kept on request — not replaced by the sidebar for now).
+- `project_dashboard_panel`, `project_general_panel`, `device_dashboard_panel`, `device_general_panel` (`app/core/project/ui.py`, `app/core/device/ui.py`) now take an additional `args: PageArguments` parameter, threaded from `project_subpage`/`device_subpage` — internal signature change to support the extension-routing capability above, not called directly by extensions.
+- `register_project_tab`/`register_device_tab` (`app/extensions.py`) gained an optional `icon=` keyword (default `'extension'`); `get_project_tabs`/`get_device_tabs` now return `(label, icon, render_fn)` triples instead of `(label, render_fn)` pairs.
+- Device Firmware Seed card's AP+Form-Setup button relabeled "AP based Setup" (was "AP + Form Setup") to match the new project-level button; the Devices tab's own "AP + Form Setup" button (which creates a new device before showing the dialog) keeps its existing label.
+- `nicepaper` (optional `epaper` extra) bumped v0.19.0 → v0.23.0: adopts the sidebar `icon=` on its four project tabs (Rooms/Screens/Schedules/Booking systems), makes its simplified UI fully deep-linkable via the new standalone-page subtree routing, and adds compact color/font widget-editor controls plus a configurable chart line style — all internal to nicepaper, no further nice4iot changes needed.
+
 ## [0.32.0] - 2026-08-25
 
 ### Added

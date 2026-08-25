@@ -310,24 +310,56 @@ fits. The menu's first entry is a **Home** link back to the 4IoT entry page
 
 ### Tabs
 
-Tabs add a whole new tab next to the built-in ones (Dashboard, General,
-...). They are addressed through the existing `?tab=<label>` deep-link
-query parameter — there is no separate routing mechanism:
+Tabs add a whole new section next to the built-in ones. A **project** tab
+becomes a row in the project page's left sidebar, addressed by its own URL
+segment; a **device** tab is still a tab on the device page (its own tab
+strip in the content area, addressed via the `?tab=<label>` deep-link query
+parameter — the device page hasn't moved to a sidebar):
 
 ```python
-def register_project_tab(label: str, render_fn: Callable[[str], Any]) -> None: ...
-def register_device_tab(label: str, render_fn: Callable[[str, str], Any]) -> None: ...
+def register_project_tab(label: str, render_fn: Callable[[str], Any], *,
+                         icon: str = 'extension') -> None: ...
+def register_device_tab(label: str, render_fn: Callable[[str, str], Any], *,
+                        icon: str = 'extension') -> None: ...
 ```
 
 `render_fn` receives the same arguments as a card's `render_fn` and is
-expected to build the full tab content (it runs inside the page's
-`ui.tab_panel(...)`). Like cards, the tab simply doesn't appear when your
-extension is disabled for that project.
+expected to build the full section's content. Like cards, the tab simply
+doesn't appear when your extension is disabled for that project. `icon` is
+a Material icon name — a project tab's sidebar row always shows one (default
+`'extension'` if you don't have a more fitting choice); a device tab shows
+it next to its label the same way the built-in tabs do.
 
-Because tabs are addressed by label, pick labels that don't collide with
-the built-in ones (Dashboard, General, Provisioning, Files, Devices, Data,
-Logs, Alarms) — a duplicate label would make the `?tab=` deep link
-ambiguous. nice4iot doesn't enforce this; collisions only surface visually.
+A project tab's URL is `.../project/<id>/tab/<slug>`, where `<slug>` is
+your label lowercased with anything that isn't `[a-z0-9]` collapsed to a
+single `-` (`'E-Paper'` → `'e-paper'`) — pick a label that slugifies to
+something distinct from your other tabs; nice4iot doesn't enforce
+uniqueness, a collision only surfaces visually (two rows opening the same
+URL). Device tabs are still addressed by the raw label via `?tab=`, so pick
+one that doesn't collide with the built-in device tabs (Dashboard, General,
+Files, Data, Logs) for the same reason.
+
+**Deep-linkable views inside a tab or card.** A tab/card's own content can
+have more than one "screen" of its own — e.g. a list view and a detail
+view — addressable by URL, not just by clicking around. Add a trailing
+parameter annotated `PageArguments` and nice4iot passes it in:
+
+```python
+from nicegui import PageArguments, ui
+
+def _screens_tab(project_name: str, args: PageArguments) -> None:
+    ui.sub_pages({
+        '/': _screen_list,
+        '/{screen_id}': _screen_detail,
+    })
+```
+
+Your tab already runs inside nice4iot's own `ui.sub_pages`, so a nested
+`ui.sub_pages(...)` you create here derives its `root_path` automatically
+from the enclosing one — no URL bookkeeping on your side. This is the same
+convention `ui.sub_pages` route builders use themselves (see nicegui's own
+`PageArguments` docs); `render_fn` without the parameter keeps working
+exactly as before, so adding it later is not a breaking change.
 
 ## Standalone project pages
 
@@ -352,13 +384,38 @@ This serves at `/ui/project/<project_name>/ext/<extension_name>` (get the URL wi
 for linking to it from one of your own cards). `render_fn` owns the
 **entire** page; nice4iot renders nothing around it. There is no
 mandatory "back to nice4iot" link — add one yourself with
-`app.routes.project_url(project_name)` if you want one, e.g. as a small
-link in the corner.
+`app.routes.project_url(project_name)`.
 
 Login and per-project enablement are still enforced before `render_fn`
 runs, same as everywhere else — nothing to check yourself. Only one
 standalone page per extension; calling `register_project_page` twice
 raises `RuntimeError`.
+
+**Deep links within a standalone page.** nice4iot routes every path under
+`/ext/<extension_name>/...` to your `render_fn`, not just the bare URL — so
+for a kiosk UI with more than one screen, build your own routing inside it
+with `ui.sub_pages`, passing `root_path` explicitly (there is no
+nice4iot-provided `ui.sub_pages` to nest under here, unlike a tab — this
+page is rendered before nice4iot's own is even created):
+
+```python
+from nicegui import ui
+from app.extensions import register_project_page
+from app.routes import project_extension_url
+
+async def _kiosk_view(project_name: str) -> None:
+    ui.sub_pages({
+        '/': _screen_list,
+        '/screens/{screen_id}': _screen_detail,
+    }, root_path=project_extension_url(project_name, 'epaper'))
+
+def register(app):
+    register_project_page(_kiosk_view)
+```
+
+`/ui/project/<project_name>/ext/epaper/screens/5` now reaches
+`_screen_detail(screen_id='5')` — bookmarkable and shareable, same as any
+other nice4iot URL.
 
 ## MQTT
 

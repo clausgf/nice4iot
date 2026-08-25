@@ -1315,7 +1315,7 @@ wheels = [
 
 [[package]]
 name = "nice4iot"
-version = "0.32.0"
+version = "0.33.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiomqtt" },
@@ -1422,8 +1422,8 @@ wheels = [
 
 [[package]]
 name = "nicepaper"
-version = "0.19.0"
-source = { git = "https://github.com/clausgf/nicepaper.git#f0bcbb6115a32abaf2960aaeb639add847756a73" }
+version = "0.23.0"
+source = { git = "https://github.com/clausgf/nicepaper.git#520a30339dad17d0ad1c92a48943acad42c76981" }
 dependencies = [
     { name = "aiofiles" },
     { name = "aiohttp" },
