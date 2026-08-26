@@ -6,6 +6,17 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.35.1] - 2026-08-26
+
+### Added
+
+- **`DeviceRuntime` gained `battery_voltage`/`rssi`/`firmware_id`/`board` properties** (`app/core/device/models.py`): plain read-only accessors over the existing `system_metrics`/`system_labels` snapshot (`battery_V`, `wifi_rssi`, `firmware_id`, `board`) — `None`/`''` when the last system push didn't report that key. Derived, not pydantic fields — never persisted into `.runtime.json`. `firmware_version` already exists as its own dedicated, more authoritative field on both `Device` and `DeviceRuntime` (also fed by the `X-Firmware-Version` header, not just telemetry), so it wasn't duplicated here.
+- **`Device` gained an `active_alarms` property**: a live count of that device's active, unacknowledged alarms (`app.core.alarm.backend.get_alarm_count()` under the hood). Lives on `Device`, not `DeviceRuntime` — it needs `project_name`/`name` to query the alarm backend, which only `Device` carries; also a plain property, not persisted.
+
+### Changed
+
+- `nicepaper` (optional `epaper` extra) bumped v0.26.3 → v0.26.5: Displays now show real firmware version/RSSI/battery/alarm-count data via the `DeviceRuntime`/`Device` properties added above (`display/backend.py`), Rooms' Displays tab shows firmware version per row, organizer names are edited directly instead of via a dialog, a mislabeled ACeP panel-type preset is fixed, plus organizer-extraction logging — no further nice4iot changes needed.
+
 ## [0.35.0] - 2026-08-26
 
 ### Fixed

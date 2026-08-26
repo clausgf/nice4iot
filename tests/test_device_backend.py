@@ -253,6 +253,29 @@ def test_write_runtime_records_system_snapshot(device, project):
     assert rt.system_reported_at == now
 
 
+def test_system_snapshot_convenience_properties(device, project):
+    """battery_voltage/rssi/firmware_id/board are derived from system_metrics/
+    system_labels, not stored fields of their own."""
+    now = datetime.datetime(2025, 6, 1, 12, 0, 0, tzinfo=datetime.timezone.utc)
+    write_runtime(project, device.name,
+                  system_metrics={'battery_V': 3.71, 'wifi_rssi': -67.0},
+                  system_labels={'firmware_id': 'app', 'board': 'esp32paper'},
+                  system_reported_at=now)
+    rt = read_runtime(project, device.name)
+    assert rt.battery_voltage == 3.71
+    assert rt.rssi == -67.0
+    assert rt.firmware_id == 'app'
+    assert rt.board == 'esp32paper'
+
+
+def test_system_snapshot_convenience_properties_default_when_unreported(device, project):
+    rt = read_runtime(project, device.name)
+    assert rt.battery_voltage is None
+    assert rt.rssi is None
+    assert rt.firmware_id == ''
+    assert rt.board == ''
+
+
 def test_system_snapshot_replaces_wholesale(device, project):
     """A later system push replaces the whole snapshot — a field it omits is gone,
     not stale (replace semantics, not merge)."""
@@ -291,6 +314,25 @@ def test_get_device_populates_firmware(device, project):
     d = get_device(project, device.name)
     assert d.firmware_version == 'v9.9'
     assert d.firmware_reported_at is not None
+
+
+def test_device_active_alarms_counts_active_unacknowledged(device, project):
+    from app.core.alarm.backend import acknowledge_alarm, load_alarm_events, save_alarm_events
+    from app.core.alarm.models import AlarmEvent
+
+    assert device.active_alarms == 0
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    save_alarm_events(project, [
+        AlarmEvent(rule_name='low_temp', device_name=device.name, triggered_at=now, last_seen_at=now),
+        AlarmEvent(rule_name='high_temp', device_name=device.name, triggered_at=now, last_seen_at=now,
+                  is_active=False),  # resolved: not counted
+        AlarmEvent(rule_name='low_temp', device_name='other', triggered_at=now, last_seen_at=now),  # different device
+    ])
+    assert device.active_alarms == 1
+
+    acknowledge_alarm(project, load_alarm_events(project)[0].id)
+    assert device.active_alarms == 0
 
 
 def test_device_json_not_touched_on_runtime_write(device, project):

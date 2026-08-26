@@ -121,6 +121,15 @@ class Device(BaseModel):
             niceview.Field()
         ] = []
 
+    # Plain property, not a pydantic field: a live query against the alarm
+    # backend (project_name/name identify the device), not stored device
+    # state -- so it can't live on DeviceRuntime, which carries neither.
+    @property
+    def active_alarms(self) -> int:
+        """Count of this device's active, unacknowledged alarms."""
+        from app.core.alarm.backend import get_alarm_count
+        return get_alarm_count(self.project_name, self.name)
+
 
 class DeviceRuntime(BaseModel):
     """Device-reported runtime state, persisted in ``.runtime.json`` next to the
@@ -147,3 +156,24 @@ class DeviceRuntime(BaseModel):
     system_metrics: dict[str, float] = {}
     system_labels: dict[str, str] = {}
     system_reported_at: datetime.datetime | None = None
+
+    # Convenience accessors over system_metrics/system_labels for the handful of
+    # well-known keys arduino4iot's system push reports. Plain properties, not
+    # pydantic fields/computed_fields, so they stay derived-only and never get
+    # persisted into .runtime.json themselves. None/'' when the last push omitted
+    # the key (see the system_metrics/system_labels comment above).
+    @property
+    def battery_voltage(self) -> float | None:
+        return self.system_metrics.get('battery_V')
+
+    @property
+    def rssi(self) -> float | None:
+        return self.system_metrics.get('wifi_rssi')
+
+    @property
+    def firmware_id(self) -> str:
+        return self.system_labels.get('firmware_id', '')
+
+    @property
+    def board(self) -> str:
+        return self.system_labels.get('board', '')
