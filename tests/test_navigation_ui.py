@@ -142,7 +142,9 @@ def test_render_sidebar_highlights_active_child_and_indents_children():
     from app.ui import NavItem, render_sidebar
     from nicegui import context
 
-    context.client.sub_pages_router.current_path = '/project/proj/settings/alarms'
+    # current_path is UI_PREFIX-prefixed in production (nice4iot mounts NiceGUI
+    # at the ASGI root, so nothing strips '/ui' from it) — see app.ui._current_path.
+    context.client.sub_pages_router.current_path = '/ui/project/proj/settings/alarms'
     container = ui.column()
     items = [
         NavItem('Dashboard', 'dashboard', '/ui/project/proj'),
@@ -181,8 +183,9 @@ def _render_project_subpage(project_id: str):
             # Matches what the router would already show for a real visit to
             # this project's (default) dashboard — the auto-index client's own
             # default ('/') wouldn't, so "is Dashboard the active row" would
-            # trivially fail for the wrong reason.
-            context.client.sub_pages_router.current_path = f'/project/{project_id}'
+            # trivially fail for the wrong reason. UI_PREFIX-prefixed: see the
+            # test above and app.ui._current_path.
+            context.client.sub_pages_router.current_path = f'/ui/project/{project_id}'
             await project_subpage(_page_args(), nav, sidebar, drawer, hamburger, project_id)
         await _drain()
 

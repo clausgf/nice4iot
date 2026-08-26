@@ -5,7 +5,7 @@ from typing import Generator
 
 from nicegui import context, ui
 
-from app.routes import UI_PREFIX, device_url, project_url
+from app.routes import device_url, project_url
 
 # ***************************************************************************
 
@@ -66,8 +66,15 @@ class NavItem:
 
 def _current_path() -> str:
     """The browser's current path (UI_PREFIX-prefixed, no query string), for
-    comparing against a NavItem's url."""
-    return UI_PREFIX + context.client.sub_pages_router.current_path.split('?')[0].rstrip('/')
+    comparing against a NavItem's url.
+
+    sub_pages_router.current_path is already UI_PREFIX-prefixed here: nice4iot
+    mounts NiceGUI at the ASGI root ('/', ui.run_with()'s default), not at
+    '/ui' -- '/ui' is just a matched @ui.page route pattern within that
+    mount, not a submount, so nothing strips it from current_path. Prepending
+    UI_PREFIX again used to double it (.../ui/ui/...), which never matched
+    any NavItem.url and silently left every sidebar row unhighlighted."""
+    return context.client.sub_pages_router.current_path.split('?')[0].rstrip('/')
 
 
 def _leaves(items: list[NavItem]) -> list[NavItem]:

@@ -6,6 +6,16 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.35.2] - 2026-08-26
+
+### Fixed
+
+- **The active sidebar row was never highlighted** (`app/ui.py`): `_current_path()` prepended `UI_PREFIX` ('/ui') to `sub_pages_router.current_path`, but that value is already `/ui`-prefixed in production — nice4iot mounts NiceGUI at the ASGI root (`ui.run_with()`'s default `mount_path='/'`), so `/ui` is just a matched `@ui.page` route, not a submount, and nothing strips it. The doubled prefix (`/ui/ui/...`) never matched any `NavItem.url`, so `render_sidebar()`'s active-row lookup silently always came up empty. Confirmed against a live request (`sub_pages_router.current_path` really does carry the full `/ui/...` path) before fixing; two `tests/test_navigation_ui.py` tests had encoded the old (wrong) assumption and are corrected alongside.
+
+### Changed
+
+- `nicepaper` (optional `epaper` extra) bumped v0.26.5 → v0.26.6: fixes NaN/inf telemetry values crashing the Displays list, adds WiFi/battery tooltips, and enlarges the room-notes font — no nice4iot changes needed.
+
 ## [0.35.1] - 2026-08-26
 
 ### Added
