@@ -46,11 +46,20 @@ def _get_active_backends(project_name: str) -> list[LoggingBackend]:
 
 
 async def write_log(project_name: str, device_name: str, logmsg: str) -> None:
-    """Write a log message to all active backends for a project."""
+    """Write a log message to all active backends for a project.
+
+    A device can batch several log lines into one call (newline-separated),
+    so each backend gets its own write() per line -- Loki, in particular,
+    would otherwise store the whole batch as a single entry under one
+    timestamp. Blank lines (after stripping) are dropped."""
     from app.health import set_health
+    lines = [stripped for raw in logmsg.split('\n') if (stripped := raw.strip())]
+    if not lines:
+        return
     for backend in _get_active_backends(project_name):
-        try:
-            await backend.write(device_name, logmsg)
-            set_health(f'{project_name}:logging', True)
-        except Exception as e:
-            set_health(f'{project_name}:logging', False, str(e))
+        for line in lines:
+            try:
+                await backend.write(device_name, line)
+                set_health(f'{project_name}:logging', True)
+            except Exception as e:
+                set_health(f'{project_name}:logging', False, str(e))

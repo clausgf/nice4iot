@@ -104,7 +104,7 @@ async def device_dashboard_panel(project_name: str, device_name: str, args: Page
         runtime = await anyio.to_thread.run_sync(lambda: read_runtime(project_name, device_name))
         plot_views = await anyio.to_thread.run_sync(lambda: read_data_views(project_name, device_name))
 
-        with ui.grid().classes('grid-cols-1 sm:grid-cols-2 gap-4 w-full'):
+        with ui.grid().classes('grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 w-full'):
             await _status_card(device, project_name, threshold, labels, runtime)
             await _timeline_card(device)
             for render_fn in await anyio.to_thread.run_sync(lambda: get_device_dashboard_cards(project_name)):

@@ -305,6 +305,43 @@ def test_log_written_to_file(client, provisioned, projects_dir):
     assert provisioned["device_name"] in log_file.read_text() or LOG_MESSAGE in log_file.read_text()
 
 
+def test_log_multiline_body_split_into_one_entry_per_line(client, provisioned, projects_dir):
+    """A device can batch several log lines into one call; blank (post-strip)
+    lines are dropped and each remaining line becomes its own log entry."""
+    body = "line one\n\n   \nline two\n"
+    resp = client.post(
+        f"/api/log/{provisioned['project_name']}/{provisioned['device_name']}",
+        content=body,
+        headers={
+            "Authorization": f"bearer {provisioned['device_token']}",
+            "Content-Type": "text/plain",
+        },
+    )
+    assert resp.status_code == 200
+    log_file = (projects_dir / provisioned["project_name"]
+                / provisioned["device_name"] / ".device.log")
+    lines = [line for line in log_file.read_text().splitlines() if line.strip()]
+    assert len(lines) == 2
+    assert lines[0].endswith("line one")
+    assert lines[1].endswith("line two")
+
+
+def test_log_blank_body_writes_nothing(client, provisioned, projects_dir):
+    """A body that is only whitespace/newlines produces no log entry at all."""
+    resp = client.post(
+        f"/api/log/{provisioned['project_name']}/{provisioned['device_name']}",
+        content="\n   \n\n",
+        headers={
+            "Authorization": f"bearer {provisioned['device_token']}",
+            "Content-Type": "text/plain",
+        },
+    )
+    assert resp.status_code == 200
+    log_file = (projects_dir / provisioned["project_name"]
+                / provisioned["device_name"] / ".device.log")
+    assert not log_file.exists()
+
+
 # ---------------------------------------------------------------------------
 # Logging — body size limit (spec: max_log_size = 8192 bytes)
 # ---------------------------------------------------------------------------

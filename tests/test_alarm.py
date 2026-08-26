@@ -15,7 +15,7 @@ import pytest
 
 from app.config import app_config
 from app.core.project.backend import create_project
-from app.core.device.backend import create_device, get_device, update_device
+from app.core.device.backend import create_device, delete_device, get_device, rename_device, update_device
 from app.core.device.models import Device
 from app.core.alarm.models import MetricAlarmRule, DeviceOfflineAlarm, ProvisioningTokenExpiryAlarm
 from app.core.device.backend import flush_device_list_cache
@@ -30,6 +30,7 @@ from app.core.alarm.backend import (
     get_alarm_count,
     get_device_offline_threshold,
     evaluate_provisioning_expiry,
+    prune_alarms_for_deleted_devices,
 )
 from app.health import set_health, get_health, get_project_health
 
@@ -411,6 +412,61 @@ def test_acknowledged_inactive_events_pruned_on_save(project, device, rule):
     acknowledge_alarm(PROJECT, event_id)
     # After prune: inactive+acknowledged events are removed
     assert load_alarm_events(PROJECT) == []
+
+
+# ---------------------------------------------------------------------------
+# Alarm events stay in sync with device deletion/rename
+# ---------------------------------------------------------------------------
+
+def test_delete_device_clears_its_alarms(project, device, rule):
+    evaluate_metric_rules(PROJECT, DEVICE, 'sensors', {'temperature': 2.0})
+    assert load_alarm_events(PROJECT) != []
+
+    delete_device(PROJECT, DEVICE)
+    assert load_alarm_events(PROJECT) == []
+
+
+def test_delete_device_leaves_other_devices_alarms(project, device, rule):
+    create_device(Device(name='other', project_name=PROJECT))
+    evaluate_metric_rules(PROJECT, DEVICE, 'sensors', {'temperature': 2.0})
+    evaluate_metric_rules(PROJECT, 'other', 'sensors', {'temperature': 2.0})
+
+    delete_device(PROJECT, DEVICE)
+    remaining = load_alarm_events(PROJECT)
+    assert len(remaining) == 1
+    assert remaining[0].device_name == 'other'
+
+
+def test_rename_device_rekeys_its_alarms(project, device, rule):
+    evaluate_metric_rules(PROJECT, DEVICE, 'sensors', {'temperature': 2.0})
+
+    rename_device(PROJECT, DEVICE, 'renamed')
+
+    events = load_alarm_events(PROJECT)
+    assert len(events) == 1
+    assert events[0].device_name == 'renamed'
+
+
+def test_prune_alarms_removes_events_for_devices_deleted_outside_delete_device(project, device, rule):
+    # Alarm events for a device that vanished without going through delete_device
+    # (e.g. its directory was removed directly) should still be cleaned up by the
+    # periodic sweep.
+    evaluate_metric_rules(PROJECT, DEVICE, 'sensors', {'temperature': 2.0})
+    assert load_alarm_events(PROJECT) != []
+
+    import shutil
+    from app.paths import device_dir
+    shutil.rmtree(device_dir(PROJECT, DEVICE))
+    flush_device_list_cache()
+
+    prune_alarms_for_deleted_devices(PROJECT)
+    assert load_alarm_events(PROJECT) == []
+
+
+def test_prune_alarms_keeps_events_for_existing_devices(project, device, rule):
+    evaluate_metric_rules(PROJECT, DEVICE, 'sensors', {'temperature': 2.0})
+    prune_alarms_for_deleted_devices(PROJECT)
+    assert len(load_alarm_events(PROJECT)) == 1
 
 
 # ---------------------------------------------------------------------------

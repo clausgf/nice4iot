@@ -266,6 +266,8 @@ def delete_device(project_name: str, device_name: str) -> None:
     device_path = get_device_path(project_name, device_name)
     shutil.rmtree(device_path)
     _invalidate_device_list_cache(project_name)
+    from app.core.alarm.backend import delete_alarms_for_device
+    delete_alarms_for_device(project_name, device_name)
 
 
 def get_devices(project_name: str) -> list[Device]:
@@ -451,3 +453,5 @@ def rename_device(project_name: str, old_device_name: str, new_device_name: str)
         device.name = new_device_name
         atomic_write(device_json, device.model_dump_json(indent=2))
     _invalidate_device_list_cache(project_name)
+    from app.core.alarm.backend import rename_device_in_alarms
+    rename_device_in_alarms(project_name, old_device_name, new_device_name)

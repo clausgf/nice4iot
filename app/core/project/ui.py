@@ -196,7 +196,7 @@ async def project_dashboard_panel(project_id: str, args: PageArguments) -> None:
         online = [d for d in active if is_device_online(d, threshold)]
         seen = sorted([d for d in devices if d.last_seen_at], key=lambda d: d.last_seen_at, reverse=True)
 
-        with ui.grid().classes('grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 w-full'):
+        with ui.grid().classes('grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 w-full'):
             # Overview card
             with ui.card().tight().classes('w-full'):
                 with ui.card_section().props('dense').classes('w-full'):

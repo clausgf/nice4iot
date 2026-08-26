@@ -56,9 +56,14 @@ async def _alarm_check_loop() -> None:
         await asyncio.sleep(60)
         try:
             from app.core.project.backend import get_projects
-            from app.core.alarm.backend import evaluate_device_offline, evaluate_provisioning_expiry
+            from app.core.alarm.backend import (
+                evaluate_device_offline, evaluate_provisioning_expiry, prune_alarms_for_deleted_devices,
+            )
             projects = await anyio.to_thread.run_sync(get_projects)
             for project in projects:
+                await anyio.to_thread.run_sync(
+                    lambda pn=project.name: prune_alarms_for_deleted_devices(pn)
+                )
                 await anyio.to_thread.run_sync(
                     lambda pn=project.name: evaluate_device_offline(pn)
                 )

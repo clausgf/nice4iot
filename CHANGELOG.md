@@ -6,6 +6,18 @@ API change must be recorded. Format loosely follows
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-08-26
+
+### Fixed
+
+- **Alarms kept appearing for already-deleted devices** (`app/core/alarm/backend.py`, `app/core/device/backend.py`): alarm events are keyed by device name in a project-wide file, not stored inside the device's own directory, so `delete_device()` removing that directory never touched them — an active/unacknowledged event just stayed forever. `delete_device()` now clears a device's alarm events and `rename_device()` re-keys them to the new name; a new `prune_alarms_for_deleted_devices()`, run once per project alongside the existing background alarm checks (`app/main.py`), also sweeps up anything already orphaned (or orphaned by a device directory removed outside the UI).
+- **A device's batched multi-line log write landed as one log entry** (`app/core/logging/backend.py`): `write_log()` passed the whole request body straight to each backend, so several `\n`-separated ESP-IDF log lines sent in one call (both the HTTP `/api/log/...` and MQTT `log` topic go through this same function) became a single Loki entry under one timestamp, or one embedded-newline line in the file log. `write_log()` now splits on `\n` and writes each backend one call per line; blank lines (after stripping) are dropped instead of written.
+
+### Changed
+
+- **Project and device dashboard card grids** (`app/core/project/ui.py`, `app/core/device/ui.py`) now pick up their second/third column at the `md`/`xl` Tailwind breakpoints instead of `sm`/`lg`, so cards stay readable longer on medium-width windows before splitting into columns.
+- `nicepaper` (optional `epaper` extra) bumped v0.26.1 → v0.26.3: fixes the Simplified UI's page content shrink-wrapping instead of filling the page width, and gives the Rooms project-tab grid a focused, auto-sized column set — no nice4iot API changes needed.
+
 ## [0.34.0] - 2026-08-25
 
 ### Fixed

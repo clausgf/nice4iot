@@ -77,6 +77,31 @@ def save_alarm_events(project_name: str, events: list[AlarmEvent]) -> None:
         logger.error(f"Failed to save alarm events for {project_name!r}: {e}")
 
 
+def delete_alarms_for_device(project_name: str, device_name: str) -> None:
+    """Remove every alarm event for a device. Events are keyed by device_name in a
+    project-wide file, so deleting a device's own directory doesn't clear them —
+    call this from device deletion or they linger (still active/unacknowledged)
+    forever, since evaluate_device_offline/evaluate_metric_rules only ever touch
+    events for devices that still exist."""
+    events = load_alarm_events(project_name)
+    remaining = [e for e in events if e.device_name != device_name]
+    if len(remaining) != len(events):
+        save_alarm_events(project_name, remaining)
+
+
+def rename_device_in_alarms(project_name: str, old_device_name: str, new_device_name: str) -> None:
+    """Re-key alarm events to a device's new name after a rename, so they aren't
+    silently orphaned under the old name (same reason as delete_alarms_for_device)."""
+    events = load_alarm_events(project_name)
+    changed = False
+    for event in events:
+        if event.device_name == old_device_name:
+            event.device_name = new_device_name
+            changed = True
+    if changed:
+        save_alarm_events(project_name, events)
+
+
 # ---------------------------------------------------------------------------
 # Helper
 # ---------------------------------------------------------------------------
@@ -180,6 +205,28 @@ def evaluate_metric_rules(project_name: str, device_name: str,
 
     if changed:
         save_alarm_events(project_name, events)
+
+
+def prune_alarms_for_deleted_devices(project_name: str) -> None:
+    """Drop alarm events for devices no longer in the project.
+
+    delete_device()/rename_device() already keep events in sync going forward
+    (see delete_alarms_for_device/rename_device_in_alarms); this is the safety
+    net for anything that slipped through before that (or bypassed it, e.g. a
+    device directory removed outside the UI) — called once per project from
+    the background alarm check loop.
+    """
+    from app.core.device.backend import get_devices
+
+    try:
+        device_names = {d.name for d in get_devices(project_name)}
+    except Exception:
+        return
+
+    events = load_alarm_events(project_name)
+    remaining = [e for e in events if e.device_name in device_names]
+    if len(remaining) != len(events):
+        save_alarm_events(project_name, remaining)
 
 
 def evaluate_device_offline(project_name: str) -> None:
