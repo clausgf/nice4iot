@@ -289,10 +289,13 @@ def register_device_tab(label: str, render_fn: Callable[[str, str], Any], *, ico
     _device_tabs.append((_extension_name(), label, icon, render_fn))
 
 
-def get_project_tabs(project_name: str) -> list[tuple[str, str, Callable[[str], Any]]]:
-    """Return (label, icon, render_fn) for tabs enabled for project_name."""
+def get_project_tabs(project_name: str) -> list[tuple[str, str, str, Callable[[str], Any]]]:
+    """Return (extension_name, label, icon, render_fn) for tabs enabled for
+    project_name. extension_name is included (unlike most other get_*()
+    functions here) so the sidebar can group an extension's tabs under its
+    own name (app.core.project.ui.project_nav_items())."""
     enabled = _enabled_extensions(project_name)
-    return [(label, icon, fn) for ext, label, icon, fn in _project_tabs if ext in enabled]
+    return [(ext, label, icon, fn) for ext, label, icon, fn in _project_tabs if ext in enabled]
 
 
 def get_device_tabs(project_name: str) -> list[tuple[str, str, Callable[[str, str], Any]]]:

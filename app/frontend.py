@@ -214,6 +214,28 @@ deep-linkable views of its own; nice4iot only needs to route the whole
 subtree to it, not know its shape."""
 
 
+def _request_path(request) -> str:
+    """request.url.path stripped of the ops-level mount prefix (X-Forwarded-Prefix
+    header + ASGI root_path, e.g. --root-path /iot for a reverse proxy that
+    forwards the prefixed path unstripped — Caddy's plain `reverse_proxy`, as
+    opposed to `handle_path`). request.url.path itself is NOT root_path-aware:
+    Starlette's URL just echoes scope['path'] verbatim, so behind such a proxy
+    it comes back e.g. '/iot/ui/project/p/ext/e' — which _EXTENSION_PAGE_PATTERN's
+    leading '^/ui/...' anchor then silently never matches, falling through to
+    the normal project page below (its own ui.sub_pages *does* strip the
+    prefix, via nicegui's own root_path-aware SubPagesRouter — this mirrors
+    that same computation for consistency, and so it works unmodified whether
+    nice4iot is mounted at '/' or at some proxy-chosen sub-path)."""
+    forwarded_prefix = request.headers.get('X-Forwarded-Prefix', '').rstrip('/')
+    root = request.scope.get('root_path', '').rstrip('/')
+    combined = forwarded_prefix + root
+    path = request.url.path
+    for prefix in (combined, root):
+        if prefix and (path == prefix or path.startswith(prefix + '/')):
+            return path[len(prefix):] or '/'
+    return path
+
+
 @ui.page('/ui')
 @ui.page('/ui/{_:path}')
 async def home_page():
@@ -227,7 +249,7 @@ async def home_page():
     # registered by the time extensions register themselves at startup,
     # so a separate route would silently never be reached.
     request = context.client.request
-    path = request.url.path if request else ''
+    path = _request_path(request) if request else ''
     if (m := _EXTENSION_PAGE_PATTERN.match(path)):
         from app.extensions import get_project_page, is_extension_enabled, maybe_await
         project_id, extension_name = m.group('project_id'), m.group('extension_name')

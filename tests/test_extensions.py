@@ -242,7 +242,7 @@ def test_project_tab_only_returned_when_enabled(project):
 
     assert get_project_tabs(project) == []
     _enable(project, 'ext1')
-    assert get_project_tabs(project) == [('Extra', 'extension', fn)]
+    assert get_project_tabs(project) == [('ext1', 'Extra', 'extension', fn)]
 
 
 def test_project_tab_custom_icon(project):
@@ -250,7 +250,7 @@ def test_project_tab_custom_icon(project):
     with registering('ext1'):
         register_project_tab('Extra', fn, icon='star')
     _enable(project, 'ext1')
-    assert get_project_tabs(project) == [('Extra', 'star', fn)]
+    assert get_project_tabs(project) == [('ext1', 'Extra', 'star', fn)]
 
 
 def test_device_tab_only_returned_when_enabled(project):
@@ -351,6 +351,54 @@ def test_extension_page_pattern_matches_bare_and_deep_paths():
         assert m.group('extension_name') == extension_name
 
     assert _EXTENSION_PAGE_PATTERN.match('/ui/project/demo/device/dev1') is None
+
+
+def _fake_request(path: str, root_path: str = '', forwarded_prefix: str = ''):
+    from starlette.requests import Request
+    headers = [(b'x-forwarded-prefix', forwarded_prefix.encode())] if forwarded_prefix else []
+    scope = {
+        'type': 'http',
+        'path': path,
+        'root_path': root_path,
+        'headers': headers,
+        'query_string': b'',
+        'method': 'GET',
+        'scheme': 'https',
+        'server': ('example.com', 443),
+    }
+    return Request(scope)
+
+
+def test_request_path_strips_root_path_when_proxy_forwards_prefix_unstripped():
+    """A reverse proxy that forwards e.g. '/iot/*' without stripping it (Caddy's
+    plain `reverse_proxy`, as opposed to `handle_path`) leaves the ops-level
+    mount prefix in scope['path'] -- request.url.path echoes it verbatim, which
+    would otherwise make _EXTENSION_PAGE_PATTERN's '^/ui/...' anchor silently
+    never match (see docs/deploy or the Caddyfile for --root-path)."""
+    from app.frontend import _request_path
+    request = _fake_request('/iot/ui/project/demo/ext/epaper', root_path='/iot')
+    assert _request_path(request) == '/ui/project/demo/ext/epaper'
+
+
+def test_request_path_unchanged_when_proxy_already_stripped_prefix():
+    """A proxy that strips the mount prefix before forwarding (Caddy's
+    `handle_path`) already delivers the un-prefixed path; --root-path is still
+    set (informational, for URL generation) but must not be subtracted twice."""
+    from app.frontend import _request_path
+    request = _fake_request('/ui/project/demo/ext/epaper', root_path='/iot')
+    assert _request_path(request) == '/ui/project/demo/ext/epaper'
+
+
+def test_request_path_unchanged_when_mounted_at_root():
+    from app.frontend import _request_path
+    request = _fake_request('/ui/project/demo/ext/epaper', root_path='')
+    assert _request_path(request) == '/ui/project/demo/ext/epaper'
+
+
+def test_request_path_uses_x_forwarded_prefix_too():
+    from app.frontend import _request_path
+    request = _fake_request('/iot/ui/project/demo', root_path='', forwarded_prefix='/iot')
+    assert _request_path(request) == '/ui/project/demo'
 
 
 # ---------------------------------------------------------------------------

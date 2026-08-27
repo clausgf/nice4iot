@@ -177,3 +177,56 @@ class DeviceRuntime(BaseModel):
     @property
     def board(self) -> str:
         return self.system_labels.get('board', '')
+
+
+class ProjectDeviceRow(BaseModel):
+    """Row view-model for the project Devices grid (ProjectDevicesTable). Not
+    persisted as-is -- assembled fresh per render from Device, DeviceRuntime
+    and the alarm backend (app.core.device.backend.project_device_rows);
+    editing happens on the device's own page, not here, so every field is
+    read-only. `status` carries a plain (status_key, rssi, battery_voltage)
+    tuple, rendered as three icons in one cell by ProjectDevicesTable's
+    cell_renderer — a single glance of device health instead of three narrow
+    columns."""
+
+    name: Annotated[str,
+            Field(description='Device name.'),
+            niceview.Field(label='Name', editable=False, table_sortable=True, table_filterable=True)
+        ] = ''
+
+    status: Annotated[tuple[str, int | None, float | None],
+            Field(description="(status_key, rssi_dBm, battery_voltage_V). status_key is the combined "
+                              "active/provisioning/online state: 'online', 'offline', 'pending' (active "
+                              "but not yet provisioning-approved), or 'inactive'."),
+            niceview.Field(label='Status', editable=False, table_sortable=False, table_filterable=False)
+        ] = ('inactive', None, None)
+
+    alarms: Annotated[int,
+            Field(description='Number of active, unacknowledged alarms.'),
+            niceview.Field(label='Alarms', editable=False, table_sortable=True)
+        ] = 0
+
+    location: Annotated[str,
+            Field(description='Physical location or installation site.'),
+            niceview.Field(label='Location', editable=False, table_sortable=True, table_filterable=True)
+        ] = ''
+
+    last_seen_at: Annotated[str,
+            Field(description='When the device was last seen, already rendered.'),
+            niceview.Field(label='Last Seen', editable=False, table_sortable=True)
+        ] = ''
+
+    firmware_version: Annotated[str,
+            Field(description='Last-reported firmware version.'),
+            niceview.Field(label='Firmware', editable=False, table_sortable=True, table_filterable=True)
+        ] = ''
+
+    board: Annotated[str,
+            Field(description='Hardware board identifier from the last system-telemetry push.'),
+            niceview.Field(label='Board', editable=False, table_sortable=True, table_filterable=True)
+        ] = ''
+
+    prov_token_expires_at: Annotated[str,
+            Field(description='Expiry of the last provisioning token used, already rendered.'),
+            niceview.Field(label='Token Expires', editable=False, table_sortable=True)
+        ] = ''

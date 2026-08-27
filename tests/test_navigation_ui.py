@@ -91,18 +91,26 @@ def test_slugify_tab_label(label, expected):
 
 
 def test_project_nav_items_built_in_and_extension():
-    items = project_nav_items('proj', [('E-Paper', 'tv', object())],
+    items = project_nav_items('proj', [('epaper', 'E-Paper', 'tv', object())],
                               [('Some Card', object())])
     labels = [i.label for i in items]
-    assert labels == ['Dashboard', 'Files', 'Devices', 'E-Paper', 'Settings']
-    assert items[0].url == project_url('proj')
-    assert items[1].url == project_url('proj', tab='files')
-    assert items[2].url == project_url('proj', tab='devices')
-    assert items[3].url == project_url('proj', tab='tab/e-paper')
-    assert items[3].icon == 'tv'
+    assert labels == ['Project', 'epaper', 'Settings']
 
-    settings = items[4]
-    assert settings.url is None  # a group, not a leaf — see app.ui.NavItem
+    project_group = items[0]
+    assert project_group.url is None  # a group, not a leaf — see app.ui.NavItem
+    assert [c.label for c in project_group.children] == ['Dashboard', 'Files', 'Devices']
+    assert project_group.children[0].url == project_url('proj')
+    assert project_group.children[1].url == project_url('proj', tab='files')
+    assert project_group.children[2].url == project_url('proj', tab='devices')
+
+    ext_group = items[1]
+    assert ext_group.url is None
+    assert [c.label for c in ext_group.children] == ['E-Paper']
+    assert ext_group.children[0].url == project_url('proj', tab='tab/e-paper')
+    assert ext_group.children[0].icon == 'tv'
+
+    settings = items[2]
+    assert settings.url is None
     child_labels = [c.label for c in settings.children]
     assert child_labels[:2] == ['General', 'Provisioning']
     assert 'Some Card' in child_labels
@@ -110,6 +118,27 @@ def test_project_nav_items_built_in_and_extension():
     assert general_child.url == project_url('proj', tab='settings/general')
     card_child = next(c for c in settings.children if c.label == 'Some Card')
     assert card_child.url == project_url('proj', tab='settings/tab/some-card')
+
+
+def test_project_nav_items_groups_multiple_tabs_under_one_extension():
+    fn = object()
+    items = project_nav_items('proj', [
+        ('epaper', 'Rooms', 'meeting_room', fn),
+        ('epaper', 'Screens', 'wallpaper', fn),
+    ])
+    ext_groups = [i for i in items if i.label == 'epaper']
+    assert len(ext_groups) == 1  # one group, not one per tab
+    assert [c.label for c in ext_groups[0].children] == ['Rooms', 'Screens']
+
+
+def test_project_nav_items_separate_groups_per_extension():
+    fn = object()
+    items = project_nav_items('proj', [
+        ('epaper', 'Rooms', 'meeting_room', fn),
+        ('weather', 'Forecast', 'cloud', fn),
+    ])
+    labels = [i.label for i in items]
+    assert labels == ['Project', 'epaper', 'weather', 'Settings']
 
 
 # ---------------------------------------------------------------------------

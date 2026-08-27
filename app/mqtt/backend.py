@@ -248,11 +248,7 @@ async def _handle_message(topic: str, payload: bytes) -> None:
     if not device_exists:
         if project.is_autocreate_devices:
             try:
-                new_device = Device(
-                    name=device_name,
-                    project_name=project_name,
-                    is_provisioning_approved=project.is_provisioning_autoapproval,
-                )
+                new_device = Device(name=device_name, project_name=project_name)
                 await anyio.to_thread.run_sync(lambda: create_device(new_device))
                 logger.info(f"MQTT: auto-created device {project_name}/{device_name}")
             except Exception as e:

@@ -311,10 +311,13 @@ fits. The menu's first entry is a **Home** link back to the 4IoT entry page
 ### Tabs
 
 Tabs add a whole new section next to the built-in ones. A **project** tab
-becomes a row in the project page's left sidebar, addressed by its own URL
-segment; a **device** tab is still a tab on the device page (its own tab
-strip in the content area, addressed via the `?tab=<label>` deep-link query
-parameter — the device page hasn't moved to a sidebar):
+becomes a row in the project page's left sidebar, nested under a group named
+after your extension (alongside every other tab your extension registers, in
+registration order — each extension gets its own group, so several enabled
+extensions don't turn the sidebar into one long flat list), addressed by its
+own URL segment; a **device** tab is still a tab on the device page (its own
+tab strip in the content area, addressed via the `?tab=<label>` deep-link
+query parameter — the device page hasn't moved to a sidebar):
 
 ```python
 def register_project_tab(label: str, render_fn: Callable[[str], Any], *,

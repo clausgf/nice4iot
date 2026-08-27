@@ -89,15 +89,16 @@ def slugify_tab_label(label: str) -> str:
     return re.sub(r'[^a-z0-9]+', '-', label.lower()).strip('-') or 'tab'
 
 
-def project_nav_items(project_id: str, extension_tab_defs: list[tuple[str, str, object]],
+def project_nav_items(project_id: str, extension_tab_defs: list[tuple[str, str, str, object]],
                       general_card_defs: list[tuple[str, object]] = ()) -> list[NavItem]:
-    """The project sidebar's rows — Dashboard/Files/Devices, every enabled
-    extension project tab, and a trailing 'Settings' group (the old General
-    tab's sections, plus any extension-registered 'general' cards, each its
-    own child page — see SETTINGS_SECTIONS). Shared with device_subpage,
-    which shows the same sidebar (with 'Devices' as the active row) while
-    drilled into a device, rather than growing a third sidebar level of its
-    own."""
+    """The project sidebar's rows — a 'Project' group (Dashboard/Files/Devices),
+    one group per enabled extension (its project tabs, in registration order),
+    and a trailing 'Settings' group (the old General tab's sections, plus any
+    extension-registered 'general' cards, each its own child page — see
+    SETTINGS_SECTIONS). Shared with device_subpage, which shows the same
+    sidebar (with 'Devices' as the active row) while drilled into a device,
+    rather than growing a third sidebar level of its own — see
+    find_nav_item() for locating a row nested under one of these groups."""
     settings_children = [
         NavItem(label, icon, project_url(project_id, tab=f'settings/{slug}'))
         for slug, label, icon in SETTINGS_SECTIONS
@@ -105,14 +106,29 @@ def project_nav_items(project_id: str, extension_tab_defs: list[tuple[str, str, 
         NavItem(title, 'extension', project_url(project_id, tab=f'settings/tab/{slugify_tab_label(title)}'))
         for title, _fn in general_card_defs
     ]
+    extension_groups: dict[str, list[NavItem]] = {}
+    for extension_name, label, icon, _fn in extension_tab_defs:
+        extension_groups.setdefault(extension_name, []).append(
+            NavItem(label, icon, project_url(project_id, tab=f'tab/{slugify_tab_label(label)}'))
+        )
     return [
-        NavItem('Dashboard', 'dashboard', project_url(project_id)),
-        NavItem('Files', 'folder', project_url(project_id, tab='files')),
-        NavItem('Devices', 'devices', project_url(project_id, tab='devices')),
-        *(NavItem(label, icon, project_url(project_id, tab=f'tab/{slugify_tab_label(label)}'))
-          for label, icon, _fn in extension_tab_defs),
+        NavItem('Project', 'dashboard', children=(
+            NavItem('Dashboard', 'dashboard', project_url(project_id)),
+            NavItem('Files', 'folder', project_url(project_id, tab='files')),
+            NavItem('Devices', 'devices', project_url(project_id, tab='devices')),
+        )),
+        *(NavItem(extension_name, 'extension', children=tuple(items))
+          for extension_name, items in extension_groups.items()),
         NavItem('Settings', 'settings', children=tuple(settings_children)),
     ]
+
+
+def find_nav_item(items: list[NavItem], label: str) -> NavItem:
+    """Locate a row by label anywhere in items — top-level or nested one level
+    under a group (see project_nav_items(), NavItem: "only one level of
+    nesting is supported"). Raises StopIteration if not found, same as a bare
+    next(...) would."""
+    return next(item for parent in items for item in (parent.children or (parent,)) if item.label == label)
 
 
 async def project_subpage(args: PageArguments, nav: ui.element, sidebar: ui.element,
@@ -162,7 +178,7 @@ async def project_subpage(args: PageArguments, nav: ui.element, sidebar: ui.elem
         return _route
 
     routes: dict = {'/': _dashboard_route, '/files': _files_route, '/devices': _devices_route}
-    for label, _icon, render_fn in extension_tab_defs:
+    for _ext, label, _icon, render_fn in extension_tab_defs:
         routes[f'/tab/{slugify_tab_label(label)}'] = _tab_route(render_fn)
 
     settings_renderers = _settings_section_renderers(project_id)
@@ -283,7 +299,6 @@ SETTINGS_SECTIONS: tuple[tuple[str, str, str], ...] = (
     ('provisioning', 'Provisioning', 'verified_user'),
     ('forwarding', 'Forwarding', 'call_split'),
     ('telemetry', 'Telemetry', 'insights'),
-    ('files', 'Files', 'upload_file'),
     ('firmware', 'Firmware', 'memory'),
     ('alarms', 'Alarms', 'notifications'),
 )
@@ -298,6 +313,8 @@ def _settings_section_renderers(project_id: str) -> dict[str, object]:
     async def _general() -> None:
         with config_expansion('General', value=True):
             await project_card(project_id)
+        with config_expansion('Files', value=True):
+            await file_config_card(project_id)
         with config_expansion('Extensions', value=True):
             await extensions_card(project_id)
         with config_expansion('Danger Zone', value=True):
@@ -317,10 +334,6 @@ def _settings_section_renderers(project_id: str) -> dict[str, object]:
         with config_expansion('Logging', value=True):
             LoggingCard(project_id)
 
-    async def _files() -> None:
-        with config_expansion('Files', value=True):
-            await file_config_card(project_id)
-
     async def _firmware() -> None:
         with config_expansion('Firmware Seed', value=True):
             await seed_settings_card(project_dir(project_id))
@@ -334,7 +347,7 @@ def _settings_section_renderers(project_id: str) -> dict[str, object]:
 
     return {
         'general': _general, 'provisioning': _provisioning, 'forwarding': _forwarding,
-        'telemetry': _telemetry, 'files': _files, 'firmware': _firmware, 'alarms': _alarms,
+        'telemetry': _telemetry, 'firmware': _firmware, 'alarms': _alarms,
     }
 
 # ***************************************************************************
@@ -487,16 +500,18 @@ async def project_devices_panel(project_id: str):
                 Each device has its own directory and can be provisioned with a
                 short-lived bearer token.
 
-                Double-click a device to edit its settings. Use the "New" button
-                to add a device record only (it gets seeded some other way).
+                Click a device to edit its settings. Use the "New" button to
+                add a device record only (it gets seeded some other way).
                 "Flash Device" and "AP + Form Setup" below create a device record
                 *and* immediately seed it — via a USB-serial flash, or a
                 printable QR code for the device's own setup portal.
                 """).classes('text-caption q-ma-none')
 
         @ui.refreshable
-        def devices_table() -> None:
-            ProjectDevicesTable(project_id)
+        async def devices_table() -> None:
+            from app.core.device.backend import project_device_rows
+            rows = await anyio.to_thread.run_sync(lambda: project_device_rows(project_id))
+            ProjectDevicesTable(project_id, rows)
 
         async def _flash_new_device() -> None:
             name = await prompt_create_device(project_id)
@@ -514,7 +529,7 @@ async def project_devices_panel(project_id: str):
             ui.button('Flash Device', icon='usb', on_click=_flash_new_device).props('outline')
             ui.button('AP + Form Setup', icon='qr_code', on_click=_ap_qr_new_device).props('outline')
 
-        devices_table()
+        await devices_table()
 
 
 # ***************************************************************************

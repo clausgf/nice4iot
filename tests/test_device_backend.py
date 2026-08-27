@@ -13,10 +13,12 @@ from app.core.device.backend import (
     _SYSTEM_METRICS_MAX,
     create_device,
     device_adapter,
+    device_status_key,
     get_auth_project_device,
     get_device,
     get_device_path,
     get_file_path,
+    project_device_rows,
     read_last_seen,
     read_runtime,
     rename_device,
@@ -24,7 +26,7 @@ from app.core.device.backend import (
     write_runtime,
 )
 from app.core.device.models import Device
-from app.core.project.backend import create_project
+from app.core.project.backend import create_project, project_adapter
 from app.exceptions import AlreadyExistsError, NotFoundError
 from app.paths import project_dir
 from app.util import is_valid_upload_filename
@@ -40,6 +42,38 @@ def project(projects_dir):
 def device(project):
     d = Device(name="dev1", project_name=project)
     return create_device(d)
+
+
+# ---------------------------------------------------------------------------
+# create_device — is_provisioning_approved uniformly from the project
+# ---------------------------------------------------------------------------
+
+def test_create_device_applies_project_autoapproval_true(project):
+    p = project_adapter(project).read()
+    p.is_provisioning_autoapproval = True
+    project_adapter(project).save(p)
+    d = create_device(Device(name="auto1", project_name=project))
+    assert d.is_provisioning_approved is True
+
+
+def test_create_device_applies_project_autoapproval_false(project):
+    p = project_adapter(project).read()
+    p.is_provisioning_autoapproval = False
+    project_adapter(project).save(p)
+    d = create_device(Device(name="auto2", project_name=project))
+    assert d.is_provisioning_approved is False
+
+
+def test_create_device_ignores_caller_supplied_approval(project):
+    """create_device() owns is_provisioning_approved uniformly, overriding
+    whatever the caller passed -- so manual "New Device" creation can't
+    diverge from the autocreate paths (MQTT, HTTP provisioning) by simply
+    forgetting to apply project.is_provisioning_autoapproval itself."""
+    p = project_adapter(project).read()
+    p.is_provisioning_autoapproval = False
+    project_adapter(project).save(p)
+    d = create_device(Device(name="auto3", project_name=project, is_provisioning_approved=True))
+    assert d.is_provisioning_approved is False
 
 
 # ---------------------------------------------------------------------------
@@ -363,3 +397,59 @@ def test_auth_without_firmware_preserves_previous(provisioned):
     get_auth_project_device(p["project_name"], p["device_name"], p["device_token"])
     rt = read_runtime(p["project_name"], p["device_name"])
     assert rt.firmware_version == 'v1.0.0'  # unchanged, not wiped
+
+
+# ---------------------------------------------------------------------------
+# device_status_key / project_device_rows — ProjectDevicesTable's status dot
+# ---------------------------------------------------------------------------
+
+def test_status_key_inactive_beats_everything(device):
+    device.is_active = False
+    device.is_provisioning_approved = True
+    assert device_status_key(device, online=True) == 'inactive'
+
+
+def test_status_key_pending_when_not_provisioned(device):
+    device.is_active = True
+    device.is_provisioning_approved = False
+    assert device_status_key(device, online=True) == 'pending'
+    assert device_status_key(device, online=False) == 'pending'
+
+
+def test_status_key_online(device):
+    device.is_active = True
+    device.is_provisioning_approved = True
+    assert device_status_key(device, online=True) == 'online'
+
+
+def test_status_key_offline(device):
+    device.is_active = True
+    device.is_provisioning_approved = True
+    assert device_status_key(device, online=False) == 'offline'
+
+
+def test_project_device_rows_shape(device, project):
+    device.is_provisioning_approved = True
+    device_adapter(project, device.name).save(device)
+    write_runtime(project, device.name, system_metrics={'wifi_rssi': -65.4, 'battery_V': 3.9},
+                 system_labels={'board': 'esp32'},
+                 system_reported_at=datetime.datetime.now(datetime.timezone.utc))
+
+    rows = project_device_rows(project)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.name == device.name
+    status_key, rssi, battery_voltage = row.status
+    assert status_key == 'offline'  # never seen -> not online
+    assert rssi == -65
+    assert battery_voltage == pytest.approx(3.9)
+    assert row.board == 'esp32'
+
+
+def test_project_device_rows_empty_for_empty_project(projects_dir):
+    # A project name distinct from the `project` fixture's "proj": get_devices()
+    # caches by project name (module-level, not fixture-scoped, see
+    # _device_list_cache), so reusing "proj" here could see a stale hit from
+    # another test's device within the same TTL window.
+    create_project("empty_proj")
+    assert project_device_rows("empty_proj") == []

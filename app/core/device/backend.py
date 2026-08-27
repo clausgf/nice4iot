@@ -15,10 +15,10 @@ from app.core.token.backend import (
     create_token, device_token_lock, load_device_tokens,
     purge_expired_tokens, save_device_tokens, validate_token,
 )
-from app.core.device.models import Device, DeviceRuntime
+from app.core.device.models import Device, DeviceRuntime, ProjectDeviceRow
 from app.core.project.backend import get_project, get_project_path
 from app.core.project.models import Project
-from app.util import atomic_write, logger, is_valid_name
+from app.util import atomic_write, logger, is_valid_name, render_datetime
 from niceview.dataadapter import lenient_model_load
 
 ###############################################################################
@@ -178,11 +178,19 @@ def get_file_path(project_name: str, device_name: str, filename: str, check_file
 def create_device(device: Device) -> Device:
     """Create a new device directory and write the initial JSON file.
 
+    is_provisioning_approved is always set from the project's
+    is_provisioning_autoapproval here, overriding whatever the caller passed —
+    one rule applied uniformly regardless of how the device was created
+    (manual "New Device", MQTT autocreate, HTTP provisioning autocreate),
+    rather than each caller having to remember to apply it itself.
+
     Raises:
         ValueError: Invalid name.
         AlreadyExistsError: Device already exists.
         OSError: Directory or file could not be created.
     """
+    project = get_project(device.project_name, check_active=False)
+    device.is_provisioning_approved = project.is_provisioning_autoapproval
     device_path = get_device_path(device.project_name, device.name, check_device_exists=False)
     try:
         device_path.mkdir(exist_ok=False)
@@ -296,6 +304,44 @@ def get_devices(project_name: str) -> list[Device]:
     _device_list_cache[project_name] = (devices, time.monotonic())
     return devices
 
+
+def device_status_key(device: Device, online: bool) -> str:
+    """The project Devices grid's combined status: 'inactive' beats everything else
+    (an inactive device's provisioning/online state doesn't matter), then 'pending'
+    (active but not yet provisioning-approved — nothing else about it is meaningful
+    until it is), then plain online/offline."""
+    if not device.is_active:
+        return 'inactive'
+    if not device.is_provisioning_approved:
+        return 'pending'
+    return 'online' if online else 'offline'
+
+
+def project_device_rows(project_name: str) -> list[ProjectDeviceRow]:
+    """Rows for the project Devices grid (ProjectDevicesTable): one per device,
+    joining Device, its DeviceRuntime (rssi/battery_voltage) and its alarm count.
+    Pure/sync — callers in async UI context wrap this in anyio.to_thread.run_sync
+    (see the Async IO rule in CLAUDE.md); it does one file read per device on top
+    of get_devices() (.runtime.json) plus one alarm-events load per device."""
+    from app.core.alarm.backend import get_alarm_count, get_device_offline_threshold
+    threshold = get_device_offline_threshold(project_name)
+    rows = []
+    for d in get_devices(project_name):
+        runtime = read_runtime(project_name, d.name)
+        online = is_device_online(d, threshold)
+        rssi = round(runtime.rssi) if runtime.rssi is not None else None
+        rows.append(ProjectDeviceRow(
+            name=d.name,
+            status=(device_status_key(d, online), rssi, runtime.battery_voltage),
+            alarms=get_alarm_count(project_name, d.name),
+            location=d.location or '',
+            last_seen_at=render_datetime(d.last_seen_at),
+            firmware_version=d.firmware_version or '—',
+            board=runtime.board or '—',
+            prov_token_expires_at=render_datetime(d.last_provisioning_token_expires_at),
+        ))
+    return rows
+
 ###############################################################################
 
 def get_auth_project_device(project_name: str, device_name: str, device_token: str,
@@ -373,11 +419,7 @@ def device_provision(project: Project, device_name: str,
     except NotFoundError:
         if not project.is_autocreate_devices:
             raise NotFoundError(f"Device {device_name} does not exist and autocreate is disabled.")
-        device = create_device(Device(
-            name=device_name,
-            project_name=project.name,
-            is_provisioning_approved=project.is_provisioning_autoapproval,
-        ))
+        device = create_device(Device(name=device_name, project_name=project.name))
 
     device.last_provisioning_request_at = now
 
