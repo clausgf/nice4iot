@@ -11,9 +11,9 @@ from app.core.firmware.backend import (
     FirmwareError,
     _should_pull,
     _validate_repo,
-    github_release_url,
     load_firmware_source,
     load_firmware_state,
+    release_url,
     save_firmware_state,
 )
 from app.core.firmware.models import FirmwareSource, FirmwareState
@@ -50,10 +50,26 @@ def test_repo_validator_accepts_owner_name():
     assert FirmwareSource(repo='clausgf/nice4iot').repo == 'clausgf/nice4iot'
 
 
-@pytest.mark.parametrize('bad', ['https://github.com/a/b', 'no-slash', 'a/b/c', 'a b/c'])
+def test_repo_validator_accepts_gitlab_subgroup():
+    # GitLab projects can live under nested subgroups, unlike GitHub's flat
+    # owner/name — repo accepts any number of '/'-separated segments.
+    assert FirmwareSource(repo='group/subgroup/project').repo == 'group/subgroup/project'
+
+
+@pytest.mark.parametrize('bad', ['https://github.com/a/b', 'no-slash', 'a b/c'])
 def test_repo_validator_rejects_non_owner_name(bad):
     with pytest.raises(ValidationError):
         FirmwareSource(repo=bad)
+
+
+def test_host_url_validator_accepts_bare_origin_strips_trailing_slash():
+    assert FirmwareSource(host_url='https://gitlab.example.com/').host_url == 'https://gitlab.example.com'
+
+
+@pytest.mark.parametrize('bad', ['gitlab.example.com', 'https://gitlab.example.com/group', 'ftp://gitlab.example.com'])
+def test_host_url_validator_rejects_non_bare_origin(bad):
+    with pytest.raises(ValidationError):
+        FirmwareSource(host_url=bad)
 
 
 def test_filename_validator_defaults_and_rejects():
@@ -68,17 +84,27 @@ def test_validate_repo_helper():
         _validate_repo('not-a-repo')
 
 
-def test_github_release_url():
-    assert github_release_url(FirmwareSource(repo='')) == ''
-    assert github_release_url(FirmwareSource(repo='a/b', channel='stable')) == \
+def test_release_url_github():
+    assert release_url(FirmwareSource(repo='')) == ''
+    assert release_url(FirmwareSource(repo='a/b', channel='stable')) == \
         'https://github.com/a/b/releases/latest'
-    assert github_release_url(FirmwareSource(repo='a/b', channel='prerelease')) == \
+    assert release_url(FirmwareSource(repo='a/b', channel='prerelease')) == \
         'https://github.com/a/b/releases'
-    assert github_release_url(FirmwareSource(repo='a/b', channel='pinned', pinned_tag='v1.2')) == \
+    assert release_url(FirmwareSource(repo='a/b', channel='pinned', pinned_tag='v1.2')) == \
         'https://github.com/a/b/releases/tag/v1.2'
     # pinned without a tag falls back to the releases list
-    assert github_release_url(FirmwareSource(repo='a/b', channel='pinned')) == \
+    assert release_url(FirmwareSource(repo='a/b', channel='pinned')) == \
         'https://github.com/a/b/releases'
+
+
+def test_release_url_gitlab():
+    gitlab_com = FirmwareSource(host='gitlab', repo='a/b', channel='stable')
+    assert release_url(gitlab_com) == 'https://gitlab.com/a/b/-/releases'
+    assert release_url(FirmwareSource(host='gitlab', repo='a/b/c', channel='pinned', pinned_tag='v1.2')) == \
+        'https://gitlab.com/a/b/c/-/releases/v1.2'
+    # a self-hosted host_url is used instead of gitlab.com
+    self_hosted = FirmwareSource(host='gitlab', host_url='https://gitlab.example.com', repo='a/b')
+    assert release_url(self_hosted) == 'https://gitlab.example.com/a/b/-/releases'
 
 
 # ---------------------------------------------------------------------------
@@ -104,11 +130,13 @@ def test_should_pull_matrix():
 # ---------------------------------------------------------------------------
 
 def _mock_github(monkeypatch, release_json, download):
-    """`download` is (data, digest) tuple for the single asset."""
+    """`download` is (data, digest) tuple for the single asset. Mocks the
+    host-agnostic dispatch points in backend.py directly, so it works
+    regardless of src.host — the name is legacy from before GitLab support."""
     async def fake_resolve(client, src, etag):
         return release_json, 'etag-xyz'
 
-    async def fake_download(client, url, max_size):
+    async def fake_download(client, url, max_size, src):
         return download
 
     monkeypatch.setattr(backend, '_resolve_release_json', fake_resolve)
@@ -153,7 +181,7 @@ def test_pull_skips_when_unchanged_and_does_not_download(tmp_path, monkeypatch):
     async def fake_resolve(client, src, etag):
         return _release(tag='v1.0.0', digest=digest), 'etag-new'
 
-    async def fake_download(client, url, max_size):
+    async def fake_download(client, url, max_size, src):
         downloaded['called'] = True
         return data, digest
 

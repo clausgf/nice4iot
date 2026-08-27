@@ -1,5 +1,6 @@
 import datetime
 import re
+from dataclasses import dataclass
 from typing import Annotated, Literal
 
 import niceview
@@ -7,25 +8,58 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.util import is_valid_upload_filename
 
-# owner/name only — never a URL (SSRF guard). Letters, digits, dot, underscore, hyphen.
-REPO_RE = re.compile(r'^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$')
+# owner/name, or owner/group/.../name for a GitLab subgroup — never a URL
+# (SSRF guard). Letters, digits, dot, underscore, hyphen per segment, at
+# least one '/'.
+REPO_RE = re.compile(r'^[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)+$')
+
+_HOST_URL_RE = re.compile(r'^https?://[A-Za-z0-9._-]+(?::\d+)?$')
+
+
+class FirmwareError(Exception):
+    """A firmware pull could not be completed (config, network, or integrity)."""
+
+
+@dataclass
+class ResolvedAsset:
+    tag: str
+    asset_name: str
+    download_url: str  # host API's own asset URL (GitHub: 302s to an asset host; GitLab: usually direct)
+    digest: str        # 'sha256:...' if the host's API provides one, else ''
 
 
 class FirmwareSource(BaseModel):
-    """Per-directory firmware source: a public GitHub repository whose release
-    asset is pulled into this directory. Configured by an operator in the UI;
-    devices can never set it. Stored as ``.firmware.json`` next to the pulled file.
+    """Per-directory firmware source: a public GitHub or GitLab repository
+    whose release asset is pulled into this directory. Configured by an
+    operator in the UI; devices can never set it. Stored as ``.firmware.json``
+    next to the pulled file.
     """
 
+    host: Annotated[
+            Literal['github', 'gitlab'],
+            Field(description='Which git hosting API to resolve releases against.'),
+            niceview.Field(options={'github': 'GitHub', 'gitlab': 'GitLab'})
+        ] = 'github'
+
+    host_url: Annotated[str,
+            Field(title='GitLab server URL',
+                  description='Base URL of a self-hosted GitLab instance, e.g. '
+                              'https://gitlab.example.com. Leave empty for gitlab.com. '
+                              'Ignored when host is GitHub.'),
+            niceview.Field()
+        ] = ''
+
     repo: Annotated[str,
-            Field(description='Public GitHub repository as owner/name (e.g. clausgf/nice4iot). '
-                              'Not a URL. Leave empty to disable.'),
+            Field(description='Public repository as owner/name (GitHub) or '
+                              'group/subgroup/.../name (GitLab). Not a URL. Leave empty to disable.'),
             niceview.Field()
         ] = ''
 
     channel: Annotated[
             Literal['stable', 'prerelease', 'pinned'],
-            Field(description='Which release to track.'),
+            Field(description='Which release to track. GitLab has no draft/prerelease flag on a '
+                              'release, so "Stable" and "Newest incl. prereleases" both resolve to '
+                              'the newest release there.'),
             niceview.Field(options={
                 'stable': 'Stable (latest release)',
                 'prerelease': 'Newest incl. prereleases',
@@ -80,7 +114,15 @@ class FirmwareSource(BaseModel):
     def _validate_repo(cls, v: str) -> str:
         v = v.strip()
         if v and not REPO_RE.match(v):
-            raise ValueError('repo must be "owner/name" (letters, digits, . _ - only) — not a URL')
+            raise ValueError('repo must be "owner/name" (letters, digits, . _ - only per segment) — not a URL')
+        return v
+
+    @field_validator('host_url')
+    @classmethod
+    def _validate_host_url(cls, v: str) -> str:
+        v = v.strip().rstrip('/')
+        if v and not _HOST_URL_RE.match(v):
+            raise ValueError('host_url must be a bare http(s) origin, e.g. https://gitlab.example.com — no path')
         return v
 
     @field_validator('asset_name', 'dest_filename')
@@ -92,12 +134,13 @@ class FirmwareSource(BaseModel):
         return v or 'firmware.bin'
 
     class Meta:
-        description = ('Pull a firmware asset from a **public** GitHub release into the project or device directory. '
-                       'The pulled file is served to devices via the normal file path (device copy '
-                       'overrides the project copy).')
+        description = ('Pull a firmware asset from a **public** GitHub or GitLab release into the '
+                       'project or device directory. The pulled file is served to devices via the '
+                       'normal file path (device copy overrides the project copy).')
         profiles = {
             'settings': [
-                ['repo', 'channel', 'pinned_tag'], 
+                ['host', 'host_url'],
+                ['repo', 'channel', 'pinned_tag'],
                 ['asset_name', 'dest_filename'],
                 ['auto_pull_enabled', 'auto_pull_interval'],
                 'mqtt_publish_on_pull',

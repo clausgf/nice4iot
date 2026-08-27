@@ -360,3 +360,35 @@ def test_device_subpage_shows_project_sidebar_with_devices_active(project_with_d
     assert 'Dashboard' in tab_labels
     assert 'Data' in tab_labels
     assert 'Logs' in tab_labels
+
+
+def test_device_general_tab_has_firmware_download_card(project_with_device):
+    """Regression: a 2026-08-05 refactor (commit d472c1a) silently dropped the
+    device-level Firmware Download card from device_general_panel() — the
+    backend (per-directory FirmwareSource) never lost the ability, only the
+    UI wiring did, unnoticed for 15+ releases since nothing rendered this
+    panel in a test."""
+    project, device = project_with_device
+    nav = ui.row()
+    sidebar = ui.column()
+    drawer = _FakeToggle()
+    hamburger = _FakeToggle()
+    container = ui.column()
+
+    async def run() -> None:
+        core.loop = asyncio.get_running_loop()
+        with container:
+            from nicegui import context
+            context.client.sub_pages_router.current_path = f'/project/{project}/device/{device}'
+            await device_subpage(_page_args(), nav, sidebar, drawer, hamburger, project, device, tab='General')
+        await _drain()
+
+    asyncio.run(run())
+
+    # config_expansion() titles are Quasar-rendered (the expansion's own
+    # `text`, a prop), not plain ui.label/item_label text — see
+    # test_project_subpage_extension_general_card_gets_config_expansion_chrome.
+    from nicegui.elements.expansion import Expansion
+    expansion_titles = [e.text for e in _find_all(container, Expansion)]
+    assert 'Firmware Seed' in expansion_titles
+    assert 'Firmware Download' in expansion_titles

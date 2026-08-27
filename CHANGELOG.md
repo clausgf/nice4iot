@@ -4,6 +4,16 @@ All notable changes to this project are documented here. Per `CLAUDE.md`, every
 API change must be recorded. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.37.0] - 2026-08-27
+
+### Added
+
+- **Firmware Download now supports GitLab, alongside GitHub** (`app/core/firmware/models.py`, new `app/core/firmware/github.py` + `gitlab.py`, `app/core/firmware/backend.py`, `app/core/firmware/ui.py`): `FirmwareSource` gained `host` (`github`/`gitlab`) and `host_url` (base URL of a self-hosted GitLab instance; empty = gitlab.com, ignored for GitHub). `repo` now also accepts GitLab's nested `group/subgroup/.../name` form, not just GitHub's flat `owner/name`. The GitHub-specific request/response handling (previously hardcoded throughout `backend.py`) is split into `github.py`, with a new `gitlab.py` implementing the equivalent against GitLab's REST API v4 — materially different in shape: no "latest release" endpoint (list + take newest), no draft/prerelease flag on a release (`stable`/`prerelease` channels both resolve to "newest" there), assets are `assets.links[]` (arbitrary URLs, not necessarily hosted on the GitLab instance — the download-host allowlist is the *configured* GitLab host, not GitHub's fixed asset-CDN list), and no asset digest in the API response (integrity verification is local-hash-only for a GitLab source). Public repositories only, matching GitHub's existing scope — no `PRIVATE-TOKEN`/auth support yet. `backend.py` itself is now a thin per-directory orchestrator that dispatches to whichever module `host` names.
+
+### Fixed
+
+- **The device-level Firmware Download card was missing from the device Settings → General tab** (`app/core/device/ui.py`): the backend has always supported a firmware source per device (independent of the project's, via the ordinary device→project file-serving fallback) — a 2026-08-05 refactor (commit `d472c1a`) silently dropped the card's import and call from `device_general_panel()`, unnoticed for 15+ releases since nothing rendered that panel in a test. Restored, with a regression test that fails without the fix. `docs/concepts.md`'s Firmware Distribution section also had two stale field names (`publish_on_pull` → `mqtt_publish_on_pull`, `auto_pull_interval_min` → `auto_pull_interval`) and a description of wildcard `asset_name` matching that was removed from the code on 2026-08-25 (commit `7500ed7`) but never removed from the docs — corrected alongside.
+
 ## [0.36.3] - 2026-08-27
 
 ### Changed

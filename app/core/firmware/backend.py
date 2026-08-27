@@ -1,50 +1,48 @@
 """
-Firmware pull from public GitHub Releases.
+Firmware pull from public GitHub or GitLab Releases.
 
 Each directory (a project dir or a device dir) may carry a ``.firmware.json``
-(:class:`FirmwareSource`) pointing at a public GitHub repo. A pull resolves a
-release, downloads a named asset, verifies its digest, and writes it atomically
+(:class:`FirmwareSource`) pointing at a public GitHub or GitLab repo (self-
+hosted or gitlab.com). A pull resolves a release, downloads a named asset,
+verifies its digest when the host's API provides one, and writes it atomically
 into that directory as ``dest_filename`` — from where the normal file-serving
 path (device copy overriding project copy) delivers it to devices. State is
 recorded in ``.firmware.state.json``.
 
-No credentials are ever sent to GitHub (public repos only), so nothing can leak
-across the redirect to the asset host. All network I/O is async (httpx); the
-disk write is off-loaded to a worker thread (anyio.to_thread).
+Host-specific request shapes live in github.py/gitlab.py (dispatched on
+``src.host``); this module only knows the common per-directory orchestration.
+No credentials are ever sent to either host (public repos only), so nothing
+can leak across a redirect to an asset host. All network I/O is async
+(httpx); the disk write is off-loaded to a worker thread (anyio.to_thread).
 """
 import datetime
 import hashlib
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import quote
 
 import anyio
 import httpx
 from niceview.dataadapter import JsonAdapter, lenient_model_load
 
-from app.core.firmware.models import REPO_RE, FirmwareSource, FirmwareState
+from app.core.firmware import github, gitlab
+from app.core.firmware.models import (
+    REPO_RE, FirmwareError, FirmwareSource, FirmwareState, ResolvedAsset,
+)
 from app.paths import device_dir, project_dir
 from app.util import atomic_write, logger
 
 FIRMWARE_CONFIG_FILE = '.firmware.json'
 FIRMWARE_STATE_FILE = '.firmware.state.json'
 
-_GITHUB_API = 'https://api.github.com'
-_API_VERSION = '2022-11-28'
-_USER_AGENT = 'nice4iot'
 _HTTP_TIMEOUT = 30.0
 _MAX_REDIRECTS = 5
 _MAX_FIRMWARE_SIZE = 64 * 1024 * 1024  # 64 MiB hard cap on a downloaded asset
 _MIN_INTERVAL = datetime.timedelta(minutes=5)
-# The asset download 302s from api.github.com to a GitHub-owned asset host. We
-# never attach credentials, so this is a defence-in-depth check, not a secret guard.
-_ALLOWED_DOWNLOAD_HOSTS = ('api.github.com', 'github.com', 'codeload.github.com')
-_ALLOWED_DOWNLOAD_SUFFIX = '.githubusercontent.com'
 
 
-class FirmwareError(Exception):
-    """A firmware pull could not be completed (config, network, or integrity)."""
+def _host_module(src: FirmwareSource):
+    return gitlab if src.host == 'gitlab' else github
 
 
 def _now() -> datetime.datetime:
@@ -96,16 +94,8 @@ def save_firmware_state(dir_path: Path, state: FirmwareState) -> None:
 
 
 # ---------------------------------------------------------------------------
-# GitHub REST resolution + download (async)
+# Host-agnostic resolution + download (async) — dispatches to github.py/gitlab.py
 # ---------------------------------------------------------------------------
-
-@dataclass
-class ResolvedAsset:
-    tag: str
-    asset_name: str
-    download_url: str  # GitHub API asset URL (application/octet-stream → 302)
-    digest: str        # 'sha256:...' from the asset JSON, or '' if absent
-
 
 @dataclass
 class PullResult:
@@ -114,107 +104,43 @@ class PullResult:
     message: str
 
 
-def github_release_url(src: FirmwareSource) -> str:
-    """Human-facing GitHub Releases URL the current config resolves to, for display
+def release_url(src: FirmwareSource) -> str:
+    """Human-facing Releases URL the current config resolves to, for display
     in the UI. Empty when no repo is configured."""
     repo = src.repo.strip()
     if not repo:
         return ''
-    base = f'https://github.com/{repo}/releases'
-    if src.channel == 'pinned':
-        tag = src.pinned_tag.strip()
-        return f'{base}/tag/{tag}' if tag else base
-    if src.channel == 'stable':
-        return f'{base}/latest'
-    return base  # prerelease → the releases list
+    return _host_module(src).release_url(repo, src)
 
 
 def _validate_repo(repo: str) -> str:
     repo = repo.strip()
     if not REPO_RE.match(repo):
-        raise FirmwareError(f'invalid repository {repo!r} (expected owner/name, not a URL)')
+        raise FirmwareError(f'invalid repository {repo!r} (expected owner/name, or '
+                            f'group/subgroup/.../name for GitLab — not a URL)')
     return repo
-
-
-def _api_headers(etag: str | None = None) -> dict[str, str]:
-    headers = {
-        'Accept': 'application/vnd.github+json',
-        'X-GitHub-Api-Version': _API_VERSION,
-        'User-Agent': _USER_AGENT,
-    }
-    if etag:
-        headers['If-None-Match'] = etag
-    return headers
-
-
-def _log_rate_limit(resp: httpx.Response) -> None:
-    remaining = resp.headers.get('x-ratelimit-remaining')
-    if remaining is not None and remaining.isdigit() and int(remaining) <= 5:
-        reset = resp.headers.get('x-ratelimit-reset', '?')
-        logger.warning(f'GitHub rate limit low: {remaining} remaining (resets at {reset})')
 
 
 async def _resolve_release_json(client: httpx.AsyncClient, src: FirmwareSource,
                                 etag: str | None) -> tuple[dict | None, str]:
     """Return (release_json, etag). release_json is None on HTTP 304 (unchanged)."""
     repo = _validate_repo(src.repo)
-    if src.channel == 'pinned':
-        tag = src.pinned_tag.strip()
-        if not tag:
-            raise FirmwareError('pinned channel requires a tag')
-        url = f'{_GITHUB_API}/repos/{repo}/releases/tags/{quote(tag, safe="")}'
-    elif src.channel == 'stable':
-        url = f'{_GITHUB_API}/repos/{repo}/releases/latest'
-    else:  # prerelease → list, pick newest non-draft
-        url = f'{_GITHUB_API}/repos/{repo}/releases?per_page=20'
-
-    resp = await client.get(url, headers=_api_headers(etag))
-    _log_rate_limit(resp)
-    if resp.status_code == 304:
-        return None, etag or ''
-    if resp.status_code == 404:
-        raise FirmwareError(f'not found on GitHub: {repo} ({src.channel})')
-    if resp.status_code != 200:
-        raise FirmwareError(f'GitHub returned {resp.status_code} for {url}')
-    new_etag = resp.headers.get('etag', '')
-    data = resp.json()
-
-    if src.channel == 'prerelease':
-        releases = [r for r in data if not r.get('draft')]
-        if not releases:
-            raise FirmwareError(f'no releases found for {repo}')
-        releases.sort(key=lambda r: r.get('published_at') or '', reverse=True)
-        return releases[0], new_etag
-    return data, new_etag
-
-
-def _pick_asset(release_json: dict, asset_name: str) -> dict:
-    for asset in release_json.get('assets', []):
-        if asset.get('name') == asset_name:
-            return asset
-    raise FirmwareError(f'asset {asset_name!r} not found in release '
-                        f'{release_json.get("tag_name")!r}')
+    return await _host_module(src).resolve_release(client, repo, src, etag)
 
 
 def _resolved_from(release_json: dict, src: FirmwareSource) -> ResolvedAsset:
-    asset = _pick_asset(release_json, src.asset_name)
-    return ResolvedAsset(
-        tag=release_json.get('tag_name', ''),
-        asset_name=src.asset_name,
-        download_url=asset['url'],
-        digest=(asset.get('digest') or ''),
-    )
+    return _host_module(src).resolved_asset(release_json, src)
 
 
 async def _download_asset(client: httpx.AsyncClient, download_url: str,
-                          max_size: int) -> tuple[bytes, str]:
+                          max_size: int, src: FirmwareSource) -> tuple[bytes, str]:
     """Stream an asset with a hard size cap. Returns (bytes, 'sha256:hexdigest')."""
-    headers = {'Accept': 'application/octet-stream', 'User-Agent': _USER_AGENT}
-    async with client.stream('GET', download_url, headers=headers) as resp:
+    module = _host_module(src)
+    async with client.stream('GET', download_url, headers=module.download_headers()) as resp:
         if resp.status_code != 200:
             raise FirmwareError(f'asset download failed: HTTP {resp.status_code}')
         host = resp.url.host
-        if not (host in _ALLOWED_DOWNLOAD_HOSTS or host.endswith(_ALLOWED_DOWNLOAD_SUFFIX)):
+        if not module.is_allowed_download_host(host, src):
             raise FirmwareError(f'refusing unexpected download host {host!r}')
         digest = hashlib.sha256()
         buf = bytearray()
@@ -293,7 +219,7 @@ async def _pull_firmware(dir_path: Path, src: FirmwareSource, *, project_name: s
                 await anyio.to_thread.run_sync(lambda: save_firmware_state(dir_path, state))
             return PullResult(False, resolved.tag, f'already at {resolved.tag}')
 
-        data, actual_digest = await _download_asset(client, resolved.download_url, _MAX_FIRMWARE_SIZE)
+        data, actual_digest = await _download_asset(client, resolved.download_url, _MAX_FIRMWARE_SIZE, src)
 
     if resolved.digest and resolved.digest.lower() != actual_digest.lower():
         raise FirmwareError('asset digest mismatch — nothing written')

@@ -18,7 +18,7 @@ data/projects/
     ├── .telemetry.json         # Telemetry backend config
     ├── .logging.json           # Logging backend config
     ├── .forwards.json          # Named HTTP forwarding rules
-    ├── .firmware.json          # Firmware source (GitHub repo) for project-wide firmware.bin
+    ├── .firmware.json          # Firmware source (GitHub/GitLab repo) for project-wide firmware.bin
     ├── .firmware.state.json    # Last firmware pull: tag, digest, pulled_at, etag
     ├── .seed.json              # Seed data for a fresh device: WiFi, API URL, TLS trust
     ├── <shared_file>           # Project-wide fallback files served to devices
@@ -157,23 +157,25 @@ Not supported: nested objects · arrays of non-strings · `$ref` · `pattern` ·
 
 ## Firmware Distribution
 
-Firmware reaches a device in two independent halves. The **device** side fetches its own file through `GET /api/file/{project}/{device}/{filename}` with the ordinary device→project fallback and ETag caching — `firmware.bin` by default, or (arduino4iot >= v3.5.0) `firmware-{board}.bin` with `{board}` substituted from that device's own `IOT_BOARD_ID` build define, letting several hardware variants share one project. The **admin** side is the act of getting those files into the store — either uploaded by hand, or pulled from a public GitHub release.
+Firmware reaches a device in two independent halves. The **device** side fetches its own file through `GET /api/file/{project}/{device}/{filename}` with the ordinary device→project fallback and ETag caching — `firmware.bin` by default, or (arduino4iot >= v3.5.0) `firmware-{board}.bin` with `{board}` substituted from that device's own `IOT_BOARD_ID` build define, letting several hardware variants share one project. The **admin** side is the act of getting those files into the store — either uploaded by hand, or pulled from a public GitHub or GitLab release.
 
-A `.firmware.json` sidecar configures a source per project and, optionally, per device. Each one is independent and pulls into **its own directory**: the project source writes into the project directory, a device source into that device's. Inheritance is not a configuration concern — it happens at serve time through the file fallback, so a device needs its own source only when it should track a *different* release than the project. `asset_name` accepts a `*`/`?` wildcard, in which case *every* matching release asset is downloaded (each under its own name — there is no single rename target for more than one file) rather than requiring exactly one match; this is what lets a project mirror a release that ships several board-specific files (`firmware-<board>.bin`, and for Web-Serial-Flash also `merged-<board>.bin` / `partitions-<board>.csv` — see "Seed Data" above) side by side with one source.
+A `.firmware.json` sidecar configures a source per project and, optionally, per device — the device-level card lives on the device's General tab, next to Firmware Seed. Each one is independent and pulls into **its own directory**: the project source writes into the project directory, a device source into that device's. Inheritance is not a configuration concern — it happens at serve time through the file fallback, so a device needs its own source only when it should track a *different* release than the project. `asset_name` names exactly one release asset (default `firmware.bin`) — a project mirroring a release that ships several board-specific files (`firmware-<board>.bin`, and for Web-Serial-Flash also `merged-<board>.bin` / `partitions-<board>.csv` — see "Seed Data" above) needs one device-level source per board (each with its own `asset_name`, all tracking the same repo/release) rather than one project-level source pulling every board's asset at once.
+
+`host` picks GitHub or GitLab; `host_url` additionally points a GitLab source at a self-hosted instance (empty = gitlab.com — GitHub has no equivalent, its API is always `api.github.com`). `repo` is `owner/name` on GitHub, or `group/subgroup/.../name` on GitLab (nested subgroups are a single `repo` value with more than one `/`). Host-specific request shapes (release JSON layout, asset structure, auth headers) live in `app/core/firmware/github.py` / `gitlab.py`; `backend.py` only knows the common per-directory pull/state/auto-pull orchestration and dispatches to whichever module `host` names.
 
 Which release is chosen depends on `channel`:
 
-| `channel` | Chosen release |
-|---|---|
-| `stable` | the one GitHub marks *latest* (excludes prereleases and drafts) |
-| `prerelease` | newest by `published_at`, prereleases included |
-| `pinned` | exactly `pinned_tag` |
+| `channel` | GitHub | GitLab |
+|---|---|---|
+| `stable` | the one GitHub marks *latest* (excludes prereleases and drafts) | newest release (GitLab has no draft/prerelease flag to exclude by — see below) |
+| `prerelease` | newest by `published_at`, prereleases included | same as `stable` |
+| `pinned` | exactly `pinned_tag` | exactly `pinned_tag` |
 
-**"Newer" is decided by tag string, not semver.** The last pulled `tag_name` is recorded in `.firmware.state.json`; a pull happens when the resolved tag differs from it (for `pinned`, when the asset digest changes). There is no version-range parsing — that keeps the logic auditable and avoids a semver dependency. Semver-aware constraints, private repositories, non-GitHub sources and rollback orchestration are out of scope.
+**"Newer" is decided by tag string, not semver.** The last pulled `tag_name` is recorded in `.firmware.state.json`; a pull happens when the resolved tag differs from it (for `pinned`, when the asset digest changes — except on GitLab, which has no asset digest at all, see below, so a pinned GitLab source only ever re-pulls on a tag change). There is no version-range parsing — that keeps the logic auditable and avoids a semver dependency. Semver-aware constraints, private repositories (GitLab or GitHub) and rollback orchestration are out of scope.
 
-A pull resolves the release, streams the named asset (default `firmware.bin`) under a hard size cap, verifies GitHub's SHA-256 `digest` when the release provides one, and only then renames it atomically into place. If `publish_on_pull` is set and the project has MQTT enabled, the new file is pushed to the device immediately.
+A pull resolves the release, streams the named asset (default `firmware.bin`) under a hard size cap, verifies the host's SHA-256 `digest` when the release provides one, and only then renames it atomically into place. GitHub's release API includes an asset digest; **GitLab's does not**, so integrity verification is local-hash-only for a GitLab source (the download itself is still checked against a download-host allowlist — the *configured* GitLab host only, since a GitLab release "asset link" can point at an arbitrary URL, not necessarily one hosted on the GitLab instance itself). If `mqtt_publish_on_pull` is set on a **device-level** source and the project has MQTT enabled, the new file is pushed to that device immediately.
 
-**Auto-pull** is opt-in per source. A background loop ticks once a minute and honours each source's `auto_pull_interval_min`, issuing a **conditional** request with the stored ETag — a `304 Not Modified` costs nothing against the rate limit. Unauthenticated GitHub allows 60 requests/hour per IP, so a 5-minute floor is enforced on the interval and the remaining budget is logged (warning at ≤ 5 left).
+**Auto-pull** is opt-in per source. A background loop ticks once a minute and honours each source's `auto_pull_interval` (floored at 5 minutes), issuing a **conditional** request with the stored ETag — a `304 Not Modified` costs nothing against the rate limit. Unauthenticated GitHub allows 60 requests/hour per IP, so the remaining budget is logged (warning at ≤ 5 left); GitLab has its own, separate limits (higher on gitlab.com, usually unset on a self-hosted instance) that aren't logged the same way yet.
 
 Which version a device actually *runs* is something only the device knows, so it self-reports it — see [Device API → Reporting firmware version](device-api.md#reporting-firmware-version-optional). The UI contrasts the reported version against the pulled tag per device.
 

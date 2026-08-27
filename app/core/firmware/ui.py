@@ -13,10 +13,10 @@ from niceview import ConflictError, ModelForm, StorageError
 from app.core.firmware.backend import (
     FirmwareError,
     get_firmware_adapter,
-    github_release_url,
     load_firmware_state,
     peek_latest_tag,
     pull_firmware,
+    release_url,
 )
 from app.core.firmware.models import FirmwareSource
 from app.util import render_datetime
@@ -39,13 +39,14 @@ async def firmware_source_card(dir_path: Path, *, project_name: str, device_name
             ui.notify(str(e), color='negative')
 
     async def _set_visibility() -> None:
+        form.widgets['host_url'].set_visibility(config.host == 'gitlab')
         form.widgets['pinned_tag'].set_visibility(config.channel == 'pinned')
         form.widgets['auto_pull_interval'].set_visibility(config.auto_pull_enabled)
 
     async def _on_change(_e) -> None:
         await _save()
         await _set_visibility()
-        github_path.refresh()  # repo/channel/tag edits change the resolved URL
+        release_link.refresh()  # host/repo/channel/tag edits change the resolved URL
 
     # updated_at is the config's optimistic-lock timestamp (last save), not a
     # firmware fact — excluded from the form to avoid confusion.
@@ -53,20 +54,22 @@ async def firmware_source_card(dir_path: Path, *, project_name: str, device_name
                                base_props='outlined dense hide-bottom-space',
                                default_classes='w-full', profile='settings')
     form.render()
+    form.widgets['host_url'].set_visibility(config.host == 'gitlab')
     form.widgets['pinned_tag'].set_visibility(config.channel == 'pinned')
     form.widgets['auto_pull_interval'].set_visibility(config.auto_pull_enabled)
 
     @ui.refreshable
-    def github_path() -> None:
-        url = github_release_url(config)
+    def release_link() -> None:
+        url = release_url(config)
+        host_label = 'GitLab' if config.host == 'gitlab' else 'GitHub'
         with ui.row().classes('items-center gap-1 q-mt-xs'):
-            ui.label('GitHub:').classes('text-caption text-grey-7')
+            ui.label(f'{host_label}:').classes('text-caption text-grey-7')
             if url:
                 ui.link(url, url, new_tab=True).classes('text-caption')
             else:
                 ui.label('— set a repository above').classes('text-caption text-grey-7')
 
-    github_path()
+    release_link()
 
     @ui.refreshable
     def status() -> None:
