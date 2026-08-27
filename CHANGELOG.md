@@ -4,6 +4,12 @@ All notable changes to this project are documented here. Per `CLAUDE.md`, every
 API change must be recorded. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.36.3] - 2026-08-27
+
+### Changed
+
+- `nicepaper` (optional `epaper` extra) bumped 0.26.7 → 0.26.8: `PanelTypeModel.gxepd2_class` renamed to `panel_id` (the panel's official manufacturer designation, e.g. `GDEH075Z9`, instead of a GxEPD2 Arduino-library class name) — no nice4iot changes needed.
+
 ## [0.36.2] - 2026-08-27
 
 ### Changed
