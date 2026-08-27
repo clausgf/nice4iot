@@ -4,6 +4,21 @@ All notable changes to this project are documented here. Per `CLAUDE.md`, every
 API change must be recorded. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.37.1] - 2026-08-27
+
+### Changed
+
+- **Firmware source card's field-visibility toggling deduplicated**
+  (`app/core/firmware/ui.py`): the three `set_visibility()` calls after
+  initial render and on every form change are now one `_set_visibility()`
+  helper. No behavior change.
+- `niceview` bumped to its current commit (`CLAUDE.md` wording fix only, no
+  functional change) and `nicepaper` (optional `epaper` extra) bumped
+  0.26.8 → 0.26.9: booking-system `header`/`category_colors` editors are now
+  inline (no Add dialog), the Rooms grid swaps its `booking_ical_url` column
+  for `notes`, and the `waveshare_4in2` panel-catalog entry was dropped — no
+  nice4iot changes needed.
+
 ## [0.37.0] - 2026-08-27
 
 ### Added

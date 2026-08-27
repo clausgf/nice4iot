@@ -54,9 +54,7 @@ async def firmware_source_card(dir_path: Path, *, project_name: str, device_name
                                base_props='outlined dense hide-bottom-space',
                                default_classes='w-full', profile='settings')
     form.render()
-    form.widgets['host_url'].set_visibility(config.host == 'gitlab')
-    form.widgets['pinned_tag'].set_visibility(config.channel == 'pinned')
-    form.widgets['auto_pull_interval'].set_visibility(config.auto_pull_enabled)
+    await _set_visibility()
 
     @ui.refreshable
     def release_link() -> None:
