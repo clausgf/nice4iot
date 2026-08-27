@@ -4,6 +4,12 @@ All notable changes to this project are documented here. Per `CLAUDE.md`, every
 API change must be recorded. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.36.2] - 2026-08-27
+
+### Changed
+
+- **`render_datetime_age()` handles future timestamps** (`app/util.py`): a datetime after "now" (e.g. a not-yet-expired provisioning token) used to render a broken negative age (`(-3d ago)`); it now renders `(in 3d)`. The inner helper is renamed `_ago` → `humanize_timedelta` to match (it no longer always means "ago").
+
 ## [0.36.1] - 2026-08-27
 
 ### Changed

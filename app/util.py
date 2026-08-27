@@ -126,19 +126,22 @@ def render_datetime(dt: datetime.datetime | None) -> str:
 def render_datetime_age(dt: datetime.datetime | None) -> str:
     """Render a UTC datetime as a local-time string with an age suffix."""
 
-    def _ago(delta: datetime.timedelta) -> str:
+    def humanize_timedelta(delta: datetime.timedelta) -> str:
         s = int(delta.total_seconds())
         if s < 60:
-            return f'{s}s ago'
+            return f'{s}s'
         if s < 3600:
-            return f'{s // 60}min ago'
+            return f'{s // 60}min'
         if s < 86400:
-            return f'{s // 3600}h ago'
-        return f'{s // 86400}d ago'
+            return f'{s // 3600}h'
+        return f'{s // 86400}d'
 
     if dt is None:
         return 'never'
 
     now = datetime.datetime.now(datetime.timezone.utc)
     delta = now - dt
-    return f'{render_datetime(dt)}  ({_ago(delta)})'
+    if delta.total_seconds() < 0:
+        return f'{render_datetime(dt)}  (in {humanize_timedelta(-delta)})'
+    else:
+        return f'{render_datetime(dt)}  ({humanize_timedelta(delta)} ago)'
