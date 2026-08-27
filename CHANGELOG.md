@@ -4,6 +4,12 @@ All notable changes to this project are documented here. Per `CLAUDE.md`, every
 API change must be recorded. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.36.1] - 2026-08-27
+
+### Changed
+
+- Dependencies bumped to their latest available versions (`uv lock --upgrade`), notably `nicepaper` 0.26.6 → 0.26.7 (Rooms search, Displays status/icon overhaul), `niceview` already at 0.26.5, and `plotly` 6.9.0 → 7.0.0 (a major version bump — verified live that device Data-tab charts still render correctly, since the test suite doesn't exercise plotly's JS rendering). No source changes.
+
 ## [0.36.0] - 2026-08-27
 
 ### Fixed
