@@ -4,6 +4,17 @@ All notable changes to this project are documented here. Per `CLAUDE.md`, every
 API change must be recorded. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.37.3] - 2026-08-28
+
+### Changed
+
+- **`niceview` bumped 0.26.5 → 0.27.0, `nicepaper` (the `epaper` extra) 0.26.9 → 0.26.10**:
+  `ModelGrid`/`ModelGridInlineEdit` no longer crash on a `timedelta` field and render `bool`
+  columns as a real checkbox instead of `true`/`false` text; `Meta.field_infos` and a new
+  `Meta.default_profile` now also apply to `ModelGrid`/`ModelList`. No code changes needed here.
+  `ruff` and `pytest` (644 tests) pass; `mypy app`'s 241 errors are pre-existing and unaffected
+  by this bump (verified against the old pins before committing).
+
 ## [0.37.2] - 2026-08-28
 
 ### Added
