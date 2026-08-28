@@ -37,11 +37,13 @@ _WIDGETS: dict[str, tuple[WidgetType, Any]] = {
 }
 
 
-def to_field_info(field: FormField) -> FieldInfo:
+def to_field_info(field: FormField, *, full_width: bool = True) -> FieldInfo:
     """Translate one field of the schema subset into niceview's vocabulary.
 
     The single place where the subset meets the widget layer — a newly supported
     type is a row in `_WIDGETS` plus one in `schema_kind()`, not another branch.
+    *full_width* is False for a field sharing a row with others (`x-ui.layout`),
+    so it takes an even share of the row instead of the whole width.
     """
     widget_type, field_type = _WIDGETS[field.kind]
     props = 'outlined dense'
@@ -64,7 +66,7 @@ def to_field_info(field: FormField) -> FieldInfo:
         # Layer 2: the same check the save path runs, shown under the widget.
         validation=lambda value, f=field: validate_field(f, value),
         props=props,
-        classes='w-full',
+        classes='w-full' if full_width else 'flex-1 min-w-0',
     )
 
 
@@ -77,8 +79,16 @@ def _json_value(value: Any) -> Any:
     return value.isoformat() if isinstance(value, datetime.date) else value
 
 
-def render_form_fields(fields: list[FormField]) -> Callable[..., dict | None]:
+def render_form_fields(fields: list[FormField],
+                       layout: list[list[str]] | None = None) -> Callable[..., dict | None]:
     """Render *fields* into the current context and return a collector.
+
+    *layout* groups fields into rows (the schema's optional `x-ui.layout` hint,
+    see `form.layout_from_schema()`) — a list of rows, each a list of field keys
+    sharing one row. Keys not among *fields* are dropped and any field the
+    layout misses still gets its own row, so a stale or partial hint can never
+    hide or duplicate a field. None (no schema, or no hint) keeps the original
+    one-field-per-row layout.
 
     Calling the collector reads the widgets and validates them; it returns the
     values, or None after reporting the first error — so a save handler is just
@@ -86,11 +96,31 @@ def render_form_fields(fields: list[FormField]) -> Callable[..., dict | None]:
     the widgets as-is, with no checks and no notification — for syncing another
     view from the current (possibly incomplete) form state.
     """
-    infos = {f.key: to_field_info(f) for f in fields}
+    by_key = {f.key: f for f in fields}
+    seen: set[str] = set()
+    rows: list[list[str]] = []
+    for raw_row in (layout or []):
+        row = [k for k in raw_row if k in by_key and k not in seen]
+        seen.update(row)
+        if row:
+            rows.append(row)
+    rows.extend([f.key] for f in fields if f.key not in seen)
+
+    infos: dict[str, FieldInfo] = {}
+    widgets: dict[str, Any] = {}
     with ui.column().classes('w-full gap-3'):
         if not fields:
             ui.label('Empty object — nothing to edit as a form.').classes('text-caption text-grey-7')
-        widgets = {f.key: render_field(infos[f.key], f.value) for f in fields}
+        for row in rows:
+            if len(row) == 1:
+                key = row[0]
+                infos[key] = to_field_info(by_key[key])
+                widgets[key] = render_field(infos[key], by_key[key].value)
+                continue
+            with ui.row().classes('w-full gap-3 items-start'):
+                for key in row:
+                    infos[key] = to_field_info(by_key[key], full_width=False)
+                    widgets[key] = render_field(infos[key], by_key[key].value)
 
     def collect(*, validate: bool = True) -> dict | None:
         values = {key: _json_value(field_value(w, infos[key])) for key, w in widgets.items()}

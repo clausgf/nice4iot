@@ -9,6 +9,7 @@ from app.core.file.form import (
     infer_flat_fields,
     infer_kind,
     is_schema_approved,
+    layout_from_schema,
     plan_json_view,
     resolve_schema_path,
     schema_kind,
@@ -128,6 +129,35 @@ def test_validate_field():
     assert validate_field(ln, 'abc') is None
 
 
+_LAYOUT_FIELDS = [FormField('a', 'string', ''), FormField('b', 'string', ''), FormField('c', 'string', '')]
+
+
+def test_layout_from_schema_groups_rows():
+    schema = {'x-ui': {'layout': [['a', 'b'], ['c']]}}
+    assert layout_from_schema(schema, _LAYOUT_FIELDS) == [['a', 'b'], ['c']]
+
+
+@pytest.mark.parametrize("schema", [
+    {},                                          # no x-ui at all
+    {'x-ui': {}},                                 # no layout key
+    {'x-ui': {'layout': 'nope'}},                 # layout not a list
+    {'x-ui': 'nope'},                             # x-ui not an object
+])
+def test_layout_from_schema_absent_or_malformed_is_none(schema):
+    assert layout_from_schema(schema, _LAYOUT_FIELDS) is None
+
+
+def test_layout_from_schema_drops_unknown_and_duplicate_keys():
+    schema = {'x-ui': {'layout': [['a', 'ghost'], ['a', 'b'], 'not-a-row', [123, 'c']]}}
+    # 'ghost' isn't a field, the second 'a' is a dup, 'not-a-row' isn't a list, 123 isn't a str
+    assert layout_from_schema(schema, _LAYOUT_FIELDS) == [['a'], ['b'], ['c']]
+
+
+def test_layout_from_schema_all_rows_empty_after_filtering_is_none():
+    schema = {'x-ui': {'layout': [['ghost'], [123]]}}
+    assert layout_from_schema(schema, _LAYOUT_FIELDS) is None
+
+
 def test_resolve_schema_path(tmp_path):
     dev = tmp_path / 'dev'
     proj = tmp_path / 'proj'
@@ -233,6 +263,24 @@ def test_plan_approved_but_unusable_schema_falls_back_to_inference_with_a_note(p
     assert [f.key for f in view.fields] == ['n']   # inferred instead
     assert view.form_default is False
     assert view.note is not None                   # and the user is told why
+
+
+def test_plan_approved_schema_carries_its_x_ui_layout(proj):
+    _write(proj / 'a.json', '{"mode": "eco", "name": "dev"}')
+    schema = _write(proj / 'a.schema.json', '{"type":"object","x-ui":{"layout":[["mode","name"]]},'
+                    '"properties":{"mode":{"type":"string"},"name":{"type":"string"}}}')
+    approve_schema(schema, 'proj')
+    view = plan_json_view(proj / 'a.json', 'proj', None)
+    assert view.layout == [['mode', 'name']]
+
+
+def test_plan_schema_without_x_ui_has_no_layout(proj):
+    _write(proj / 'a.json', '{"mode": "eco"}')
+    schema = _write(proj / 'a.schema.json',
+                    '{"type":"object","properties":{"mode":{"type":"string"}}}')
+    approve_schema(schema, 'proj')
+    view = plan_json_view(proj / 'a.json', 'proj', None)
+    assert view.layout is None
 
 
 def test_plan_finds_the_schema_in_the_fallback_directory(proj, tmp_path):

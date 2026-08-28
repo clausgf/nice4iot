@@ -147,6 +147,38 @@ def fields_from_schema(schema: dict, data: dict) -> list[FormField] | None:
     return fields
 
 
+_LAYOUT_MAX_ROWS = 100
+_LAYOUT_MAX_COLS = 20
+
+
+def layout_from_schema(schema: dict, fields: list[FormField]) -> list[list[str]] | None:
+    """Row grouping for the Form tab from the schema's optional `x-ui.layout` hint:
+    a list of rows, each a list of property keys sharing one row. Returns None if
+    absent or malformed — the renderer then falls back to one field per row.
+
+    Keys are cross-checked against *fields* (already filtered by `schema_kind()`),
+    so a layout can only group fields `fields_from_schema` already decided are
+    safe to render — never introduce or duplicate one. `render_form_fields()`
+    still gives any field the layout misses its own row, so a field can never be
+    silently dropped from the form by a stale or partial hint.
+    """
+    x_ui = schema.get('x-ui')
+    raw_layout = x_ui.get('layout') if isinstance(x_ui, dict) else None
+    if not isinstance(raw_layout, list):
+        return None
+    known = {f.key for f in fields}
+    seen: set[str] = set()
+    rows: list[list[str]] = []
+    for raw_row in raw_layout[:_LAYOUT_MAX_ROWS]:
+        if not isinstance(raw_row, list):
+            continue
+        row = [k for k in raw_row[:_LAYOUT_MAX_COLS] if isinstance(k, str) and k in known and k not in seen]
+        seen.update(row)
+        if row:
+            rows.append(row)
+    return rows or None
+
+
 def resolve_schema_path(data_path: Path, fallback_dir: Path | None) -> Path | None:
     """The '<name>.schema.json' sibling of a '<name>.json' data file, resolved in
     the file's own directory first, then *fallback_dir* (device dir → project dir).
@@ -267,6 +299,7 @@ class JsonView:
     form_default: bool = False              # show the Form tab first
     pending_schema: Path | None = None      # unapproved schema → approval banner, raw only
     note: str | None = None                 # one line of explanation above the editor
+    layout: list[list[str]] | None = None   # schema's x-ui.layout hint, or None for one row/field
 
 
 def _read_verbatim(path: Path) -> str:
@@ -301,8 +334,9 @@ def plan_json_view(path: Path, project_name: str, fallback_dir: Path | None) -> 
             return JsonView(text=pretty, data=parsed, pending_schema=schema_path)
         schema = load_schema(schema_path)
         schema_fields = fields_from_schema(schema, parsed) if schema is not None else None
-        if schema_fields is not None:
-            return JsonView(text=pretty, data=parsed, fields=schema_fields, form_default=True)
+        if schema is not None and schema_fields is not None:
+            layout = layout_from_schema(schema, schema_fields)
+            return JsonView(text=pretty, data=parsed, fields=schema_fields, form_default=True, layout=layout)
         # An approved but unusable schema falls back to inference, with a note —
         # silently ignoring it would look like the schema had no effect.
         note = 'Schema present but not a usable flat-object schema; editing raw.'

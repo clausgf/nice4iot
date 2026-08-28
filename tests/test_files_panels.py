@@ -126,7 +126,9 @@ def test_detail_renders_a_schema_driven_form(project_with_device):
     project, device = project_with_device
     (device_dir(project, device) / 'cfg.json').write_text('{"mode": "eco"}')
     schema = device_dir(project, device) / 'cfg.schema.json'
-    schema.write_text("""{"type":"object","required":["mode"],"properties":{
+    schema.write_text("""{"type":"object","required":["mode"],
+        "x-ui":{"layout":[["mode","name"],["notes"]]},
+        "properties":{
         "mode":   {"type":"string","enum":["eco","turbo"],"description":"Run mode"},
         "name":   {"type":"string","maxLength":10},
         "notes":  {"type":"string","x-multiline":true},
@@ -454,7 +456,7 @@ def test_new_json_name_completion(raw, expected):
 # Form round-trip — render_field in, field_value out
 # ---------------------------------------------------------------------------
 
-def _round_trip(fields):
+def _round_trip(fields, layout=None):
     """Render the fields and read them straight back, without touching a widget."""
     from app.core.file.form_ui import render_form_fields
 
@@ -463,7 +465,7 @@ def _round_trip(fields):
 
     async def run() -> None:
         with container:
-            collect = render_form_fields(fields)
+            collect = render_form_fields(fields, layout)
             result['values'] = collect()
 
     asyncio.run(run())
@@ -511,3 +513,24 @@ def test_form_collect_reports_the_first_violation():
 
     values = _round_trip([FormField('n', 'integer', 5, minimum=10)])
     assert values is None   # out of range -> reported, nothing returned
+
+
+def test_form_round_trip_with_layout_groups_rows_but_keeps_every_value():
+    """x-ui.layout only changes rendering (rows/columns) — round-tripping through
+    render_form_fields/collect must still see every field, grouped or not."""
+    from app.core.file.form import FormField
+
+    fields = [FormField('a', 'string', 'x'), FormField('b', 'string', 'y'),
+             FormField('c', 'string', 'z')]
+    values = _round_trip(fields, layout=[['a', 'b'], ['c']])
+    assert values == {'a': 'x', 'b': 'y', 'c': 'z'}
+
+
+def test_form_round_trip_with_partial_layout_still_shows_every_field():
+    """A layout that omits a field (stale hint, schema edited after the fact)
+    must not hide it — it falls back to its own row."""
+    from app.core.file.form import FormField
+
+    fields = [FormField('a', 'string', 'x'), FormField('b', 'string', 'y')]
+    values = _round_trip(fields, layout=[['a'], ['ghost']])
+    assert values == {'a': 'x', 'b': 'y'}

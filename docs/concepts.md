@@ -153,6 +153,8 @@ Honoured alongside these: `title`, `description`, `default`, `required`, `minimu
 
 Not supported: nested objects · arrays of non-strings · `$ref` · `pattern` · `oneOf`/`anyOf`/`allOf`/`if`/`then`. The first three are omissions of scope; `$ref` and `pattern` are refused on purpose — see the schema-trust bullet in [SECURITY.md](../SECURITY.md#security-model--what-is-and-is-not-protected).
 
+**Layout.** An optional top-level `x-ui.layout` groups fields into rows: a list of rows, each a list of property names sharing one row (`[["panel", "rotation"], ["image_path"]]`). Names that aren't a property the schema subset produced are dropped, and any property the layout doesn't mention still gets its own row — so a stale or partial hint can reorder/group fields but never hide or duplicate one. Absent or malformed `x-ui.layout` keeps the default: one field per row.
+
 **Approval.** A device holds a valid token, so a schema it uploads is untrusted input that would otherwise shape an admin's form. An uploaded schema is therefore **inert until a user approves it**, and approval is bound to the schema's **content hash**: if the device changes the file, the hash changes, the approval lapses and the UI asks again. A schema created or edited in the UI is admin provenance and is approved at save time. Approved hashes live in `<project>/.schema_approvals.json`.
 
 ## Firmware Distribution

@@ -200,7 +200,7 @@ def _render_json_tabs(entry: OverlayFileEntry, ctx: FileCtx, view: JsonView,
     @ui.refreshable
     def form_panel() -> None:
         fields = [dataclasses.replace(f, value=live.get(f.key, f.value)) for f in view.fields]
-        collect = render_form_fields(fields)
+        collect = render_form_fields(fields, view.layout)
         form_collect[:] = [collect]
 
         def _save() -> None:

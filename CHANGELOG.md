@@ -4,6 +4,25 @@ All notable changes to this project are documented here. Per `CLAUDE.md`, every
 API change must be recorded. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.37.2] - 2026-08-28
+
+### Added
+
+- **Schema-driven JSON forms honour an optional `x-ui.layout` hint**
+  (`app/core/file/form.py`, `form_ui.py`, `detail_ui.py`): a schema's
+  top-level `x-ui.layout` groups its fields into rows —
+  `{"x-ui": {"layout": [["panel", "rotation"], ["image_path"]]}}` — instead
+  of the previous fixed one-field-per-row layout. `layout_from_schema()`
+  cross-checks every key against the fields `fields_from_schema()` already
+  produced: unknown or duplicate keys are dropped, and any field the hint
+  doesn't mention still gets its own row, so a stale or partial layout can
+  reorder/group fields but never hide or duplicate one. Inherits the
+  existing approval boundary — an unapproved (device-uploaded) schema is
+  never parsed, `x-ui.layout` included. `JsonView` gained a `layout` field
+  and `render_form_fields()` a `layout` parameter; both default to `None`
+  (unchanged one-field-per-row rendering). Documented in
+  `docs/concepts.md`.
+
 ## [0.37.1] - 2026-08-27
 
 ### Changed
