@@ -199,8 +199,18 @@ def _render_json_tabs(entry: OverlayFileEntry, ctx: FileCtx, view: JsonView,
 
     @ui.refreshable
     def form_panel() -> None:
+        form_collect.clear()
         fields = [dataclasses.replace(f, value=live.get(f.key, f.value)) for f in view.fields]
-        collect = render_form_fields(fields, view.layout)
+        try:
+            collect = render_form_fields(fields, view.layout)
+        except Exception as exc:
+            # A field the schema subset lets through but the widget layer can't
+            # render (e.g. an enum with no options) must not take the whole detail
+            # view down with it — the Raw tab has to stay usable regardless.
+            log.exception('Form rendering failed for %s', entry.name)
+            ui.label(f'Form editor failed to render: {exc}').classes('text-negative')
+            ui.label('Use the Raw tab to edit this file directly.').classes('text-caption text-grey-7')
+            return
         form_collect[:] = [collect]
 
         def _save() -> None:
@@ -249,7 +259,8 @@ def _render_json_tabs(entry: OverlayFileEntry, ctx: FileCtx, view: JsonView,
         if previous == e.value:
             return
         if previous == 'Form':
-            live.update(form_collect[0](validate=False))
+            if form_collect:
+                live.update(form_collect[0](validate=False))
             raw_panel.refresh()
         else:
             try:

@@ -99,7 +99,7 @@ def _empty_for(kind: str) -> Any:
 def schema_kind(spec: dict) -> str | None:
     t = spec.get('type')
     if t == 'string':
-        if isinstance(spec.get('enum'), list):
+        if isinstance(spec.get('enum'), list) and spec['enum']:
             return 'enum'
         if spec.get('format') == 'date':
             return 'date'

@@ -141,7 +141,7 @@ This is a deliberately small **subset** of JSON Schema, not an implementation of
 | Schema | Widget | Value |
 |---|---|---|
 | `type: string` | text input | `str` |
-| `type: string` + `enum` | select | `str` from the enum |
+| `type: string` + `enum` (non-empty) | select | `str` from the enum |
 | `type: string` + `x-multiline: true` | textarea | `str` |
 | `type: string` + `format: "date"` | date picker | ISO-8601 date string |
 | `type: integer` | number (integer) | `int` |
@@ -151,7 +151,9 @@ This is a deliberately small **subset** of JSON Schema, not an implementation of
 
 Honoured alongside these: `title`, `description`, `default`, `required`, `minimum`/`maximum`, `maxLength`, `maxItems`. `x-multiline` uses JSON Schema's blessed `x-` extension prefix, since the spec has no standard "multiline" hint.
 
-Not supported: nested objects · arrays of non-strings · `$ref` · `pattern` · `oneOf`/`anyOf`/`allOf`/`if`/`then`. The first three are omissions of scope; `$ref` and `pattern` are refused on purpose — see the schema-trust bullet in [SECURITY.md](../SECURITY.md#security-model--what-is-and-is-not-protected).
+Not supported: nested objects · arrays of non-strings · `$ref` · `pattern` · `oneOf`/`anyOf`/`allOf`/`if`/`then`. The first three are omissions of scope; `$ref` and `pattern` are refused on purpose — see the schema-trust bullet in [SECURITY.md](../SECURITY.md#security-model--what-is-and-is-not-protected). An `enum` with no values is treated the same as no `enum` at all — a select with zero options can't be filled in, so the field falls back to a plain text input rather than becoming unusable.
+
+**The Raw tab always renders**, even when a schema-driven Form tab fails to — a widget the schema subset lets through but the rendering layer rejects (e.g. a future case like the empty-enum one above) shows its error inline in the Form tab instead of taking the whole detail view down.
 
 **Layout.** An optional top-level `x-ui.layout` groups fields into rows: a list of rows, each a list of property names sharing one row (`[["panel", "rotation"], ["image_path"]]`). Names that aren't a property the schema subset produced are dropped, and any property the layout doesn't mention still gets its own row — so a stale or partial hint can reorder/group fields but never hide or duplicate one. Absent or malformed `x-ui.layout` keeps the default: one field per row.
 

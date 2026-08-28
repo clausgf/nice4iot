@@ -526,6 +526,26 @@ def test_form_round_trip_with_layout_groups_rows_but_keeps_every_value():
     assert values == {'a': 'x', 'b': 'y', 'c': 'z'}
 
 
+def test_detail_form_panel_survives_a_field_the_widget_layer_rejects(project_with_device, monkeypatch):
+    """An unrenderable field (e.g. niceview rejecting an enum widget with zero
+    options) must not take the whole detail view down — the Form tab shows the
+    error inline and rendering still completes so the Raw tab stays reachable."""
+    from app.core.file import detail_ui
+    from app.core.file.form import approve_schema
+
+    def _boom(*args, **kwargs):
+        raise ValueError("Field 'panel' has no options (or literal_options) defined in FieldInfo")
+
+    monkeypatch.setattr(detail_ui, 'render_form_fields', _boom)
+
+    project, device = project_with_device
+    (device_dir(project, device) / 'config.json').write_text('{"panel": "x"}')
+    schema_path = device_dir(project, device) / 'config.schema.json'
+    schema_path.write_text('{"type":"object","properties":{"panel":{"type":"string"}}}')
+    approve_schema(schema_path, project)
+    _detail(project, device, 'config.json')
+
+
 def test_form_round_trip_with_partial_layout_still_shows_every_field():
     """A layout that omits a field (stale hint, schema edited after the fact)
     must not hide it — it falls back to its own row."""

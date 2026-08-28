@@ -74,6 +74,7 @@ def test_infer_flat_fields_empty_object_is_empty_list():
 @pytest.mark.parametrize("spec,kind", [
     ({'type': 'string'}, 'string'),
     ({'type': 'string', 'enum': ['a', 'b']}, 'enum'),
+    ({'type': 'string', 'enum': []}, 'string'),  # no options yet — plain string, not a broken select
     ({'type': 'string', 'format': 'date'}, 'date'),
     ({'type': 'string', 'x-multiline': True}, 'textarea'),
     ({'type': 'integer'}, 'integer'),

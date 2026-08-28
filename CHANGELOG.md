@@ -4,6 +4,20 @@ All notable changes to this project are documented here. Per `CLAUDE.md`, every
 API change must be recorded. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.37.4] - 2026-08-28
+
+### Fixed
+
+- **Form editor no longer takes the whole JSON detail view down on a bad schema field**
+  (`app/core/file/form.py`, `detail_ui.py`): a `type: string` field with an empty
+  `enum: []` was classified as `enum`, which niceview's select widget can't render
+  (no options) — the resulting exception used to crash the entire Form+Raw detail
+  view, so even the Raw editor became unreachable. `schema_kind()` now falls back
+  to a plain `string` field when `enum` is empty. As a second line of defence,
+  `form_panel()` in `detail_ui.py` catches any exception from `render_form_fields()`
+  and shows it inline in the Form tab instead of propagating — the Raw tab renders
+  regardless. Documented in `docs/concepts.md`.
+
 ## [0.37.3] - 2026-08-28
 
 ### Changed
