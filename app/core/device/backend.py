@@ -44,8 +44,12 @@ _device_list_cache: dict[str, tuple[list[Device], float]] = {}
 _DEVICE_CACHE_TTL: float = 60.0
 
 
-def _invalidate_device_list_cache(project_name: str) -> None:
+def invalidate_device_list_cache(project_name: str) -> None:
+    """Invalidate the in-memory device list cache for *project_name*."""
     _device_list_cache.pop(project_name, None)
+
+
+_invalidate_device_list_cache = invalidate_device_list_cache
 
 
 def flush_device_list_cache() -> None:
@@ -276,6 +280,10 @@ def delete_device(project_name: str, device_name: str) -> None:
     _invalidate_device_list_cache(project_name)
     from app.core.alarm.backend import delete_alarms_for_device
     delete_alarms_for_device(project_name, device_name)
+    from app.core.firmware.backend import project_has_auto_pull_enabled
+    if not project_has_auto_pull_enabled(project_name):
+        from app.health import clear_health
+        clear_health(f'{project_name}:firmware')
 
 
 def get_devices(project_name: str) -> list[Device]:

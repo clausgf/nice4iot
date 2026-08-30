@@ -26,6 +26,25 @@ from app.api.file import router as file_router
 
 import app.frontend as frontend  # noqa: F401  (side-effect import: registers @ui.page routes)
 
+
+def _configure_logging() -> None:
+    """Configure standard log format with timestamp, level, logger name, and message."""
+    formatter = logging.Formatter(
+        fmt="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    logging.root.setLevel(logging.INFO)
+    for logger_name in ("", "uvicorn", "uvicorn.error", "uvicorn.access"):
+        log_obj = logging.getLogger(logger_name)
+        for handler in log_obj.handlers:
+            handler.setFormatter(formatter)
+    if not logging.root.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(formatter)
+        logging.root.addHandler(handler)
+
+
+_configure_logging()
 _main_log = logging.getLogger("uvicorn")
 
 
@@ -88,6 +107,7 @@ async def _firmware_auto_pull_loop() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _configure_logging()
     # Register callbacks to wire up MQTT ↔ file-backend without circular imports
     from app.core.file.backend import register_publish_callback, file_watcher_loop
     from app.mqtt.backend import publish_file, register_file_publish_callback

@@ -10,7 +10,8 @@ from app.ui import config_expansion, refresh_breadcrumbs, show_sidebar, status_a
 from app.core.device.models import Device, DeviceRuntime, ProjectDeviceRow
 from app.core.device.backend import (
     create_device, delete_device, device_adapter, get_device,
-    is_device_online, read_runtime, rename_device,
+    invalidate_device_list_cache, is_device_online, project_device_rows,
+    read_runtime, rename_device,
 )
 from app.core.file.browser_ui import device_files_panel
 from app.core.device.data_ui import dashboard_plot_card, device_data_panel
@@ -23,6 +24,7 @@ from app.core.token.ui import TokenListCard
 from app.paths import device_dir
 from app.util import is_valid_name, render_datetime, render_datetime_age
 from niceview import EditGridWrapper, ModelForm, ModelGrid
+from niceview.dataadapter import ReloadableAdapter
 from niceview.util import confirm_dialog, input_dialog
 from app.extensions import (
     call_with_page_args, get_device_dashboard_cards, get_device_general_cards, get_device_tabs,
@@ -437,7 +439,7 @@ def _wifi_icon_span(rssi: Optional[int]) -> str:
 # ('battery_six_bar', ...) nicepaper's Displays list used to use — the
 # word-form doesn't exist in the bundled font at all (see module comment).
 _BATTERY_BARS = tuple(f'battery_{i}_bar' for i in range(7))
-_BATTERY_EMPTY_V = 3.0
+_BATTERY_EMPTY_V = 3.2
 _BATTERY_FULL_V = 4.15
 
 
@@ -469,14 +471,24 @@ def _status_cell_html(value: tuple[str, Optional[int], Optional[float]]) -> str:
     return f'<span style="display:inline-flex;align-items:center;gap:6px;">{icons}</span>'
 
 
-class _ProjectDeviceRowAdapter:
+class _ProjectDeviceRowAdapter(ReloadableAdapter):
     """Minimal read-only niceview CollectionAdapter[ProjectDeviceRow] over an
     already-fetched row list, keyed by device name. ModelGrid.from_list()'s
     ListAdapter keys rows by list position ("0", "1", ...) instead, which
     would make row navigation (see ProjectDevicesTable._on_row_selected)
-    navigate to the wrong device (or none at all)."""
+    navigate to the wrong device (or none at all). Implements ReloadableAdapter
+    so the EditGridWrapper Refresh button reloads the device list fresh from disk."""
 
-    def __init__(self, rows: list[ProjectDeviceRow]) -> None:
+    def __init__(self, project_name: str, rows: list[ProjectDeviceRow] | None = None) -> None:
+        self.project_name = project_name
+        if rows is None:
+            self.reload()
+        else:
+            self._by_name = {row.name: row for row in rows}
+
+    def reload(self) -> None:
+        invalidate_device_list_cache(self.project_name)
+        rows = project_device_rows(self.project_name)
         self._by_name = {row.name: row for row in rows}
 
     def __iter__(self):
@@ -516,7 +528,7 @@ class ProjectDevicesTable:
     handler then silently never fires. on_select doesn't have this problem
     since it never serializes the raw event, only the already-clean row data."""
 
-    def __init__(self, project_name: str, rows: list[ProjectDeviceRow]):
+    def __init__(self, project_name: str, rows: list[ProjectDeviceRow] | None = None):
         self.project_name = project_name
 
         async def _new_device() -> None:
@@ -524,8 +536,9 @@ class ProjectDevicesTable:
             if name is not None:
                 ui.navigate.to(device_url(project_name, name, tab='General'))
 
+        self.adapter = _ProjectDeviceRowAdapter(project_name, rows)
         grid = ModelGrid.from_adapter(
-            ProjectDeviceRow, _ProjectDeviceRowAdapter(rows),
+            ProjectDeviceRow, self.adapter,
             auto_size_columns=True,
             rowSelection='single',
             cell_renderers={'status': _status_cell_html},
@@ -539,7 +552,7 @@ class ProjectDevicesTable:
             add_button='',
             edit_button=None,
             delete_button=None,
-            refresh_button=None,
+            refresh_button='',
             on_add=_new_device,
         ).render()
 

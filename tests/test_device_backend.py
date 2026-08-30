@@ -453,3 +453,20 @@ def test_project_device_rows_empty_for_empty_project(projects_dir):
     # another test's device within the same TTL window.
     create_project("empty_proj")
     assert project_device_rows("empty_proj") == []
+
+
+def test_project_device_row_adapter_reload(projects_dir):
+    from app.core.device.ui import _ProjectDeviceRowAdapter
+    from niceview.dataadapter import ReloadableAdapter
+
+    create_project("reload_proj")
+    create_device(Device(name="dev1", project_name="reload_proj"))
+
+    adapter = _ProjectDeviceRowAdapter("reload_proj")
+    assert isinstance(adapter, ReloadableAdapter)
+    assert [r.name for r in adapter] == ["dev1"]
+
+    # Add second device directly, reload adapter and ensure newly read
+    create_device(Device(name="dev2", project_name="reload_proj"))
+    adapter.reload()
+    assert sorted(r.name for r in adapter) == ["dev1", "dev2"]

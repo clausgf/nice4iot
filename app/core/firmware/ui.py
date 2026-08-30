@@ -7,6 +7,7 @@ status/action footer.
 import logging
 from pathlib import Path
 
+import anyio
 from nicegui import ui
 from niceview import ConflictError, ModelForm, StorageError
 
@@ -35,6 +36,12 @@ async def firmware_source_card(dir_path: Path, *, project_name: str, device_name
     async def _save() -> None:
         try:
             adapter.save(config)
+            if not config.auto_pull_enabled or not config.repo.strip():
+                from app.core.firmware.backend import project_has_auto_pull_enabled
+                has_active = await anyio.to_thread.run_sync(lambda: project_has_auto_pull_enabled(project_name))
+                if not has_active:
+                    from app.health import clear_health
+                    clear_health(f'{project_name}:firmware')
         except (ConflictError, StorageError) as e:
             ui.notify(str(e), color='negative')
 

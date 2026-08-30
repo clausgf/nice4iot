@@ -9,6 +9,7 @@ class ForwardingCard:
     """Content for the forwarding configuration card (caller provides the card/header)."""
 
     def __init__(self, project_name: str):
+        self.project_name = project_name
         self.adapter = get_forwarding_adapter(project_name)
 
         ui.markdown(ForwardingConfig.Meta.description).classes('text-caption q-ma-none')
@@ -60,5 +61,9 @@ class ForwardingCard:
     def delete_forwarding(self, fwd: ForwardingConfig) -> None:
         """Delete a forwarding entry."""
         self.adapter.delete(self.adapter.key_from_item(fwd))
+        project_name = getattr(self, 'project_name', None)
+        if project_name:
+            from app.health import clear_health
+            clear_health(f'{project_name}:forwarding:{fwd.name}')
         self.update_rows.refresh()
         ui.notify(f"Forwarding '{fwd.name}' deleted")

@@ -13,6 +13,8 @@ from app.core.firmware.backend import (
     _validate_repo,
     load_firmware_source,
     load_firmware_state,
+    project_has_auto_pull_enabled,
+    project_has_firmware_source,
     release_url,
     save_firmware_state,
 )
@@ -226,3 +228,31 @@ def test_pull_respects_dest_filename(tmp_path, monkeypatch):
     st = load_firmware_state(tmp_path)
     assert st.asset == 'release.bin'  # state records the release asset name
     assert (tmp_path / 'custom.bin').exists()  # file is written with dest_filename
+
+
+def test_project_has_auto_pull_enabled(projects_dir):
+    from app.core.project.backend import create_project
+    from app.core.device.backend import create_device
+    from app.core.device.models import Device
+    from app.core.firmware.backend import get_firmware_adapter
+    from app.paths import project_dir, device_dir
+
+    create_project('fw_proj')
+    assert not project_has_firmware_source('fw_proj')
+    assert not project_has_auto_pull_enabled('fw_proj')
+
+    # Configure repo on project without auto_pull
+    get_firmware_adapter(project_dir('fw_proj')).save(FirmwareSource(repo='owner/repo', auto_pull_enabled=False))
+    assert project_has_firmware_source('fw_proj')
+    assert not project_has_auto_pull_enabled('fw_proj')
+
+    # Enable auto_pull on project
+    get_firmware_adapter(project_dir('fw_proj')).save(FirmwareSource(repo='owner/repo', auto_pull_enabled=True))
+    assert project_has_auto_pull_enabled('fw_proj')
+
+    # Disable on project, enable on device
+    get_firmware_adapter(project_dir('fw_proj')).save(FirmwareSource(repo='', auto_pull_enabled=False))
+    create_device(Device(name='dev1', project_name='fw_proj'))
+    get_firmware_adapter(device_dir('fw_proj', 'dev1')).save(FirmwareSource(repo='owner/dev_repo', auto_pull_enabled=True))
+    assert project_has_firmware_source('fw_proj')
+    assert project_has_auto_pull_enabled('fw_proj')

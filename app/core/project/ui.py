@@ -559,38 +559,56 @@ async def _system_project_health_card(project_id: str) -> None:
                 _health_row('MQTT', mqtt_ok, '' if mqtt_ok is True else mqtt_status)
 
                 # Telemetry backend
-                tel = health.get(f'{project_id}:telemetry')
-                if tel is not None:
-                    _health_row('Telemetry', tel['ok'], tel['message'] if not tel['ok'] else '')
+                from app.core.telemetry.backend import get_telemetry_adapter
+                tel_cfg = await anyio.to_thread.run_sync(lambda: get_telemetry_adapter(project_id).read())
+                if tel_cfg.backend == 'none':
+                    _health_row('Telemetry', None, 'Disabled')
                 else:
-                    _health_row('Telemetry', None, 'No data received yet')
+                    tel = health.get(f'{project_id}:telemetry')
+                    if tel is not None:
+                        _health_row('Telemetry', tel['ok'], tel['message'] if not tel['ok'] else '')
+                    else:
+                        _health_row('Telemetry', None, 'No data received yet')
 
                 # Logging backend
-                log_h = health.get(f'{project_id}:logging')
-                if log_h is not None:
-                    _health_row('Logging', log_h['ok'], log_h['message'] if not log_h['ok'] else '')
+                from app.core.logging.backend import get_logging_adapter
+                log_cfg = await anyio.to_thread.run_sync(lambda: get_logging_adapter(project_id).read())
+                if not (log_cfg.file.is_active or log_cfg.loki.is_active):
+                    _health_row('Logging', None, 'Disabled')
                 else:
-                    _health_row('Logging', None, 'No data received yet')
+                    log_h = health.get(f'{project_id}:logging')
+                    if log_h is not None:
+                        _health_row('Logging', log_h['ok'], log_h['message'] if not log_h['ok'] else '')
+                    else:
+                        _health_row('Logging', None, 'No data received yet')
 
                 # Firmware pulls (aggregated across project + all devices) —
                 # only shown once a repo is configured somewhere in the project.
-                from app.core.firmware.backend import project_has_firmware_source
+                from app.core.firmware.backend import project_has_firmware_source, project_has_auto_pull_enabled
                 firmware_configured = await anyio.to_thread.run_sync(
                     lambda: project_has_firmware_source(project_id)
                 )
                 if firmware_configured:
+                    auto_pull = await anyio.to_thread.run_sync(
+                        lambda: project_has_auto_pull_enabled(project_id)
+                    )
                     fw = health.get(f'{project_id}:firmware')
                     if fw is not None:
                         _health_row('Firmware', fw['ok'], fw['message'] if not fw['ok'] else '')
-                    else:
+                    elif auto_pull:
                         _health_row('Firmware', None, 'No data received yet')
+                    else:
+                        _health_row('Firmware', None, 'Auto-pull disabled')
 
-                # Forwarding rules — one row per rule that has been used at least once
-                prefix = f'{project_id}:forwarding:'
-                for key in sorted(k for k in health if k.startswith(prefix)):
-                    fwd_name = key[len(prefix):]
-                    fwd_h = health[key]
-                    _health_row(f'Forwarding: {fwd_name}', fwd_h['ok'], fwd_h['message'] if not fwd_h['ok'] else '')
+                # Forwarding rules — one row per configured rule
+                from app.core.forwarding.backend import get_forwarding_adapter
+                fwd_rules = await anyio.to_thread.run_sync(lambda: list(get_forwarding_adapter(project_id)))
+                for fwd in fwd_rules:
+                    fwd_h = health.get(f'{project_id}:forwarding:{fwd.name}')
+                    if fwd_h is not None:
+                        _health_row(f'Forwarding: {fwd.name}', fwd_h['ok'], fwd_h['message'] if not fwd_h['ok'] else '')
+                    else:
+                        _health_row(f'Forwarding: {fwd.name}', None, 'No data received yet')
 
 
 def _health_row(label: str, ok: bool | None, detail: str) -> None:

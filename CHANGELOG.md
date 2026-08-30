@@ -4,6 +4,18 @@ All notable changes to this project are documented here. Per `CLAUDE.md`, every
 API change must be recorded. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.37.5] - 2026-08-30
+
+### Changed
+
+- **`nicepaper` (the `epaper` extra) bumped to 0.26.11**.
+- **`ProjectDevicesTable` with refresh button and live reload**: Implemented `ReloadableAdapter`
+  for `_ProjectDeviceRowAdapter` to invalidate the in-memory device list cache and re-read rows from disk.
+- **System & Project Health card and health registry cleanup**: Added `clear_health()` and `clear_project_health()`
+  in `app.health`. When disabling services/rules (firmware auto-pull, telemetry, logging, forwarding, project deletion),
+  obsolete errors are cleared immediately from the health card.
+- **Structured logging format**: Formatter with timestamp, level, logger name and message configured in `app/main.py`.
+
 ## [0.37.4] - 2026-08-28
 
 ### Fixed

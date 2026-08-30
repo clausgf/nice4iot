@@ -10,6 +10,7 @@ class TelemetryCard:
     """Content for the telemetry backend configuration card (caller provides the card/header)."""
 
     def __init__(self, project_name: str):
+        self.project_name = project_name
         self.adapter = get_telemetry_adapter(project_name)
         self.config = self.adapter.read()
 
@@ -22,6 +23,9 @@ class TelemetryCard:
     def _save(self) -> None:
         try:
             self.adapter.save(self.config)
+            if self.config.backend == 'none':
+                from app.health import clear_health
+                clear_health(f'{self.project_name}:telemetry')
         except (ConflictError, StorageError) as e:
             ui.notify(str(e), color='negative')
 

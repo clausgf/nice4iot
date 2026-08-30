@@ -10,6 +10,7 @@ class LoggingCard:
     """Content for the logging backend configuration card (caller provides the card/header)."""
 
     def __init__(self, project_name: str):
+        self.project_name = project_name
         self.adapter = get_logging_adapter(project_name)
         self.config = self.adapter.read()
 
@@ -21,6 +22,9 @@ class LoggingCard:
     def _save(self) -> None:
         try:
             self.adapter.save(self.config)
+            if not self.config.loki.is_active:
+                from app.health import clear_health
+                clear_health(f'{self.project_name}:logging')
         except (ConflictError, StorageError) as e:
             ui.notify(str(e), color='negative')
 

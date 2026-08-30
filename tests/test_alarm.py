@@ -32,7 +32,7 @@ from app.core.alarm.backend import (
     evaluate_provisioning_expiry,
     prune_alarms_for_deleted_devices,
 )
-from app.health import set_health, get_health, get_project_health
+from app.health import set_health, get_health, get_project_health, clear_health, clear_project_health
 
 # The built-in rules carry their own fixed name; source it from the models.
 BUILTIN_DEVICE_OFFLINE = DeviceOfflineAlarm().name
@@ -543,3 +543,19 @@ def test_get_project_health_filters_by_prefix():
     assert 'proj1:telemetry' in ph
     assert 'proj1:logging' in ph
     assert 'proj2:telemetry' not in ph
+
+
+def test_clear_health():
+    set_health('proj3:firmware', False, 'download error')
+    assert get_health('proj3:firmware') is not None
+    clear_health('proj3:firmware')
+    assert get_health('proj3:firmware') is None
+
+
+def test_clear_project_health():
+    set_health('proj4:firmware', False, 'err')
+    set_health('proj4:logging', True)
+    set_health('proj5:logging', True)
+    clear_project_health('proj4')
+    assert get_project_health('proj4') == {}
+    assert get_health('proj5:logging') is not None

@@ -142,6 +142,8 @@ def delete_project(project_name: str) -> None:
     """
     project_path = get_project_path(project_name)
     shutil.rmtree(project_path)
+    from app.health import clear_project_health
+    clear_project_health(project_name)
 
 
 def get_projects() -> list[Project]:

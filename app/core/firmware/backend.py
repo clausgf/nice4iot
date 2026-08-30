@@ -80,6 +80,18 @@ def project_has_firmware_source(project_name: str) -> bool:
     )
 
 
+def project_has_auto_pull_enabled(project_name: str) -> bool:
+    """True if the project or any of its devices has auto-pull enabled for a configured repo."""
+    src = load_firmware_source(project_dir(project_name))
+    if src.auto_pull_enabled and src.repo.strip():
+        return True
+    from app.core.device.backend import get_devices
+    return any(
+        (s := load_firmware_source(device_dir(project_name, device.name))).auto_pull_enabled and bool(s.repo.strip())
+        for device in get_devices(project_name)
+    )
+
+
 def load_firmware_state(dir_path: Path) -> FirmwareState | None:
     path = dir_path / FIRMWARE_STATE_FILE
     try:

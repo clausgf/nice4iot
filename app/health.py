@@ -34,6 +34,19 @@ def get_health(key: str) -> dict | None:
     return _health.get(key)
 
 
+def clear_health(key: str) -> None:
+    """Remove a health entry (e.g. when a service or rule is disabled or deleted)."""
+    _health.pop(key, None)
+
+
+def clear_project_health(project_name: str, service: str | None = None) -> None:
+    """Remove health entries for a project, optionally filtered by service prefix."""
+    prefix = f'{project_name}:{service}' if service else f'{project_name}:'
+    for k in list(_health.keys()):
+        if k.startswith(prefix):
+            _health.pop(k, None)
+
+
 def get_project_health(project_name: str) -> dict[str, dict]:
     """Return all health entries whose key starts with *project_name*."""
     prefix = f'{project_name}:'
