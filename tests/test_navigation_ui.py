@@ -286,8 +286,8 @@ def test_project_subpage_general_route(project_with_device):
     assert 'Device Health' not in labels
 
 
-def test_project_subpage_extension_general_card_gets_config_expansion_chrome(project_with_device):
-    """Regression: an extension 'general' card (register_project_card) renders
+def test_project_subpage_extension_settings_card_gets_config_expansion_chrome(project_with_device):
+    """Regression: an extension 'settings' card (register_project_card) renders
     fields only — nice4iot must supply the config_expansion chrome, same as
     the old flat General tab gave it. A first cut of the Settings routing
     reused the plain (chrome-less) extension-tab route for these too."""
@@ -296,7 +296,7 @@ def test_project_subpage_extension_general_card_gets_config_expansion_chrome(pro
 
     project, _device = project_with_device
     with registering('ext1'):
-        register_project_card('general', lambda project_name: ui.label('card body'), title='Ext Card')
+        register_project_card('settings', lambda project_name: ui.label('card body'), title='Ext Card')
     adapter = project_adapter(project)
     p = adapter.read()
     p.enabled_extensions.append('ext1')
@@ -387,7 +387,7 @@ def test_device_general_tab_has_firmware_download_card(project_with_device):
 
     # config_expansion() titles are Quasar-rendered (the expansion's own
     # `text`, a prop), not plain ui.label/item_label text — see
-    # test_project_subpage_extension_general_card_gets_config_expansion_chrome.
+    # test_project_subpage_extension_settings_card_gets_config_expansion_chrome.
     from nicegui.elements.expansion import Expansion
     expansion_titles = [e.text for e in _find_all(container, Expansion)]
     assert 'Firmware Seed' in expansion_titles

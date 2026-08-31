@@ -27,8 +27,8 @@ from niceview import EditGridWrapper, ModelForm, ModelGrid
 from niceview.dataadapter import ReloadableAdapter
 from niceview.util import confirm_dialog, input_dialog
 from app.extensions import (
-    call_with_page_args, get_device_dashboard_cards, get_device_general_cards, get_device_tabs,
-    get_project_general_cards, get_project_tabs, maybe_await,
+    call_with_page_args, get_device_dashboard_cards, get_device_settings_cards, get_device_tabs,
+    get_project_settings_cards, get_project_tabs, maybe_await,
 )
 
 import logging
@@ -59,8 +59,8 @@ async def device_subpage(
 
     from app.core.project.ui import find_nav_item, project_nav_items  # local: project.ui imports this module
     project_tab_defs = await anyio.to_thread.run_sync(lambda: get_project_tabs(project_id))
-    general_card_defs = await anyio.to_thread.run_sync(lambda: get_project_general_cards(project_id))
-    items = project_nav_items(project_id, project_tab_defs, general_card_defs)
+    settings_card_defs = await anyio.to_thread.run_sync(lambda: get_project_settings_cards(project_id))
+    items = project_nav_items(project_id, project_tab_defs, settings_card_defs)
     devices_item = find_nav_item(items, 'Devices')
     show_sidebar(drawer, hamburger, sidebar, project_id, items, active=devices_item)
 
@@ -249,7 +249,7 @@ async def device_general_panel(project_name: str, device_name: str, args: PageAr
             # the normal file-serving fallback (see app/api/file.py).
             await firmware_source_card(device_dir(project_name, device_name),
                                        project_name=project_name, device_name=device_name)
-        for title, render_fn in await anyio.to_thread.run_sync(lambda: get_device_general_cards(project_name)):
+        for title, render_fn in await anyio.to_thread.run_sync(lambda: get_device_settings_cards(project_name)):
             # Match the device page's built-in expansions (subtitle1), not the
             # config_expansion default (h6, used on the project page).
             with config_expansion(title):

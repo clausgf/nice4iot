@@ -20,11 +20,11 @@ from app.core.project.backend import create_project, project_adapter
 from app.extensions import (
     call_with_page_args,
     get_device_dashboard_cards,
-    get_device_general_cards,
+    get_device_settings_cards,
     get_device_tabs,
     get_global_cards,
     get_project_dashboard_cards,
-    get_project_general_cards,
+    get_project_settings_cards,
     get_project_page,
     get_project_tabs,
     get_registered_extension_names,
@@ -104,7 +104,7 @@ def test_project_dashboard_card_only_returned_when_enabled(project):
     assert get_project_dashboard_cards(project) == []
     _enable(project, 'ext1')
     assert get_project_dashboard_cards(project) == [fn]
-    assert get_project_general_cards(project) == []
+    assert get_project_settings_cards(project) == []
 
 
 def test_project_dashboard_card_rejects_title():
@@ -113,28 +113,28 @@ def test_project_dashboard_card_rejects_title():
             register_project_card('dashboard', lambda project_name: None, title='Nope')
 
 
-def test_project_general_card_requires_title():
+def test_project_settings_card_requires_title():
     with registering('ext1'):
         with pytest.raises(ValueError):
-            register_project_card('general', lambda project_name: None)
+            register_project_card('settings', lambda project_name: None)
 
 
 def test_register_card_unknown_section_raises():
     with registering('ext1'):
         with pytest.raises(ValueError):
-            register_project_card('genral', lambda project_name: None, title='Typo')
+            register_project_card('settngs', lambda project_name: None, title='Typo')
         with pytest.raises(ValueError):
             register_device_card('sidebar', lambda project_name, device_name: None)
 
 
-def test_project_general_card_only_returned_when_enabled(project):
+def test_project_settings_card_only_returned_when_enabled(project):
     fn = lambda project_name: None
     with registering('ext1'):
-        register_project_card('general', fn, title='E-Paper')
+        register_project_card('settings', fn, title='E-Paper')
 
-    assert get_project_general_cards(project) == []
+    assert get_project_settings_cards(project) == []
     _enable(project, 'ext1')
-    assert get_project_general_cards(project) == [('E-Paper', fn)]
+    assert get_project_settings_cards(project) == [('E-Paper', fn)]
 
 
 def test_device_dashboard_card_only_returned_when_enabled(project):
@@ -147,20 +147,20 @@ def test_device_dashboard_card_only_returned_when_enabled(project):
     assert get_device_dashboard_cards(project) == [fn]
 
 
-def test_device_general_card_only_returned_when_enabled(project):
+def test_device_settings_card_only_returned_when_enabled(project):
     fn = lambda project_name, device_name: None
     with registering('ext1'):
-        register_device_card('general', fn, title='E-Paper')
+        register_device_card('settings', fn, title='E-Paper')
 
-    assert get_device_general_cards(project) == []
+    assert get_device_settings_cards(project) == []
     _enable(project, 'ext1')
-    assert get_device_general_cards(project) == [('E-Paper', fn)]
+    assert get_device_settings_cards(project) == [('E-Paper', fn)]
 
 
-def test_device_general_card_requires_title():
+def test_device_settings_card_requires_title():
     with registering('ext1'):
         with pytest.raises(ValueError):
-            register_device_card('general', lambda project_name, device_name: None)
+            register_device_card('settings', lambda project_name, device_name: None)
 
 
 def test_get_project_dashboard_cards_returns_a_copy(project):

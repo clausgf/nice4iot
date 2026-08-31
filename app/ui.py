@@ -27,7 +27,7 @@ def refresh_breadcrumbs(nav: ui.element, project_id: str | None = None, device_i
 
 @contextmanager
 def config_expansion(title: str, *, value: bool = False) -> Generator[ui.expansion, None, None]:
-    """Foldable card shared by every config-style card (General tab, global settings).
+    """Foldable card shared by every config-style card (Settings sections, global settings).
 
     Opens the enclosing ui.card() itself, so callers only need one `with`:
 
@@ -36,7 +36,7 @@ def config_expansion(title: str, *, value: bool = False) -> Generator[ui.expansi
 
     nice4iot renders this around each card's content itself rather than
     letting each card build its own header, so the look stays uniform —
-    including for extension-registered 'general'/global cards (see
+    including for extension-registered 'settings'/global cards (see
     app.extensions.register_project_card() et al.).
     """
     with ui.card().tight().classes('w-full'):

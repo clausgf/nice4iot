@@ -4,6 +4,25 @@ All notable changes to this project are documented here. Per `CLAUDE.md`, every
 API change must be recorded. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.37.10] - 2026-08-31
+
+### Changed
+
+- **`register_project_card`/`register_device_card`'s `CardSection` value
+  renamed `'general'` → `'settings'`** (`app/extensions.py`, plus
+  `get_project_general_cards`/`get_device_general_cards` →
+  `get_project_settings_cards`/`get_device_settings_cards`,
+  `_project_general_cards`/`_device_general_cards` →
+  `_project_settings_cards`/`_device_settings_cards`): the project page's
+  old "General" tab became the "Settings" sidebar group a while back, and
+  the internal identifier had fallen out of sync with that rename. Purely
+  a naming change, no behavior change — the section still renders the same
+  place (a project's Settings group, a device's still-literally-"General"
+  tab). Breaking for any extension calling `register_project_card('general',
+  ...)`/`register_device_card('general', ...)`: that now raises
+  `ValueError` at startup. `nicepaper` bumped 0.29.0 → 0.29.1 to follow
+  (its Settings card and device card registrations).
+
 ## [0.37.9] - 2026-08-31
 
 ### Changed

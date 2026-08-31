@@ -27,7 +27,7 @@ from app.core.project.backend import create_project, delete_project, get_project
 from app.core.alarm.ui import alarm_config_card, dashboard_alarms_card
 from app.exceptions import NotFoundError
 from app.extensions import (
-    call_with_page_args, get_project_dashboard_cards, get_project_general_cards,
+    call_with_page_args, get_project_dashboard_cards, get_project_settings_cards,
     get_project_tabs, get_registered_extension_names, maybe_await,
 )
 from niceview import ModelForm
@@ -91,11 +91,11 @@ def slugify_tab_label(label: str) -> str:
 
 
 def project_nav_items(project_id: str, extension_tab_defs: Sequence[tuple[str, str, str, object]],
-                      general_card_defs: Sequence[tuple[str, object]] = ()) -> list[NavItem]:
+                      settings_card_defs: Sequence[tuple[str, object]] = ()) -> list[NavItem]:
     """The project sidebar's rows — a 'Project' group (Dashboard/Files/Devices),
     one group per enabled extension (its project tabs, in registration order),
     and a trailing 'Settings' group (the old General tab's sections, plus any
-    extension-registered 'general' cards, each its own child page — see
+    extension-registered 'settings' cards, each its own child page — see
     SETTINGS_SECTIONS). Shared with device_subpage, which shows the same
     sidebar (with 'Devices' as the active row) while drilled into a device,
     rather than growing a third sidebar level of its own — see
@@ -105,7 +105,7 @@ def project_nav_items(project_id: str, extension_tab_defs: Sequence[tuple[str, s
         for slug, label, icon in SETTINGS_SECTIONS
     ] + [
         NavItem(title, 'extension', project_url(project_id, tab=f'settings/tab/{slugify_tab_label(title)}'))
-        for title, _fn in general_card_defs
+        for title, _fn in settings_card_defs
     ]
     extension_groups: dict[str, list[NavItem]] = {}
     for extension_name, label, icon, _fn in extension_tab_defs:
@@ -144,8 +144,8 @@ async def project_subpage(args: PageArguments, nav: ui.element, sidebar: ui.elem
     refresh_breadcrumbs(nav, project_id=project_id)
 
     extension_tab_defs = await anyio.to_thread.run_sync(lambda: get_project_tabs(project_id))
-    general_card_defs = await anyio.to_thread.run_sync(lambda: get_project_general_cards(project_id))
-    nav_items = project_nav_items(project_id, extension_tab_defs, general_card_defs)
+    settings_card_defs = await anyio.to_thread.run_sync(lambda: get_project_settings_cards(project_id))
+    nav_items = project_nav_items(project_id, extension_tab_defs, settings_card_defs)
     show_sidebar(drawer, hamburger, sidebar, project_id, nav_items)
     # Clicking a sidebar row navigates within this same project_subpage render
     # (the nested ui.sub_pages below swaps content in place) — project_subpage
@@ -169,8 +169,8 @@ async def project_subpage(args: PageArguments, nav: ui.element, sidebar: ui.elem
             await maybe_await(call_with_page_args(render_fn, args, project_id))
         return _route
 
-    def _general_card_route(title, render_fn):
-        """An extension 'general' card: fields only (see register_project_card),
+    def _settings_card_route(title, render_fn):
+        """An extension 'settings' card: fields only (see register_project_card),
         nice4iot supplies the same config_expansion chrome the old General tab
         gave it."""
         async def _route() -> None:
@@ -185,8 +185,8 @@ async def project_subpage(args: PageArguments, nav: ui.element, sidebar: ui.elem
     settings_renderers = _settings_section_renderers(project_id)
     for slug, _label, _icon in SETTINGS_SECTIONS:
         routes[f'/settings/{slug}'] = settings_renderers[slug]
-    for title, render_fn in general_card_defs:
-        routes[f'/settings/tab/{slugify_tab_label(title)}'] = _general_card_route(title, render_fn)
+    for title, render_fn in settings_card_defs:
+        routes[f'/settings/tab/{slugify_tab_label(title)}'] = _settings_card_route(title, render_fn)
 
     with ui.column().classes('w-full'):
         # ui.sub_pages is itself a flex column with align-items:flex-start (like

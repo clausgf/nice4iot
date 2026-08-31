@@ -191,16 +191,19 @@ from app.extensions import (
 
 ### Cards
 
-Cards render inside the existing **Dashboard** or **General** tab of a
-project or device page, alongside the built-in cards. The two sections
-have different conventions:
+Cards render inside the existing **Dashboard**, or the settings area, of a
+project or device page, alongside the built-in cards — a project's
+**Settings** sidebar group (its own child page per card), a device's flat
+**General** tab (both still called "General" in the device UI; only the
+project page moved to the Settings sidebar). The two sections have
+different conventions:
 
 ```python
-def register_project_card(section: Literal['dashboard', 'general'],
+def register_project_card(section: Literal['dashboard', 'settings'],
                            render_fn: Callable[[str], None], *,
                            title: str | None = None) -> None: ...
 
-def register_device_card(section: Literal['dashboard', 'general'],
+def register_device_card(section: Literal['dashboard', 'settings'],
                           render_fn: Callable[[str, str], None], *,
                           title: str | None = None) -> None: ...
 ```
@@ -220,7 +223,7 @@ def register(app):
     register_project_card('dashboard', _epaper_status_card)
 ```
 
-**`'general'`** cards are settings sections and must look uniform with the
+**`'settings'`** cards are settings sections and must look uniform with the
 built-in ones (MQTT, Forwarding, Telemetry, ...): nice4iot renders the
 card and its foldable header itself, using the required `title=` —
 `render_fn` renders only the fields, no wrapping `ui.card()`/
@@ -232,7 +235,7 @@ def _epaper_settings_card(project_name: str) -> None:
     ...
 
 def register(app):
-    register_project_card('general', _epaper_settings_card, title='E-Paper')
+    register_project_card('settings', _epaper_settings_card, title='E-Paper')
 ```
 
 `render_fn` may be a regular function or an `async def` — both are
@@ -256,7 +259,7 @@ def register(app):
     register_global_card('E-Paper', _epaper_global_card)
 ```
 
-Same convention as a `'general'` project/device card: nice4iot renders the
+Same convention as a `'settings'` project/device card: nice4iot renders the
 card and foldable header for you using `title`, so `render_fn` should not
 create its own `ui.card()`/`ui.expansion()`. It's rendered once, on the
 Projects overview page, alongside the built-in MQTT broker card, and is
