@@ -80,15 +80,9 @@ async def _alarm_check_loop() -> None:
             )
             projects = await anyio.to_thread.run_sync(get_projects)
             for project in projects:
-                await anyio.to_thread.run_sync(
-                    lambda pn=project.name: prune_alarms_for_deleted_devices(pn)
-                )
-                await anyio.to_thread.run_sync(
-                    lambda pn=project.name: evaluate_device_offline(pn)
-                )
-                await anyio.to_thread.run_sync(
-                    lambda pn=project.name: evaluate_provisioning_expiry(pn)
-                )
+                await anyio.to_thread.run_sync(prune_alarms_for_deleted_devices, project.name)
+                await anyio.to_thread.run_sync(evaluate_device_offline, project.name)
+                await anyio.to_thread.run_sync(evaluate_provisioning_expiry, project.name)
         except Exception as e:
             _main_log.error(f"alarm_check_loop error: {e}")
 
@@ -180,7 +174,7 @@ except ModuleNotFoundError:
     # namespace package with no members simply does not exist. That is the
     # normal case for a plain install, not an error.
     _ext_paths, _ext_prefix = [], 'extensions.'
-for _, _ext_module_name, _ in pkgutil.iter_modules(_ext_paths, _ext_prefix):
+for _, _ext_module_name, _ispkg in pkgutil.iter_modules(_ext_paths, _ext_prefix):
     _ext_module = importlib.import_module(_ext_module_name)
     _ext_name = _ext_module_name.removeprefix(_extensions_ns.__name__ + '.')
     if not hasattr(_ext_module, 'register'):

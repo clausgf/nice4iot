@@ -47,13 +47,13 @@ class Project(BaseModel):
             Field(default_factory=NOW_FACTORY,
                   description='Timestamp when the project was created (UTC, set automatically).'),
             niceview.Field(editable=False)
-        ]
+        ] = Field(default_factory=NOW_FACTORY)
 
     updated_at: Annotated[datetime.datetime,
             Field(default_factory=NOW_FACTORY,
                   description='Timestamp of the last configuration change (UTC, set automatically).'),
             niceview.Field(editable=False)
-        ]
+        ] = Field(default_factory=NOW_FACTORY)
 
     is_autocreate_devices: Annotated[bool,
             Field(title='Auto-create devices',
@@ -92,13 +92,13 @@ class Project(BaseModel):
             Field(default=datetime.timedelta(days=7),
                   description='Lifetime of bearer tokens issued to devices (days). '
                               'Devices must re-provision before their token expires.'),
-        ]
+        ] = datetime.timedelta(days=7)
 
     device_token_length: Annotated[int,
             Field(default=32,
                   description='Length of bearer tokens issued to devices during provisioning.'),
             niceview.Field(widget_type='ui.number')
-        ]
+        ] = 32
 
     tags: Annotated[list[str],
             Field(description='Free-form labels for grouping and filtering projects.')

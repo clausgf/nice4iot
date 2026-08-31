@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Mapping
 
 import httpx
 import asyncio
@@ -48,7 +49,7 @@ def get_forwarding(project_name: str, forwarding_name: str) -> ForwardingConfig:
 
 ###############################################################################
 
-async def forward(forwarding: ForwardingConfig, remaining_url: str, data: bytes, headers: dict, query_params: dict, timeout: int, *, project_name: str) -> httpx.Response:
+async def forward(forwarding: ForwardingConfig, remaining_url: str, data: bytes, headers: Mapping[str, str], query_params: Mapping[str, str], timeout: int, *, project_name: str) -> httpx.Response:
     """Forward a request to the configured upstream URL.
 
     Raises:
@@ -71,13 +72,13 @@ async def forward(forwarding: ForwardingConfig, remaining_url: str, data: bytes,
                     case "GET":
                         response = await client.get(fwd_url, headers=headers)
                     case "POST":
-                        response = await client.post(fwd_url, headers=headers, data=data)
+                        response = await client.post(fwd_url, headers=headers, content=data)
                     case "PUT":
-                        response = await client.put(fwd_url, headers=headers, data=data)
+                        response = await client.put(fwd_url, headers=headers, content=data)
                     case "HEAD":
                         response = await client.head(fwd_url, headers=headers)
                     case "DELETE":
-                        response = await client.delete(fwd_url, headers=headers, data=data)
+                        response = await client.request("DELETE", fwd_url, headers=headers, content=data)
     except TimeoutError:
         set_health(key, False, 'timed out')
         raise

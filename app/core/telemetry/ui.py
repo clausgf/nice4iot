@@ -33,7 +33,7 @@ class TelemetryCard:
         self._save()
         self._render_config.refresh()
 
-    @ui.refreshable
+    @ui.refreshable_method
     def _render_config(self) -> None:
         if self.config.backend == 'none':
             return

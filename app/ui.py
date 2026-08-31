@@ -102,8 +102,8 @@ def render_sidebar(container: ui.element, heading: str, items: list[NavItem], *,
     if active is None:
         current = _current_path()
         active = max(
-            (leaf for leaf in _leaves(items)
-             if current == leaf.url.rstrip('/') or current.startswith(leaf.url.rstrip('/') + '/')),
+            (leaf for leaf in _leaves(items) if leaf.url is not None
+             and (current == leaf.url.rstrip('/') or current.startswith(leaf.url.rstrip('/') + '/'))),
             key=lambda leaf: len(leaf.url or ''), default=None,
         )
     container.clear()
@@ -140,7 +140,7 @@ def _nav_row(item: NavItem, *, is_active: bool, inset: bool = False) -> None:
         _nav_row_content(item, is_active=is_active)
 
 
-def show_sidebar(drawer: ui.element, hamburger: ui.element, container: ui.element,
+def show_sidebar(drawer: ui.left_drawer, hamburger: ui.element, container: ui.element,
                  heading: str, items: list[NavItem], *, active: NavItem | None = None) -> None:
     """Populate `container` and reveal the drawer/hamburger — the project and
     device pages call this once per render. Call render_sidebar() again (not
@@ -151,7 +151,7 @@ def show_sidebar(drawer: ui.element, hamburger: ui.element, container: ui.elemen
     hamburger.set_visibility(True)
 
 
-def hide_sidebar(drawer: ui.element, hamburger: ui.element, container: ui.element) -> None:
+def hide_sidebar(drawer: ui.left_drawer, hamburger: ui.element, container: ui.element) -> None:
     """No project/device context: nothing to show a sidebar for (Projects
     list, Preferences, About)."""
     container.clear()

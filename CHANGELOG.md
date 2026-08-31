@@ -4,6 +4,32 @@ All notable changes to this project are documented here. Per `CLAUDE.md`, every
 API change must be recorded. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.37.6] - 2026-08-31
+
+### Changed
+
+- **`nicepaper` (the `epaper` extra) bumped 0.26.11 → 0.27.0**: Home Assistant URL/token
+  and the default weather location move from nicepaper's GlobalConfig to a new
+  per-project ProjectConfig (breaking, no migration — re-enter under the project's
+  Settings tab); the project Dashboard card now also shows iCal/Image datasource
+  health. No nice4iot changes needed — neither is referenced outside the extension.
+- **`mypy app` actually passes now.** The mypy target was switched from `extensions`
+  (an always-empty, always-erroring namespace package) to `app` in 0.37.1, but nobody
+  had run it clean since — 241 errors had built up. Fixed: generated `*_pb2.py`
+  modules and `snappy`/`plotly` (no stubs) are now excluded from mypy, matching
+  ruff's existing exclusion; `types-pytz`/`types-qrcode` added as dev deps; `mypy`
+  pinned below 2.x for stability; several `Annotated[..., Field(default_factory=...)]`
+  model fields (`Device`, `Project`, `AuthToken`) were missing the plain `=` default
+  pydantic's dataclass-transform needs to see them as optional; five `@ui.refreshable`
+  *methods* switched to `@ui.refreshable_method` (the binding-aware variant); a few
+  narrow `cast()`/`# type: ignore` additions where niceview's own types are generic
+  (`BaseModel`/`FileEntry` instead of the concrete model). One incidental real bug
+  fixed along the way: forwarding a `DELETE` with a body passed `data=` to
+  `httpx.AsyncClient.delete()`, which doesn't accept a body at all and would have
+  raised at runtime — now routed through `.request("DELETE", ..., content=data)`.
+- **System & Project Health card**: MQTT row is now omitted entirely when MQTT is
+  disabled, instead of showing as a neutral grey row (`app/core/project/ui.py`).
+
 ## [0.37.5] - 2026-08-30
 
 ### Changed

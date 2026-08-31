@@ -50,3 +50,14 @@ Ruff runs a deliberately conservative rule set (`E9`, `F` — syntax errors and
 pyflakes: unused imports, undefined names, broken f-strings); style rules are
 off to avoid churn. Generated protobuf modules (`*_pb2.py`) are excluded. CI
 runs `ruff check` alongside the test suite.
+
+## Type check
+
+```bash
+uv run mypy app
+```
+
+`mypy` is pinned below 2.x (`pyproject.toml`) — 2.x reports the same errors as
+1.x here, pinning just guards against a future regression. Generated protobuf
+modules are excluded, same as ruff; `snappy` and `plotly` have no type stubs
+and are ignored via `[[tool.mypy.overrides]]`.

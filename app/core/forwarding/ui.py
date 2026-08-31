@@ -30,7 +30,7 @@ class ForwardingCard:
             ['forward_method:w-1/4', 'forward_url'],
         ]
 
-    @ui.refreshable
+    @ui.refreshable_method
     def update_rows(self) -> None:
         """Update the rows in the table."""
         for key, _item in self.adapter.items():

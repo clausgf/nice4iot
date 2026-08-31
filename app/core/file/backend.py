@@ -210,9 +210,7 @@ async def check_and_publish_project(project_name: str) -> None:
             continue
 
         device_path = get_device_dir(project_name, device.name)
-        device_files = await anyio.to_thread.run_sync(
-            lambda dp=device_path: _list_publishable_files(dp)
-        )
+        device_files = await anyio.to_thread.run_sync(_list_publishable_files, device_path)
 
         state = await anyio.to_thread.run_sync(
             lambda: load_file_state(project_name, device.name)
@@ -225,9 +223,7 @@ async def check_and_publish_project(project_name: str) -> None:
         for file_path in files_to_check:
             fname = file_path.name
             try:
-                current_mtime = await anyio.to_thread.run_sync(
-                    lambda fp=file_path: os.path.getmtime(str(fp))
-                )
+                current_mtime = await anyio.to_thread.run_sync(os.path.getmtime, str(file_path))
             except OSError:
                 continue
 
@@ -265,9 +261,7 @@ async def file_watcher_loop() -> None:
             if not project.is_mqtt_enabled:
                 continue
             try:
-                config = await anyio.to_thread.run_sync(
-                    lambda pn=project.name: get_file_config(pn)
-                )
+                config = await anyio.to_thread.run_sync(get_file_config, project.name)
                 interval = max(10.0, config.mqtt_check_interval.total_seconds())
             except Exception:
                 interval = 60

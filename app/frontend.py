@@ -129,7 +129,7 @@ def page_login():
 # ***************************************************************************
 
 async def preferences_subpage(args: PageArguments, nav: ui.element, sidebar: ui.element,
-                              drawer: ui.element, hamburger: ui.element):
+                              drawer: ui.left_drawer, hamburger: ui.element):
     """Global preferences (User menu → Preferences): MQTT broker status and any
     extension-registered global cards. Kept off the project list so /ui stays a
     pure list of projects."""
@@ -149,7 +149,7 @@ async def preferences_subpage(args: PageArguments, nav: ui.element, sidebar: ui.
 # ***************************************************************************
 
 async def about_subpage(args: PageArguments, nav: ui.element, sidebar: ui.element,
-                        drawer: ui.element, hamburger: ui.element):
+                        drawer: ui.left_drawer, hamburger: ui.element):
     """About / Software Bill of Materials, as a client-side sub-page so it routes
     through ui.sub_pages like the rest of the app (a standalone @ui.page is not
     reachable — the sub_pages router intercepts internal navigation first).

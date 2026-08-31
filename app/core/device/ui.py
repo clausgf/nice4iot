@@ -1,6 +1,6 @@
 import datetime
 import html
-from typing import Optional, cast
+from typing import Any, Callable, Optional, cast
 
 import anyio
 from nicegui import PageArguments, ui
@@ -43,7 +43,7 @@ async def device_subpage(
     args: PageArguments,
     nav: ui.element,
     sidebar: ui.element,
-    drawer: ui.element,
+    drawer: ui.left_drawer,
     hamburger: ui.element,
     project_id: str,
     device_id: str,
@@ -194,9 +194,9 @@ async def _status_card(device: Device, project_name: str, offline_threshold: dat
                     ui.label(render_datetime_age(runtime.system_reported_at)) \
                         .classes('text-caption text-grey-7')
                 with ui.grid(columns='auto 1fr').classes('grid-cols-2 gap-y-1 q-mt-xs'):
-                    for k, v in sorted(runtime.system_metrics.items()):
+                    for k, metric_value in sorted(runtime.system_metrics.items()):
                         ui.label(k).classes('text-caption text-grey-7')
-                        ui.label(_format_metric(v)).classes('text-body2')
+                        ui.label(_format_metric(metric_value)).classes('text-body2')
 
 
 async def _timeline_card(device: Device) -> None:
@@ -288,7 +288,7 @@ def _device_tokens_card(project_name: str, device_name: str) -> None:
 
 async def _device_danger_card(project_name: str, device_name: str) -> None:
     with ui.row().classes('w-full gap-4 q-mt-xs'):
-        val_rules = {
+        val_rules: dict[str, Callable[[Any], bool]] = {
             "Invalid name: letters, digits, underscore only; must not start with a digit.": is_valid_name
         }
         name_widget = ui.input(

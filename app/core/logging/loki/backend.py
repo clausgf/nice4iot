@@ -20,13 +20,13 @@ class LokiBackend:
         headers = {"Content-Type": "application/json"}
         if self.config.tenant_id:
             headers["X-Scope-OrgID"] = self.config.tenant_id
-        auth = (self.config.username, self.config.password) if self.config.username else None
+        auth = (self.config.username, self.config.password) if self.config.username else httpx.USE_CLIENT_DEFAULT
         try:
             async with httpx.AsyncClient() as client:
                 async with asyncio.timeout(self.config.timeout):
                     resp = await client.post(
                         self.config.log_url,
-                        data=payload,
+                        content=payload,
                         headers=headers,
                         auth=auth,
                     )

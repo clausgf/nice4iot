@@ -1,5 +1,6 @@
+import datetime
 import re
-from typing import cast
+from typing import Sequence, cast
 
 import anyio
 from nicegui import context, PageArguments, ui
@@ -39,7 +40,7 @@ log = logging.getLogger("uvicorn")
 # ***************************************************************************
 
 async def all_projects_subpage(args: PageArguments, nav: ui.element, sidebar: ui.element,
-                               drawer: ui.element, hamburger: ui.element):
+                               drawer: ui.left_drawer, hamburger: ui.element):
     log.debug(f'project_main_page {args=}')
     refresh_breadcrumbs(nav)
     hide_sidebar(drawer, hamburger, sidebar)
@@ -89,8 +90,8 @@ def slugify_tab_label(label: str) -> str:
     return re.sub(r'[^a-z0-9]+', '-', label.lower()).strip('-') or 'tab'
 
 
-def project_nav_items(project_id: str, extension_tab_defs: list[tuple[str, str, str, object]],
-                      general_card_defs: list[tuple[str, object]] = ()) -> list[NavItem]:
+def project_nav_items(project_id: str, extension_tab_defs: Sequence[tuple[str, str, str, object]],
+                      general_card_defs: Sequence[tuple[str, object]] = ()) -> list[NavItem]:
     """The project sidebar's rows — a 'Project' group (Dashboard/Files/Devices),
     one group per enabled extension (its project tabs, in registration order),
     and a trailing 'Settings' group (the old General tab's sections, plus any
@@ -132,7 +133,7 @@ def find_nav_item(items: list[NavItem], label: str) -> NavItem:
 
 
 async def project_subpage(args: PageArguments, nav: ui.element, sidebar: ui.element,
-                          drawer: ui.element, hamburger: ui.element, project_id: str) -> None:
+                          drawer: ui.left_drawer, hamburger: ui.element, project_id: str) -> None:
     try:
         get_project(project_id, check_active=False)
     except (ValueError, NotFoundError):
@@ -210,7 +211,8 @@ async def project_dashboard_panel(project_id: str, args: PageArguments) -> None:
         active = [d for d in devices if d.is_active]
         pending_approval = [d for d in active if not d.is_provisioning_approved]
         online = [d for d in active if is_device_online(d, threshold)]
-        seen = sorted([d for d in devices if d.last_seen_at], key=lambda d: d.last_seen_at, reverse=True)
+        seen = sorted([d for d in devices if d.last_seen_at],
+                     key=lambda d: cast(datetime.datetime, d.last_seen_at), reverse=True)
 
         with ui.grid().classes('grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 w-full'):
             # Overview card
@@ -547,16 +549,10 @@ async def _system_project_health_card(project_id: str) -> None:
             ui.label('System & Project Health').classes('text-subtitle1 font-bold')
             ui.separator().classes('q-mt-xs q-mb-xs')
             with ui.column().classes('gap-1 q-mt-sm w-full'):
-                # MQTT — 'connected' is healthy; 'disabled' is a neutral off state
-                # (grey, like a backend with no data yet), not a failure; anything
-                # else ('disconnected', 'error: ...') is a real failure (red).
-                if mqtt_status == 'connected':
-                    mqtt_ok: bool | None = True
-                elif mqtt_status == 'disabled':
-                    mqtt_ok = None
-                else:
-                    mqtt_ok = False
-                _health_row('MQTT', mqtt_ok, '' if mqtt_ok is True else mqtt_status)
+                # MQTT — 'connected' is healthy; 'disabled' is a neutral off state / don't show;
+                # 'disconnected' and 'error: ...' are real failures (red).
+                if mqtt_status != 'disabled':
+                    _health_row('MQTT', mqtt_status == 'connected', '' if mqtt_status == 'connected' else mqtt_status)
 
                 # Telemetry backend
                 from app.core.telemetry.backend import get_telemetry_adapter

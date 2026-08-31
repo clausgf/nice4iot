@@ -52,13 +52,13 @@ class Device(BaseModel):
             Field(default_factory=NOW_FACTORY,
                   description='Device record creation timestamp (UTC, set automatically).'),
             niceview.Field(editable=False)
-        ]
+        ] = Field(default_factory=NOW_FACTORY)
 
     updated_at: Annotated[datetime.datetime,
             Field(default_factory=NOW_FACTORY,
                   description='Timestamp of the last change to this device record (UTC, set automatically).'),
             niceview.Field(editable=False)
-        ]
+        ] = Field(default_factory=NOW_FACTORY)
 
     last_seen_at: Annotated[datetime.datetime | None,
             Field(default=None,

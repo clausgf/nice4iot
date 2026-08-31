@@ -100,6 +100,11 @@ class OverlayDirectoryAdapter(DirectoryAdapter):
     def _path(self, key: str) -> Path:
         return self._resolve(key)[0]
 
+    def read(self, key: str) -> OverlayFileEntry:
+        entry = super().read(key)
+        assert isinstance(entry, OverlayFileEntry)  # guaranteed by _entry_from() above
+        return entry
+
     def _entry_from(self, key: str, stat: os.stat_result) -> OverlayFileEntry:
         base = super()._entry_from(key, stat)
         read_path, save_path, inherited, overrides = self._resolve(key)

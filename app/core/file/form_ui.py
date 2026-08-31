@@ -37,6 +37,10 @@ _WIDGETS: dict[str, tuple[WidgetType, Any]] = {
 }
 
 
+def _field_validator(field: FormField) -> Callable[[Any], str | None]:
+    return lambda value: validate_field(field, value)
+
+
 def to_field_info(field: FormField, *, full_width: bool = True) -> FieldInfo:
     """Translate one field of the schema subset into niceview's vocabulary.
 
@@ -49,6 +53,9 @@ def to_field_info(field: FormField, *, full_width: bool = True) -> FieldInfo:
     props = 'outlined dense'
     if field.max_length and field.kind in ('string', 'textarea'):
         props += f' maxlength={field.max_length}'
+    # niceview's Field() kwargs are typed as required even though FieldInfo's own
+    # dataclass defaults every one of them to None — passing None here is valid
+    # at runtime (niceview/niceview#fieldinfo), just not reflected in its stubs.
     return Field(
         label=field.label or field.key,
         widget_type=widget_type,
@@ -56,15 +63,15 @@ def to_field_info(field: FormField, *, full_width: bool = True) -> FieldInfo:
         # niceview renders a description wherever description_as says — a tooltip by
         # default, which is also the only slot a switch has. It reaches the widget as
         # text, never as markup.
-        description=field.description,
-        options=[str(x) for x in field.enum] if field.enum is not None else None,
-        min=field.minimum,
-        max=field.maximum,
-        precision=0 if field.kind == 'integer' else None,
-        step=1 if field.kind == 'integer' else None,
+        description=field.description,  # type: ignore[arg-type]
+        options=[str(x) for x in field.enum] if field.enum is not None else None,  # type: ignore[arg-type]
+        min=field.minimum,  # type: ignore[arg-type]
+        max=field.maximum,  # type: ignore[arg-type]
+        precision=0 if field.kind == 'integer' else None,  # type: ignore[arg-type]
+        step=1 if field.kind == 'integer' else None,  # type: ignore[arg-type]
         required=field.required,
         # Layer 2: the same check the save path runs, shown under the widget.
-        validation=lambda value, f=field: validate_field(f, value),
+        validation=_field_validator(field),
         props=props,
         classes='w-full' if full_width else 'flex-1 min-w-0',
     )

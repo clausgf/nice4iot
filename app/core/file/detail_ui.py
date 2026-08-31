@@ -71,7 +71,7 @@ def save_text(path: Path, text: str) -> bool:
 
 
 def maybe_publish(path: Path, ctx: FileCtx) -> None:
-    if ctx.can_publish:
+    if ctx.can_publish and ctx.device_name is not None:
         asyncio.create_task(publish_file_now(ctx.project_name, ctx.device_name, path))
 
 
@@ -193,6 +193,7 @@ def _render_json_tabs(entry: OverlayFileEntry, ctx: FileCtx, view: JsonView,
     live copy only ever feeds the two views.
     """
     assert view.fields is not None
+    fields_spec = view.fields
     live: dict = dict(view.data)
     form_collect: list[Callable[..., dict | None]] = []
     raw_editor: list[ui.codemirror] = []
@@ -200,7 +201,7 @@ def _render_json_tabs(entry: OverlayFileEntry, ctx: FileCtx, view: JsonView,
     @ui.refreshable
     def form_panel() -> None:
         form_collect.clear()
-        fields = [dataclasses.replace(f, value=live.get(f.key, f.value)) for f in view.fields]
+        fields = [dataclasses.replace(f, value=live.get(f.key, f.value)) for f in fields_spec]
         try:
             collect = render_form_fields(fields, view.layout)
         except Exception as exc:
@@ -259,8 +260,8 @@ def _render_json_tabs(entry: OverlayFileEntry, ctx: FileCtx, view: JsonView,
         if previous == e.value:
             return
         if previous == 'Form':
-            if form_collect:
-                live.update(form_collect[0](validate=False))
+            if form_collect and (values := form_collect[0](validate=False)) is not None:
+                live.update(values)
             raw_panel.refresh()
         else:
             try:
@@ -305,7 +306,9 @@ def _render_text_editor(entry: OverlayFileEntry, ctx: FileCtx,
         return
     editor = (
         ui.codemirror(value=content, line_wrapping=True,
-                      language=_LANG_MAP.get(entry.read_path.suffix.lower()))
+                      # _LANG_MAP's values are all valid CodeMirror language names,
+                      # but dict.get()'s return type is a plain str, not the Literal union.
+                      language=_LANG_MAP.get(entry.read_path.suffix.lower()))  # type: ignore[arg-type]
         .classes('w-full border rounded').style(_EDITOR_HEIGHT)
     )
     _save_button(entry, lambda: _commit(entry, ctx, editor.value, refresh))

@@ -17,7 +17,7 @@ rows, upload, new file — and `detail_ui.py` is the detail half.
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 import anyio
 from nicegui import ui
@@ -202,13 +202,15 @@ def _file_actions(ctx: FileCtx, refresh: Callable[[], Any]) -> dict[str, FormAct
     Publish is card-level constant, so it is simply absent where it cannot work.
     """
     def _download(e: DrillDownActionEventArguments) -> None:
-        download_file(e.item.read_path)
+        # e.item is typed as bare BaseModel by niceview; from_adapter(OverlayFileEntry, ...)
+        # guarantees it's actually one.
+        download_file(cast(OverlayFileEntry, e.item).read_path)
 
     # Inherited files are publishable too — the watcher sends them to the device
     # anyway, so this only forces what would happen on its own.
     async def _publish(e: DrillDownActionEventArguments) -> None:
-        path = e.item.read_path
-        if await publish_file_now(ctx.project_name, ctx.device_name, path):
+        path = cast(OverlayFileEntry, e.item).read_path
+        if ctx.device_name is not None and await publish_file_now(ctx.project_name, ctx.device_name, path):
             ui.notify(f'Published {path.name} to device via MQTT', type='positive')
             refresh()
         else:
@@ -309,7 +311,10 @@ def _build_wrapper(adapter: OverlayDirectoryAdapter, *, title: str, ctx: FileCtx
         on_add=on_add,
         render_list_item=lambda _key, item, select: _file_list_row(
             item, select, ctx, state),
-        render_detail=_render_detail,
+        # from_adapter(OverlayFileEntry, adapter, ...) only ever calls this with the
+        # OverlayDirectoryAdapter passed above; niceview's own signature is generic
+        # over any CollectionAdapter.
+        render_detail=_render_detail,  # type: ignore[arg-type]
     )
     return wrapper
 

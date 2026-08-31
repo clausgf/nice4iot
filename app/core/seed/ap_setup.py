@@ -43,5 +43,5 @@ def qr_png_data_uri(data: str) -> str:
     """A QR code of `data`, as a data: URI PNG for ui.image()."""
     img = qrcode.make(data)
     buf = io.BytesIO()
-    img.save(buf, format='PNG')
+    img.save(buf)
     return 'data:image/png;base64,' + base64.b64encode(buf.getvalue()).decode('ascii')

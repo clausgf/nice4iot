@@ -6,6 +6,8 @@ ProjectAlarmPanel     — Project Dashboard: alarm summary across all devices
 DeviceAlarmPanel      — Device Dashboard: alarms for one device
 DeviceAlarmsTab       — Device "Alarms" tab: full list + acknowledgment
 """
+from typing import cast
+
 import anyio
 import niceview
 from nicegui import ui
@@ -52,7 +54,9 @@ async def alarm_config_card(project_name: str) -> None:
 
     # user defined metric rules
     async def _delete_rule(e: FormActionEventArguments) -> None:
-        item = e.form.item
+        # form.item is typed as bare BaseModel by niceview; this card is always
+        # backed by a MetricAlarmRule adapter.
+        item = cast(MetricAlarmRule, e.form.item)
         if not await confirm_dialog("Delete Rule", f"Delete rule '{item.name}'?", ok_label='Delete', ok_role='delete'):
             return
         rules_adapter.delete(rules_adapter.key_from_item(item))
@@ -171,9 +175,7 @@ async def dashboard_alarms_card(project_name: str, device_name: str | None = Non
                     ui.label('No alarms.').classes('text-body2 text-grey-7 q-mt-xs')
                 else:
                     async def _ack(event_id: str) -> None:
-                        await anyio.to_thread.run_sync(
-                            lambda eid=event_id: acknowledge_alarm(project_name, eid)
-                        )
+                        await anyio.to_thread.run_sync(acknowledge_alarm, project_name, event_id)
                         _content.refresh()
                     for event in events[:10]:
                         _alarm_event_row(project_name, event, _ack)

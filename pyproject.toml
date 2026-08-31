@@ -7,7 +7,7 @@ packages = ["app"]
 
 [project]
 name = "nice4iot"
-version = "0.37.5"
+version = "0.37.6"
 description = "IoT management platform built with NiceGUI and FastAPI"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -71,11 +71,27 @@ dev = [
     # warns (StarletteDeprecationWarning) when only the 1.x httpx is installed.
     # The app itself still uses httpx — see [project] dependencies.
     "httpx2>=2.5.0",
-    "mypy>=1.14",
+    "mypy>=1.14,<2",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
     "ruff>=0.6",
+    "types-pytz",
+    "types-qrcode",
 ]
+
+[tool.mypy]
+# Skip generated protobuf modules — their descriptor magic trips static analysis.
+exclude = ["_pb2\\.py$"]
+
+[[tool.mypy.overrides]]
+# Generated protobuf modules build their attributes dynamically; treat as untyped when imported.
+module = ["app.core.telemetry.prometheus.gogo_pb2", "app.core.telemetry.prometheus.types_pb2", "app.core.telemetry.prometheus.prom_spec_pb2"]
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+# No type stubs published for these.
+module = ["snappy", "plotly", "plotly.*"]
+ignore_missing_imports = true
 
 [tool.ruff]
 line-length = 140

@@ -50,7 +50,7 @@ class AuthToken(BaseModel):
     expires_at: Annotated[datetime.datetime,
             Field(default_factory=NOW_FACTORY,
                   description='Timestamp when the token expires (UTC, set automatically).')
-        ]
+        ] = Field(default_factory=NOW_FACTORY)
 
     last_use_at: Annotated[datetime.datetime | None,
             Field(default=None,
@@ -62,13 +62,13 @@ class AuthToken(BaseModel):
             Field(default_factory=NOW_FACTORY,
                   description='Timestamp when the token was created (UTC, set automatically).'),
             niceview.Field(editable=False)
-        ]
+        ] = Field(default_factory=NOW_FACTORY)
 
     updated_at: Annotated[datetime.datetime,
             Field(default_factory=NOW_FACTORY,
                   description='Timestamp of the last change to this token (UTC, set automatically).'),
             niceview.Field(editable=False)
-        ]
+        ] = Field(default_factory=NOW_FACTORY)
 
     fingerprint: Annotated[str,
             Field(default='',

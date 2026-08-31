@@ -283,7 +283,7 @@ async def auto_pull_tick() -> None:
     whose interval has elapsed. Uses conditional (ETag) requests to stay cheap."""
     targets = await anyio.to_thread.run_sync(_auto_pull_targets)
     for dir_path, project_name, device_name in targets:
-        src = await anyio.to_thread.run_sync(lambda dp=dir_path: load_firmware_source(dp))
+        src = await anyio.to_thread.run_sync(load_firmware_source, dir_path)
         if not src.auto_pull_enabled or not src.repo.strip():
             continue
         interval_s = max(_MIN_INTERVAL, src.auto_pull_interval).total_seconds()

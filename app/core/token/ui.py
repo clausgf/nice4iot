@@ -1,5 +1,6 @@
 import datetime
 from collections.abc import Callable
+from typing import cast
 
 from nicegui import ui
 from niceview.dataadapter import JsonListAdapter
@@ -34,7 +35,9 @@ class TokenListCard:
     def _actions(self) -> dict[str, FormAction]:
 
         def _copy(e: FormActionEventArguments) -> None:
-            ui.clipboard.write(e.form.item.value)
+            # form.item is typed as bare BaseModel by niceview; this card is always
+            # backed by an AuthToken adapter.
+            ui.clipboard.write(cast(AuthToken, e.form.item).value)
             ui.notify('Token copied to clipboard', type='positive')
 
         return {
@@ -56,7 +59,7 @@ class TokenListCard:
             timestamps_line,
         ]
 
-    @ui.refreshable
+    @ui.refreshable_method
     def update_rows(self) -> None:
         for key, item in self.adapter.items():
             with ui.card().classes('w-full q-mb-md'):

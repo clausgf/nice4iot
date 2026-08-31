@@ -81,8 +81,8 @@ async def dashboard_plot_card(project_name: str, device_name: str, view: DataVie
     """A small, read-only rendering of one 'Show on dashboard' plot for the Device
     Dashboard tab — no controls, tight margins, sized to sit in the card grid
     alongside the status/timeline cards."""
-    since = datetime.datetime.now(datetime.timezone.utc) - _WINDOWS[view.window] \
-        if _WINDOWS.get(view.window) else None
+    window = _WINDOWS.get(view.window)
+    since = datetime.datetime.now(datetime.timezone.utc) - window if window else None
     series, _source = await read_series(project_name, device_name, since=since)
 
     fig = go.Figure()
@@ -159,7 +159,7 @@ class _DataExplorer:
     """Stateful UI component for one plot of the telemetry time-series explorer.
 
     Each trace is a dict {color, kind, metric}. UI state is stored in
-    self.traces; @ui.refreshable _traces_ui() rebuilds the selector rows
+    self.traces; @ui.refreshable_method _traces_ui() rebuilds the selector rows
     whenever traces are added/removed or a kind changes (which alters metric
     options). Color/metric changes only redraw the chart.
 
@@ -227,7 +227,7 @@ class _DataExplorer:
         return DataView(title=self._title, window=self.window, show_on_dashboard=self._show_on_dashboard,
                         traces=[DataTrace(**t) for t in self.traces], marker_labels=self.marker_labels)
 
-    @ui.refreshable
+    @ui.refreshable_method
     def _traces_ui(self) -> None:
         """One niceview-rendered row of fields per trace — a repeating group over
         self.traces. Kind/Metric options are recomputed on every refresh (they
@@ -257,7 +257,7 @@ class _DataExplorer:
                 if i == len(self.traces) - 1:
                     ui.button(icon='add').props('dense round').tooltip('Add trace').on_click(self._add_trace)
 
-    @ui.refreshable
+    @ui.refreshable_method
     def _markers_ui(self) -> None:
         keys = self._label_keys()
         value = [k for k in self.marker_labels if k in keys]

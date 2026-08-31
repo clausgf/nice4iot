@@ -55,7 +55,7 @@ class PasswordAuthProvider(AuthProvider):
         return bcrypt.checkpw(password.encode(), stored_hash.encode())
 
     def _load_users(self) -> dict:
-        users = {}
+        users: dict[str, str] = {}
         try:
             with open(app_config.auth_htpasswd_file, 'r') as f:
                 lines = f.readlines()
