@@ -4,6 +4,16 @@ All notable changes to this project are documented here. Per `CLAUDE.md`, every
 API change must be recorded. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.38.3] - 2026-08-31
+
+### Changed
+
+- Dropped the `read_local_metrics` full-file-read TODO from README's Open
+  Questions: its only unbounded, timer-driven caller (`latest_labels`) was
+  removed in 0.38.1, and the local metrics file is capped at
+  `LOCAL_METRICS_MAX_LINES` (2000) regardless, so the remaining cost is
+  small and bounded, not a scaling concern. No code changes.
+
 ## [0.38.2] - 2026-08-31
 
 ### Changed

@@ -154,7 +154,6 @@ The production files run nice4iot behind an external reverse proxy (it joins a `
 - **MQTT device commands** — `{base}/cmd/{name}` downlink topic for server-to-device commands is planned.
 - **MQTT authentication** — currently managed by the broker. A future version will integrate with Mosquitto's Dynamic Security Plugin for per-device credential provisioning from the UI.
 - **device/data_ui.py** - which backend shall we use? Influx is write only, thus now we no use the file backend which is always active.
-- **`read_local_metrics` performance** — always reads the entire `.device_metrics.jsonl` into memory, even when a `since` bound is given (filtering happens in Python after the full read); a tail/seek-based read would avoid paying full-file cost for bounded queries.
 
 ---
 
