@@ -4,6 +4,18 @@ All notable changes to this project are documented here. Per `CLAUDE.md`, every
 API change must be recorded. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.37.11] - 2026-08-31
+
+### Changed
+
+- Bumped `nicepaper` to 0.30.0: adds `GlobalConfig.wakeup_margin_s` (display
+  wakeup jitter compensation), retitles the Settings project card to
+  "E-Paper", drops unused webfont resources. No nice4iot changes needed.
+- Renamed the project page's "General" settings section to "Project"
+  (`app/core/project/ui.py`), matching its actual content (project +
+  files config) now that "settings" is used for the extension-provided
+  section label.
+
 ## [0.37.10] - 2026-08-31
 
 ### Changed

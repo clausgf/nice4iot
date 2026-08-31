@@ -313,7 +313,7 @@ def _settings_section_renderers(project_id: str) -> dict[str, object]:
     unlike the old single crowded General tab, so folding them away by
     default would just hide content the user came here to see."""
     async def _general() -> None:
-        with config_expansion('General', value=True):
+        with config_expansion('Project', value=True):
             await project_card(project_id)
         with config_expansion('Files', value=True):
             await file_config_card(project_id)
