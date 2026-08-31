@@ -4,6 +4,21 @@ All notable changes to this project are documented here. Per `CLAUDE.md`, every
 API change must be recorded. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.37.7] - 2026-08-31
+
+### Changed
+
+- **`nicepaper` (the `epaper` extra) bumped 0.27.0 → 0.28.0**: screen/widget
+  colors no longer go through a Widget → Screen → Global lookup chain —
+  every screen and widget now carries concrete color fields with plain
+  defaults, edited directly in the editor; `color_accent` moves off the
+  generic widget model into the two widget types that actually use it
+  (`WeatherChart`, `HomeAssistant` gauge), named for what they do. Also
+  fixes a clipped, transparent widget not showing what was drawn underneath
+  it. Breaking, no migration (see nicepaper's own CHANGELOG) — no nice4iot
+  changes needed, none of the removed/renamed fields are referenced outside
+  the extension.
+
 ## [0.37.6] - 2026-08-31
 
 ### Changed
