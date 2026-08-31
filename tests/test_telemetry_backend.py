@@ -19,7 +19,6 @@ from app.core.telemetry.backend import (
     _append_local_metrics,
     flatten_metrics,
     label_history,
-    latest_labels,
     normalize_metrics,
     observed_metrics,
     read_data_views,
@@ -459,20 +458,6 @@ def test_append_without_labels_omits_l(proj_dev):
     p, d = proj_dev
     _append_local_metrics(p, d, "sensors", {"temp": 1.0}, _NOW)
     assert "l" not in read_local_metrics(p, d)[0]
-
-
-def test_latest_labels_last_value_wins(proj_dev):
-    p, d = proj_dev
-    _append_local_metrics(p, d, "system", {"t": 1.0}, _NOW,
-                          labels={"firmware_version": "1.0.0", "site": "hall1"})
-    _append_local_metrics(p, d, "system", {"t": 2.0}, _NOW, labels={"firmware_version": "1.1.0"})
-    assert latest_labels(p, d) == {"firmware_version": "1.1.0", "site": "hall1"}
-
-
-def test_latest_labels_empty_without_any(proj_dev):
-    p, d = proj_dev
-    _append_local_metrics(p, d, "system", {"t": 1.0}, _NOW)
-    assert latest_labels(p, d) == {}
 
 
 def test_label_history_records_only_changes(proj_dev):

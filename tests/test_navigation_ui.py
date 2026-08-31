@@ -112,10 +112,10 @@ def test_project_nav_items_built_in_and_extension():
     settings = items[2]
     assert settings.url is None
     child_labels = [c.label for c in settings.children]
-    assert child_labels[:2] == ['General', 'Provisioning']
+    assert child_labels[:2] == ['Project', 'Provisioning']
     assert 'Some Card' in child_labels
-    general_child = next(c for c in settings.children if c.label == 'General')
-    assert general_child.url == project_url('proj', tab='settings/general')
+    project_child = next(c for c in settings.children if c.label == 'Project')
+    assert project_child.url == project_url('proj', tab='settings/project')
     card_child = next(c for c in settings.children if c.label == 'Some Card')
     assert card_child.url == project_url('proj', tab='settings/tab/some-card')
 
@@ -230,14 +230,14 @@ def test_project_subpage_shows_sidebar_and_dashboard_by_default(project_with_dev
     assert hamburger.visible is True
     sidebar_labels = _labels(sidebar)
     assert sidebar_labels[0] == project  # heading
-    for expected in ('Dashboard', 'General', 'Files', 'Devices'):
+    for expected in ('Dashboard', 'Project', 'Files', 'Devices'):
         assert expected in sidebar_labels
 
     # Dashboard is the default (root) route.
     assert 'Device Health' in _labels(container)
 
     # Regression: ui.sub_pages is itself a flex column with align-items:
-    # flex-start, so every route rendered through it (General's two-column
+    # flex-start, so every route rendered through it (Project's two-column
     # grid, extension tabs, ...) silently shrink-wraps without this.
     from nicegui.elements.sub_pages import SubPages
     sub_pages = _find_all(container, SubPages)[0]
@@ -273,7 +273,7 @@ def test_project_subpage_general_route(project_with_device):
         core.loop = asyncio.get_running_loop()
         with container:
             from nicegui import context
-            context.client.sub_pages_router.current_path = '/settings/general'
+            context.client.sub_pages_router.current_path = '/settings/project'
             await project_subpage(_page_args(), nav, sidebar, drawer, hamburger, project)
         await _drain()
 
@@ -348,7 +348,7 @@ def test_device_subpage_shows_project_sidebar_with_devices_active(project_with_d
     assert drawer.shown is True
     assert hamburger.visible is True
     sidebar_labels = _labels(sidebar)
-    for expected in ('Dashboard', 'General', 'Files', 'Devices'):
+    for expected in ('Dashboard', 'Project', 'Files', 'Devices'):
         assert expected in sidebar_labels
 
     items = _find_all(sidebar, ui.item)

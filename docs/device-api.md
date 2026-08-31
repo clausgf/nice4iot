@@ -109,9 +109,11 @@ value types are ignored.
 additionally update the device's reported firmware (equivalent to the `X-Firmware-*`
 headers) — so they show up both in Grafana (as labels) and in the nice4iot UI.
 
-In the management UI the current label values appear on the **Device → Dashboard**
-Status card, and the **Data** tab can overlay a vertical marker wherever a chosen
-label's value changed (*Label markers* selector).
+In the management UI the **Device → Dashboard** Status card shows the device's
+firmware version and board (from the `system`-kind push's cached snapshot, see
+below), and the **Data** tab can overlay a vertical marker wherever a chosen
+label's value changed (*Label markers* selector, backed by the full local
+label history).
 
 ---
 

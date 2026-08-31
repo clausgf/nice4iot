@@ -297,7 +297,7 @@ async def project_dashboard_panel(project_id: str, args: PageArguments) -> None:
 # ever one or a few per page now, unlike the old single crowded General tab)
 # — see _settings_section_renderers().
 SETTINGS_SECTIONS: tuple[tuple[str, str, str], ...] = (
-    ('general', 'General', 'info'),
+    ('project', 'Project', 'info'),
     ('provisioning', 'Provisioning', 'verified_user'),
     ('forwarding', 'Forwarding', 'call_split'),
     ('telemetry', 'Telemetry', 'insights'),
@@ -312,8 +312,8 @@ def _settings_section_renderers(project_id: str) -> dict[str, object]:
     now always expanded (value=True): there are at most a few per page,
     unlike the old single crowded General tab, so folding them away by
     default would just hide content the user came here to see."""
-    async def _general() -> None:
-        with config_expansion('Project', value=True):
+    async def _project() -> None:
+        with config_expansion('General', value=True):
             await project_card(project_id)
         with config_expansion('Files', value=True):
             await file_config_card(project_id)
@@ -348,7 +348,7 @@ def _settings_section_renderers(project_id: str) -> dict[str, object]:
             await alarm_config_card(project_id)
 
     return {
-        'general': _general, 'provisioning': _provisioning, 'forwarding': _forwarding,
+        'project': _project, 'provisioning': _provisioning, 'forwarding': _forwarding,
         'telemetry': _telemetry, 'firmware': _firmware, 'alarms': _alarms,
     }
 

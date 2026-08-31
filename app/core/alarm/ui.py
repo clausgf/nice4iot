@@ -6,6 +6,7 @@ ProjectAlarmPanel     — Project Dashboard: alarm summary across all devices
 DeviceAlarmPanel      — Device Dashboard: alarms for one device
 DeviceAlarmsTab       — Device "Alarms" tab: full list + acknowledgment
 """
+import datetime
 from typing import cast
 
 import anyio
@@ -37,7 +38,8 @@ async def alarm_config_card(project_name: str) -> None:
     # Observed (kind -> metric names) from the local store, to seed the rule
     # editor's comboboxes with the actual normalized names. Blocking IO, so
     # wrapped per the async-IO rule.
-    observed = await anyio.to_thread.run_sync(lambda: observed_metrics(project_name))
+    observed_since = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=24)
+    observed = await anyio.to_thread.run_sync(lambda: observed_metrics(project_name, since=observed_since))
 
     # Built-in rules
     with ui.card().classes('w-full q-mb-sm'):

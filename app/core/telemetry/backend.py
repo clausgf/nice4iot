@@ -174,20 +174,6 @@ def save_data_views(project_name: str, device_name: str, views: list[DataView]) 
     atomic_write(path, json.dumps([v.model_dump(mode='json') for v in views], indent=2))
 
 
-def latest_labels(project_name: str, device_name: str,
-                  since: datetime.datetime | None = None) -> dict[str, str]:
-    """Most recent value seen per label key in the local store's ``l{}`` objects.
-
-    Records are chronological, so a later record's value wins. Used by the Data
-    tab to show the labels (firmware_version, site, …) that describe the data.
-    Blocking file IO — wrap with ``anyio.to_thread.run_sync`` in async callers."""
-    labels: dict[str, str] = {}
-    for rec in read_local_metrics(project_name, device_name, since=since):
-        for k, v in rec.get('l', {}).items():
-            labels[k] = v
-    return labels
-
-
 def label_history(project_name: str, device_name: str,
                   since: datetime.datetime | None = None
                   ) -> dict[str, list[tuple[datetime.datetime, str]]]:

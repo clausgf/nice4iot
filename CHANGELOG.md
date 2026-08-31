@@ -4,6 +4,22 @@ All notable changes to this project are documented here. Per `CLAUDE.md`, every
 API change must be recorded. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.38.1] - 2026-08-31
+
+### Changed
+
+- **Device Dashboard Status card** now shows **Firmware** and **Board**
+  (from `DeviceRuntime.firmware_version`/`.board`, both O(1) reads of the
+  cached runtime sidecar) plus a single "as of" timestamp, instead of an
+  arbitrary list of the device's most-recently-seen telemetry labels. The
+  latter required scanning the device's *entire* local metrics history
+  (`latest_labels()`, unbounded, re-run every 10s while the tab is open) —
+  removed now that it has no callers. `docs/device-api.md` updated.
+- **`app.core.telemetry.backend.observed_metrics()`** gained a `since`
+  bound; `alarm_config_card` now passes a 24h window instead of scanning
+  every device's entire local metrics history on every open of the Alarms
+  settings card.
+
 ## [0.38.0] - 2026-08-31
 
 ### Added

@@ -101,15 +101,14 @@ async def device_dashboard_panel(project_name: str, device_name: str, args: Page
     @ui.refreshable
     async def _content() -> None:
         from app.core.alarm.backend import get_device_offline_threshold
-        from app.core.telemetry.backend import latest_labels, read_data_views
+        from app.core.telemetry.backend import read_data_views
         device = get_device(project_name, device_name)
         threshold = await anyio.to_thread.run_sync(lambda: get_device_offline_threshold(project_name))
-        labels = await anyio.to_thread.run_sync(lambda: latest_labels(project_name, device_name))
         runtime = await anyio.to_thread.run_sync(lambda: read_runtime(project_name, device_name))
         plot_views = await anyio.to_thread.run_sync(lambda: read_data_views(project_name, device_name))
 
         with ui.grid().classes('grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 w-full'):
-            await _status_card(device, project_name, threshold, labels, runtime)
+            await _status_card(device, project_name, threshold, runtime)
             await _timeline_card(device)
             for render_fn in await anyio.to_thread.run_sync(lambda: get_device_dashboard_cards(project_name)):
                 await maybe_await(call_with_page_args(render_fn, args, project_name, device_name))
@@ -131,7 +130,6 @@ def _format_metric(v: float) -> str:
 
 
 async def _status_card(device: Device, project_name: str, offline_threshold: datetime.timedelta,
-                       labels: dict[str, str] | None = None,
                        runtime: DeviceRuntime | None = None) -> None:
     from app.core.alarm.backend import get_alarm_count
     online = is_device_online(device, offline_threshold)
@@ -170,19 +168,25 @@ async def _status_card(device: Device, project_name: str, offline_threshold: dat
             if device.location or device.description:
                 ui.separator().classes('q-mt-xs q-mb-xs')
 
-            with ui.grid(columns='auto 1fr').classes('grid-cols-2 gap-y-1 q-mt-sm'):
+            reported_at = max(
+                (ts for ts in (device.firmware_reported_at, runtime.system_reported_at if runtime else None)
+                 if ts is not None), default=None)
+            if reported_at:
+                with ui.row().classes('items-center w-full gap-1 q-mt-sm'):
+                    ui.space()
+                    ui.label(f'as of {render_datetime_age(reported_at)}').classes('text-caption text-grey-7')
+            with ui.grid(columns='auto 1fr').classes('grid-cols-2 gap-y-1 q-mt-xs'):
                 ui.label('Firmware').classes('text-caption text-grey-7')
                 if device.firmware_version:
                     fw = device.firmware_version
                     ui.label(fw).tooltip(fw).classes('text-body2 overflow-hidden text-ellipsis')
                 else:
                     ui.label('Unknown').classes('text-body2 text-grey-7')
-                # Reported labels (firmware_version already shown above).
-                extra = {k: v for k, v in (labels or {}).items()
-                        if k not in ('firmware_version', 'firmware_id', 'firmware_sha256', 'firmware_commit', 'board_id')}
-                for k, v in sorted(extra.items()):
-                    ui.label(k.capitalize()).classes('text-caption text-grey-7')
-                    ui.label(v).tooltip(v).classes('text-body2 overflow-hidden text-ellipsis')
+                ui.label('Board').classes('text-caption text-grey-7')
+                if runtime and runtime.board:
+                    ui.label(runtime.board).tooltip(runtime.board).classes('text-body2 overflow-hidden text-ellipsis')
+                else:
+                    ui.label('Unknown').classes('text-body2 text-grey-7')
 
             # Latest system-telemetry snapshot (battery_V, wifi_rssi, ...), cached
             # in the runtime sidecar — the last 'system' push's numeric values.
