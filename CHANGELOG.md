@@ -4,6 +4,18 @@ All notable changes to this project are documented here. Per `CLAUDE.md`, every
 API change must be recorded. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.37.8] - 2026-08-31
+
+### Fixed
+
+- **`nicepaper` bumped 0.28.0 → 0.28.1**: 0.28.0 broke loading any screen
+  file with `color_primary`/`color_background` explicitly `null` (from a
+  screen saved before 0.28) — pydantic rejected `null` against the new
+  concrete `str` fields with a hard validation error instead of falling
+  back to the default, so the whole screen failed to load. This is what
+  caused the `7 validation errors for ScreenModel` startup log seen after
+  the 0.37.7 bump. Fixed upstream; no nice4iot changes needed.
+
 ## [0.37.7] - 2026-08-31
 
 ### Changed
