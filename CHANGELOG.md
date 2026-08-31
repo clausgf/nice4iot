@@ -4,6 +4,15 @@ All notable changes to this project are documented here. Per `CLAUDE.md`, every
 API change must be recorded. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.38.2] - 2026-08-31
+
+### Changed
+
+- Bumped `nicepaper` to 0.32.1: adds a device dashboard card showing
+  esp32paper's latest telemetry, and brings panel-type reconciliation
+  (editable Panel type select + firmware-mismatch hint) to nicepaper's
+  simplified UI. No nice4iot changes needed.
+
 ## [0.38.1] - 2026-08-31
 
 ### Changed
