@@ -8,6 +8,7 @@ import anyio
 from niceview.dataadapter import JsonAdapter, lenient_list_load
 
 from app.config import app_config
+from app.extensions import telemetry_cache_kind_enabled
 from app.paths import project_dir, device_dir
 from app.util import atomic_write, logger, is_valid_name
 from app.core.telemetry.models import (
@@ -209,7 +210,8 @@ def label_history(project_name: str, device_name: str,
     return history
 
 
-def observed_metrics(project_name: str) -> dict[str, list[str]]:
+def observed_metrics(project_name: str,
+                     since: datetime.datetime | None = None) -> dict[str, list[str]]:
     """Collect the metric names seen in the local store, grouped by kind.
 
     Returns {kind: sorted metric names} aggregated across every device of the
@@ -224,7 +226,7 @@ def observed_metrics(project_name: str) -> dict[str, list[str]]:
     for device_path in base.iterdir():
         if not device_path.is_dir() or not is_valid_name(device_path.name):
             continue
-        for rec in read_local_metrics(project_name, device_path.name):
+        for rec in read_local_metrics(project_name, device_path.name, since=since):
             kind = rec.get('kind')
             if kind:
                 grouped.setdefault(kind, set()).update(rec.get('v', {}).keys())
@@ -297,8 +299,8 @@ def normalize_metrics(values: dict) -> dict:
 # write (see docs/concepts.md and the telemetry data-model docs). This
 # keeps the numeric series clean and churn-free when a label value changes.
 
-LABEL_MAX_LEN = 64               # cap on a single label value (chars)
-LABEL_MAX_COUNT = 8              # cap on labels per write
+LABEL_MAX_LEN = 128               # cap on a single label value (chars)
+LABEL_MAX_COUNT = 16              # cap on labels per write
 _LABEL_NAME_RE = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
 _RESERVED_LABEL_NAMES = frozenset({'__name__', 'device', 'kind'})
 
@@ -370,6 +372,15 @@ async def write_telemetry(project_name: str, device_name: str, values: dict,
         await anyio.to_thread.run_sync(
             lambda: write_runtime(project_name, device_name, system_metrics=numeric,
                                   system_labels=labels, system_reported_at=now)
+        )
+    # Same caching for an extension's own registered kind (e.g. nicepaper's
+    # 'epaper') -- see app.extensions.register_telemetry_cache_kind().
+    elif telemetry_cache_kind_enabled(project_name, kind):
+        from app.core.device.backend import write_runtime
+        await anyio.to_thread.run_sync(
+            lambda: write_runtime(project_name, device_name, kind=kind,
+                                  kind_metrics=numeric, kind_labels=labels,
+                                  kind_reported_at=now)
         )
     # Alarms evaluate numeric measurements only; labels are metadata.
     await anyio.to_thread.run_sync(

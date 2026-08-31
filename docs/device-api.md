@@ -101,7 +101,7 @@ myproj_temperature_celsius * on(device) group_left(firmware_version) myproj_targ
 **Rules and limits.** Keep labels **slowly changing / bounded** — never per-request
 values (IDs, timestamps, measurements), or you create series churn / cardinality
 blow-up. Label names must match `[a-zA-Z_][a-zA-Z0-9_]*`; values are trimmed and
-capped at 64 chars; at most 8 labels per write; `device`/`kind`/`__name__` are
+capped at 128 chars; at most 16 labels per write; `device`/`kind`/`__name__` are
 protected; a **numeric** field named `target_info` is dropped (reserved). Other
 value types are ignored.
 

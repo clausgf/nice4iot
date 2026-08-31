@@ -157,6 +157,16 @@ class DeviceRuntime(BaseModel):
     system_labels: dict[str, str] = {}
     system_reported_at: datetime.datetime | None = None
 
+    # Same snapshot mechanism as system_metrics/system_labels above, but keyed
+    # by kind for extensions that push their own telemetry kind (e.g. nicepaper's
+    # 'epaper') and register it via app.extensions.register_telemetry_cache_kind()
+    # instead of overloading the nice4iot-reserved 'system' kind. One entry per
+    # registered kind, each replaced wholesale on its own latest push -- see
+    # write_runtime()'s `kind` parameter.
+    kind_metrics: dict[str, dict[str, float]] = {}
+    kind_labels: dict[str, dict[str, str]] = {}
+    kind_reported_at: dict[str, datetime.datetime] = {}
+
     # Convenience accessors over system_metrics/system_labels for the handful of
     # well-known keys arduino4iot's system push reports. Plain properties, not
     # pydantic fields/computed_fields, so they stay derived-only and never get

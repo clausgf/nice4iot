@@ -4,6 +4,31 @@ All notable changes to this project are documented here. Per `CLAUDE.md`, every
 API change must be recorded. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.38.0] - 2026-08-31
+
+### Added
+
+- **`app.extensions.register_telemetry_cache_kind(kind)`** — lets an
+  extension opt its own telemetry `kind` into the same wholesale-snapshot
+  caching `kind='system'` already gets (numeric values + string labels of
+  the latest push, O(1)-readable), without overloading the nice4iot-reserved
+  `system` kind. `DeviceRuntime` gained generic `kind_metrics`/`kind_labels`/
+  `kind_reported_at` dicts keyed by kind; `write_runtime()` and
+  `write_telemetry()` extended to feed them for any registered, enabled
+  kind. See the new "Telemetry: caching your own kind in the runtime
+  sidecar" section in `docs/extensions.md` and `docs/concepts.md`.
+
+### Changed
+
+- **`LABEL_MAX_LEN` 64 → 128, `LABEL_MAX_COUNT` 8 → 16** (telemetry string
+  labels) — more headroom for extensions with several/longer label values
+  (e.g. a comma-separated list of supported hardware variants). Docs
+  updated (`docs/device-api.md`).
+- Bumped `nicepaper` to 0.31.0: uses the new `register_telemetry_cache_kind`
+  to reconcile its devices' firmware-reported panel against the configured
+  one, plus `panel_types.json` corrections. No nice4iot changes needed
+  beyond the dependency bump.
+
 ## [0.37.11] - 2026-08-31
 
 ### Changed

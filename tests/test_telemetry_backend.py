@@ -601,3 +601,55 @@ def test_non_system_kind_leaves_snapshot_empty(proj_dev):
     rt = read_runtime(p, d)
     assert rt.system_metrics == {}
     assert rt.system_reported_at is None
+
+
+# ---------------------------------------------------------------------------
+# Extension-registered telemetry-kind runtime snapshot
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def clear_extension_telemetry_registry():
+    yield
+    import app.extensions as extensions
+    extensions._clear_registries()
+
+
+def test_registered_kind_caches_snapshot_in_runtime(proj_dev):
+    """A push of a kind registered via register_telemetry_cache_kind() snapshots
+    into the runtime sidecar, keyed by kind, while its extension is enabled."""
+    import app.extensions as extensions
+    p, d = proj_dev
+    with extensions.registering('epaper'):
+        extensions.register_telemetry_cache_kind('epaper')
+    from app.core.project.backend import project_adapter
+    adapter = project_adapter(p)
+    project = adapter.read()
+    project.enabled_extensions.append('epaper')
+    adapter.save(project)
+
+    asyncio.run(write_telemetry(p, d, {"panel": "GDEW075T7",
+                                       "panels": "GDEW042T2,GDEW075T7"}, kind="epaper"))
+    rt = read_runtime(p, d)
+    assert rt.kind_labels["epaper"] == {"panel": "GDEW075T7", "panels": "GDEW042T2,GDEW075T7"}
+    assert rt.kind_reported_at["epaper"] is not None
+    # unrelated 'system' snapshot stays untouched
+    assert rt.system_labels == {}
+
+
+def test_unregistered_kind_does_not_cache(proj_dev):
+    p, d = proj_dev
+    asyncio.run(write_telemetry(p, d, {"panel": "GDEW075T7"}, kind="epaper"))
+    rt = read_runtime(p, d)
+    assert rt.kind_labels == {}
+
+
+def test_registered_but_disabled_extension_does_not_cache(proj_dev):
+    import app.extensions as extensions
+    p, d = proj_dev
+    with extensions.registering('epaper'):
+        extensions.register_telemetry_cache_kind('epaper')
+    # not enabled for the project
+
+    asyncio.run(write_telemetry(p, d, {"panel": "GDEW075T7"}, kind="epaper"))
+    rt = read_runtime(p, d)
+    assert rt.kind_labels == {}

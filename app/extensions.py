@@ -41,6 +41,8 @@ _project_pages: dict[str, Callable[[str], Any]] = {}  # extension_name -> render
 
 _device_provisioned_callbacks: list[tuple[str, Callable[[Device], None]]] = []
 
+_telemetry_cache_kinds: dict[str, str] = {}  # kind -> extension_name
+
 _current_extension: contextvars.ContextVar[str | None] = contextvars.ContextVar('_current_extension', default=None)
 _registered_extension_names: set[str] = set()
 
@@ -363,6 +365,29 @@ def notify_device_provisioned(device: Device) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Telemetry
+# ---------------------------------------------------------------------------
+
+def register_telemetry_cache_kind(kind: str) -> None:
+    """Declare that telemetry pushes of this `kind` get snapshotted into the
+    device runtime sidecar -- same mechanism as nice4iot's own reserved
+    `system` kind (numeric values + string labels of the latest push,
+    O(1)-readable via DeviceRuntime.kind_metrics/kind_labels/kind_reported_at,
+    see app.core.device.backend.write_runtime()'s `kind` parameter), just for
+    an extension's own kind instead of overloading `system`. Only takes effect
+    while the registering extension is enabled for the device's project.
+    """
+    _telemetry_cache_kinds[kind] = _extension_name()
+
+
+def telemetry_cache_kind_enabled(project_name: str, kind: str) -> bool:
+    """Whether `kind` is registered for runtime-sidecar caching and its
+    registering extension is enabled for project_name."""
+    ext = _telemetry_cache_kinds.get(kind)
+    return ext is not None and ext in _enabled_extensions(project_name)
+
+
+# ---------------------------------------------------------------------------
 # REST
 # ---------------------------------------------------------------------------
 
@@ -441,4 +466,5 @@ def _clear_registries() -> None:
     _device_tabs.clear()
     _project_pages.clear()
     _device_provisioned_callbacks.clear()
+    _telemetry_cache_kinds.clear()
     _registered_extension_names.clear()

@@ -28,6 +28,7 @@ _RUNTIME_FILE = '.runtime.json'
 _LAST_SEEN_FILE = '.last_seen'  # legacy: bare-timestamp file, read-only migration fallback
 _FW_MAX_LEN = 64  # cap device-reported firmware strings (untrusted header input)
 _SYSTEM_METRICS_MAX = 32  # cap cached system metrics per device (bounds .runtime.json size)
+_KIND_METRICS_MAX = 32    # same cap, per registered kind (see write_runtime()'s `kind` param)
 
 # ---------------------------------------------------------------------------
 # In-process device list cache
@@ -91,7 +92,11 @@ def write_runtime(project_name: str, device_name: str, *,
                   firmware_version: str | None = None,
                   system_metrics: dict | None = None,
                   system_labels: dict | None = None,
-                  system_reported_at: datetime.datetime | None = None) -> DeviceRuntime:
+                  system_reported_at: datetime.datetime | None = None,
+                  kind: str | None = None,
+                  kind_metrics: dict | None = None,
+                  kind_labels: dict | None = None,
+                  kind_reported_at: datetime.datetime | None = None) -> DeviceRuntime:
     """Merge-update the device runtime sidecar and write it atomically.
 
     Only the provided (non-None) fields are changed; the rest are preserved. Passing
@@ -102,7 +107,12 @@ def write_runtime(project_name: str, device_name: str, *,
     accompanying ``system_metrics``/``system_labels`` **replace** the cached values
     wholesale (they are one write's numerics and labels, already normalized and
     label-capped by the telemetry backend), capped to ``_SYSTEM_METRICS_MAX``
-    metrics so a device can't bloat the sidecar."""
+    metrics so a device can't bloat the sidecar.
+
+    Passing ``kind`` (with ``kind_reported_at``) does the same for an extension's
+    own registered telemetry kind (see app.extensions.register_telemetry_cache_kind()):
+    ``kind_metrics``/``kind_labels`` replace ``rt.kind_metrics[kind]``/
+    ``rt.kind_labels[kind]`` wholesale, capped to ``_KIND_METRICS_MAX``."""
     rt = read_runtime(project_name, device_name)
     if last_seen_at is not None:
         rt.last_seen_at = last_seen_at
@@ -113,6 +123,10 @@ def write_runtime(project_name: str, device_name: str, *,
         rt.system_metrics = dict(sorted((system_metrics or {}).items())[:_SYSTEM_METRICS_MAX])
         rt.system_labels = dict(system_labels or {})
         rt.system_reported_at = system_reported_at
+    if kind is not None and kind_reported_at is not None:
+        rt.kind_metrics[kind] = dict(sorted((kind_metrics or {}).items())[:_KIND_METRICS_MAX])
+        rt.kind_labels[kind] = dict(kind_labels or {})
+        rt.kind_reported_at[kind] = kind_reported_at
     path = device_dir(project_name, device_name) / _RUNTIME_FILE
     atomic_write(path, rt.model_dump_json(indent=2))
     return rt

@@ -497,6 +497,39 @@ schedule async work on. If you need to do async work in response (e.g. an
 HTTP call), hand it off to your own background task/queue instead of
 awaiting it inline.
 
+## Telemetry: caching your own kind in the runtime sidecar
+
+`kind='system'` telemetry pushes (arduino4iot's `postSystemTelemetry`) are
+reserved for nice4iot's own battery/RSSI/firmware fields and snapshotted
+into the device runtime sidecar for O(1) access (see the *System-telemetry
+snapshot* section in `docs/concepts.md`). Send your extension's own
+application telemetry under your own `kind` instead — never `system` — and
+opt that kind into the same caching mechanism if you want O(1) reads of its
+latest numerics/labels (e.g. one value per row in a device table) instead of
+scanning `.device_metrics.jsonl`:
+
+```python
+from app.extensions import register_telemetry_cache_kind
+
+def register(app):
+    register_telemetry_cache_kind('epaper')
+```
+
+```python
+from app.core.device.backend import read_runtime
+
+rt = read_runtime(project_name, device_name)
+panel = rt.kind_labels.get('epaper', {}).get('panel')
+```
+
+Every push of your registered kind (`postTelemetry("epaper", ...)`) replaces
+`rt.kind_metrics['epaper']`/`rt.kind_labels['epaper']`/
+`rt.kind_reported_at['epaper']` wholesale, the same replace-on-each-push
+semantics as the built-in `system` snapshot — capped at 32 metrics per kind.
+Caching only takes effect while your extension is enabled for the device's
+project; otherwise the push still reaches the configured telemetry backend
+and the local JSONL store as normal, just without the sidecar snapshot.
+
 ## Per-project file storage
 
 If your extension needs to persist its own files within a project, use:

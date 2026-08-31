@@ -38,8 +38,10 @@ from app.extensions import (
     register_project_card,
     register_project_page,
     register_project_tab,
+    register_telemetry_cache_kind,
     register_user_menu_item,
     registering,
+    telemetry_cache_kind_enabled,
 )
 from app.mqtt.backend import (
     _dispatch_extension_topic,
@@ -468,6 +470,32 @@ def test_device_provisioned_callback_receives_multiple_registrations(project):
     create_device(Device(name="dev1", project_name=project))
 
     assert calls == ['first', 'second']
+
+
+# ---------------------------------------------------------------------------
+# Telemetry cache-kind registry
+# ---------------------------------------------------------------------------
+
+def test_telemetry_cache_kind_disabled_by_default(project):
+    with registering('ext1'):
+        register_telemetry_cache_kind('epaper')
+    # not enabled
+
+    assert telemetry_cache_kind_enabled(project, 'epaper') is False
+
+
+def test_telemetry_cache_kind_enabled_after_enabling(project):
+    with registering('ext1'):
+        register_telemetry_cache_kind('epaper')
+    _enable(project, 'ext1')
+
+    assert telemetry_cache_kind_enabled(project, 'epaper') is True
+
+
+def test_telemetry_cache_kind_false_for_unregistered_kind(project):
+    _enable(project, 'ext1')
+
+    assert telemetry_cache_kind_enabled(project, 'unknown') is False
 
 
 # ---------------------------------------------------------------------------
