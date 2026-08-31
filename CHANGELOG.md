@@ -4,6 +4,20 @@ All notable changes to this project are documented here. Per `CLAUDE.md`, every
 API change must be recorded. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.37.9] - 2026-08-31
+
+### Changed
+
+- **`nicepaper` (the `epaper` extra) bumped 0.28.1 → 0.29.0**: new `Box`/
+  `Line` widgets; `WeatherChart`'s `line_style` split into
+  `line_style_primary`/`line_style_secondary` (independently configurable,
+  was hardcoded dashed for the secondary trace); `HomeAssistant`'s
+  `display`/`gauge_style` merged into one field (`"value"`/`"arc"`/`"bar"`)
+  and `alignment` removed; `ScreenModel.palette_id` now defaults to `"bw"`
+  instead of unquantized. Breaking, no migration (see nicepaper's own
+  CHANGELOG) — no nice4iot changes needed; `ruff`/`mypy`/`pytest` all pass
+  unchanged against the new version.
+
 ## [0.37.8] - 2026-08-31
 
 ### Fixed
