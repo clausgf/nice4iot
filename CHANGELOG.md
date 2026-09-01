@@ -4,6 +4,16 @@ All notable changes to this project are documented here. Per `CLAUDE.md`, every
 API change must be recorded. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.38.4] - 2026-09-01
+
+### Changed
+
+- Bumped `nicepaper` to 0.32.2: the device Settings card's panel-type
+  mismatch hint now updates live on a panel type change instead of only
+  after a reload, and the E-Paper dashboard card's telemetry age renders
+  in nice4iot's own device status card style (date + time + age). No
+  nice4iot changes needed.
+
 ## [0.38.3] - 2026-08-31
 
 ### Changed
