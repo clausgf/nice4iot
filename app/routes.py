@@ -35,15 +35,18 @@ def project_url(project_id: str, tab: str | None = None) -> str:
     """*tab* is a raw trailing path segment (e.g. 'general', 'devices', or
     'tab/<slug>' for an extension-registered project tab — see
     app.core.project.ui's slugify_tab_label()), not a display label: the
-    project page's own sections are nested ui.sub_pages routes, not
-    ?tab=<label> like the device page still uses."""
+    project page's own sections are nested ui.sub_pages routes."""
     url = f'{UI_PREFIX}/project/{project_id}'
     return f'{url}/{tab}' if tab else url
 
 
 def device_url(project_id: str, device_id: str, tab: str | None = None) -> str:
+    """*tab* is a raw trailing path segment (e.g. 'general', 'files', or
+    'tab/<slug>' for an extension-registered device tab), same convention as
+    project_url() — the device page's own sections are nested ui.sub_pages
+    routes too, not ?tab=<label>."""
     url = f'{UI_PREFIX}/project/{project_id}/device/{device_id}'
-    return f'{url}?tab={tab}' if tab else url
+    return f'{url}/{tab}' if tab else url
 
 
 def project_extension_url(project_id: str, extension_name: str) -> str:

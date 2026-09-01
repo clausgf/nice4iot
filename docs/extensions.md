@@ -318,9 +318,10 @@ becomes a row in the project page's left sidebar, nested under a group named
 after your extension (alongside every other tab your extension registers, in
 registration order — each extension gets its own group, so several enabled
 extensions don't turn the sidebar into one long flat list), addressed by its
-own URL segment; a **device** tab is still a tab on the device page (its own
-tab strip in the content area, addressed via the `?tab=<label>` deep-link
-query parameter — the device page hasn't moved to a sidebar):
+own URL segment. A **device** tab becomes a row in the device page's sidebar
+too — its own URL segment, appended flat after the built-in sections under
+the device's "Device {id}" group (device tabs aren't grouped by extension the
+way project tabs are, since a device usually has at most a couple):
 
 ```python
 def register_project_tab(label: str, render_fn: Callable[[str], Any], *,
@@ -336,14 +337,14 @@ a Material icon name — a project tab's sidebar row always shows one (default
 `'extension'` if you don't have a more fitting choice); a device tab shows
 it next to its label the same way the built-in tabs do.
 
-A project tab's URL is `.../project/<id>/tab/<slug>`, where `<slug>` is
-your label lowercased with anything that isn't `[a-z0-9]` collapsed to a
-single `-` (`'E-Paper'` → `'e-paper'`) — pick a label that slugifies to
-something distinct from your other tabs; nice4iot doesn't enforce
-uniqueness, a collision only surfaces visually (two rows opening the same
-URL). Device tabs are still addressed by the raw label via `?tab=`, so pick
-one that doesn't collide with the built-in device tabs (Dashboard, General,
-Files, Data, Logs) for the same reason.
+A project tab's URL is `.../project/<id>/tab/<slug>`; a device tab's is
+`.../project/<id>/device/<id>/<slug>` — same slugifying (your label
+lowercased, anything that isn't `[a-z0-9]` collapsed to a single `-`,
+`'E-Paper'` → `'e-paper'`). Pick a label that slugifies to something
+distinct from your other tabs and — for a device tab — from the built-in
+device sections (`dashboard`, `general`, `files`, `data`, `logs`); nice4iot
+doesn't enforce uniqueness, a collision only surfaces visually (two rows
+opening the same URL).
 
 **Deep-linkable views inside a tab or card.** A tab/card's own content can
 have more than one "screen" of its own — e.g. a list view and a detail

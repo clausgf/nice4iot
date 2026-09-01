@@ -3,10 +3,10 @@ import html
 from typing import Any, Callable, Optional, cast
 
 import anyio
-from nicegui import PageArguments, ui
+from nicegui import PageArguments, context, ui
 
 from app.routes import device_url, project_url
-from app.ui import config_expansion, refresh_breadcrumbs, show_sidebar, status_avatar
+from app.ui import NavItem, config_expansion, refresh_breadcrumbs, render_sidebar, show_sidebar, status_avatar
 from app.core.device.models import Device, DeviceRuntime, ProjectDeviceRow
 from app.core.device.backend import (
     create_device, delete_device, device_adapter, get_device,
@@ -47,47 +47,71 @@ async def device_subpage(
     hamburger: ui.element,
     project_id: str,
     device_id: str,
-    tab: Optional[str] = None,
 ) -> None:
-    """Render the device page: header nav path + tabbed panels.
-
-    Shows the parent project's sidebar (Devices highlighted) rather than
-    growing a third sidebar level of its own — the device's own sections
-    stay a horizontal tab strip in the content area, same as before.
+    """Render the device page: the project sidebar plus a "Device {id}" group
+    for this device's own sections, and nested routing for them — the same
+    two-level NavItem model project_subpage's "Project Settings" group uses,
+    and the same nested-ui.sub_pages routing project_subpage's sections use
+    (each section gets a real, bookmarkable URL instead of the old ?tab=<label>).
     """
     refresh_breadcrumbs(nav, project_id=project_id, device_id=device_id)
 
-    from app.core.project.ui import find_nav_item, project_nav_items  # local: project.ui imports this module
+    from app.core.project.ui import project_nav_items, slugify_tab_label  # local: project.ui imports this module
     project_tab_defs = await anyio.to_thread.run_sync(lambda: get_project_tabs(project_id))
     settings_card_defs = await anyio.to_thread.run_sync(lambda: get_project_settings_cards(project_id))
-    items = project_nav_items(project_id, project_tab_defs, settings_card_defs)
-    devices_item = find_nav_item(items, 'Devices')
-    show_sidebar(drawer, hamburger, sidebar, project_id, items, active=devices_item)
-
     extension_tab_defs = await anyio.to_thread.run_sync(lambda: get_device_tabs(project_id))
-    with ui.tabs().classes('w-full') as tabs:
-        dashboard_tab = ui.tab('Dashboard')
-        general_tab   = ui.tab('General')
-        files_tab     = ui.tab('Files')
-        data_tab      = ui.tab('Data')
-        logs_tab      = ui.tab('Logs')
-        extension_tabs = [(ui.tab(label, icon=icon), render_fn) for label, icon, render_fn in extension_tab_defs]
-    tab = tab or dashboard_tab.label
-    tabs.on_value_change(lambda e: ui.navigate.history.replace(device_url(project_id, device_id, tab=cast(str, e.value))))
-    with ui.tab_panels(tabs, value=tab).classes('w-full'):
-        with ui.tab_panel(dashboard_tab):
-            await device_dashboard_panel(project_id, device_id, args)
-        with ui.tab_panel(general_tab):
-            await device_general_panel(project_id, device_id, args)
-        with ui.tab_panel(files_tab):
-            await device_files_panel(project_id, device_id)
-        with ui.tab_panel(data_tab):
-            await device_data_panel(project_id, device_id)
-        with ui.tab_panel(logs_tab):
-            await device_logs_panel(project_id, device_id)
-        for extension_tab, render_fn in extension_tabs:
-            with ui.tab_panel(extension_tab):
-                await maybe_await(call_with_page_args(render_fn, args, project_id, device_id))
+
+    device_children = (
+        NavItem('Dashboard', 'dashboard', device_url(project_id, device_id)),
+        NavItem('General', 'info', device_url(project_id, device_id, tab='general')),
+        NavItem('Files', 'folder', device_url(project_id, device_id, tab='files')),
+        NavItem('Data', 'insights', device_url(project_id, device_id, tab='data')),
+        NavItem('Logs', 'article', device_url(project_id, device_id, tab='logs')),
+    ) + tuple(
+        NavItem(label, icon, device_url(project_id, device_id, tab=slugify_tab_label(label)))
+        for label, icon, _fn in extension_tab_defs
+    )
+    project_items = project_nav_items(project_id, project_tab_defs, settings_card_defs)
+    # Inserted right after the 'Project' group (Dashboard/Files/Devices), before
+    # any extension/Settings groups — same position 'Devices' has within it.
+    nav_items = [project_items[0], NavItem(f'Device {device_id}', 'developer_board',
+                                            children=device_children), *project_items[1:]]
+    show_sidebar(drawer, hamburger, sidebar, project_id, nav_items)
+    # Clicking a sidebar row navigates within this same device_subpage render
+    # (the nested ui.sub_pages below swaps content in place) — device_subpage
+    # itself doesn't re-run, so the active row has to be recomputed on every
+    # such navigation rather than just once here (see project_subpage).
+    context.client.sub_pages_router.on_path_changed(lambda _: render_sidebar(sidebar, project_id, nav_items))
+
+    async def _dashboard_route() -> None:
+        await device_dashboard_panel(project_id, device_id, args)
+
+    async def _general_route() -> None:
+        await device_general_panel(project_id, device_id, args)
+
+    async def _files_route() -> None:
+        await device_files_panel(project_id, device_id)
+
+    async def _data_route() -> None:
+        await device_data_panel(project_id, device_id)
+
+    async def _logs_route() -> None:
+        await device_logs_panel(project_id, device_id)
+
+    def _tab_route(render_fn):
+        async def _route() -> None:
+            await maybe_await(call_with_page_args(render_fn, args, project_id, device_id))
+        return _route
+
+    routes: dict = {
+        '/': _dashboard_route, '/general': _general_route, '/files': _files_route,
+        '/data': _data_route, '/logs': _logs_route,
+    }
+    for label, _icon, render_fn in extension_tab_defs:
+        routes[f'/{slugify_tab_label(label)}'] = _tab_route(render_fn)
+
+    with ui.column().classes('w-full'):
+        ui.sub_pages(routes).classes('w-full')
 
 
 # ***************************************************************************
@@ -330,7 +354,7 @@ async def _rename_device(project_name: str, old_name: str, new_name: str) -> Non
     try:
         rename_device(project_name, old_name, new_name)
         ui.notify(f"Renamed to {new_name}", type='positive')
-        ui.navigate.to(device_url(project_name, new_name, tab='General'))
+        ui.navigate.to(device_url(project_name, new_name, tab='general'))
     except Exception as e:
         log.exception(f"Rename failed: {e}")
         ui.notify(f"Rename failed: {e}", type='negative')
@@ -538,7 +562,7 @@ class ProjectDevicesTable:
         async def _new_device() -> None:
             name = await prompt_create_device(project_name)
             if name is not None:
-                ui.navigate.to(device_url(project_name, name, tab='General'))
+                ui.navigate.to(device_url(project_name, name, tab='general'))
 
         self.adapter = _ProjectDeviceRowAdapter(project_name, rows)
         grid = ModelGrid.from_adapter(

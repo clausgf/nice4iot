@@ -286,7 +286,9 @@ def register_project_tab(label: str, render_fn: Callable[[str], Any], *, icon: s
 
 
 def register_device_tab(label: str, render_fn: Callable[[str, str], Any], *, icon: str = _DEFAULT_TAB_ICON) -> None:
-    """Register a whole extra tab on the device page, addressed via ?tab=<label>.
+    """Register a whole extra section under the device page's "Device {id}"
+    sidebar group, addressed at its own route (app.routes.device_url(...,
+    tab=slugify_tab_label(label))).
 
     icon is a Material icon name (defaults to a generic 'extension' icon).
     Same PageArguments option as register_project_tab().

@@ -1,6 +1,7 @@
 """Tests for the sidebar-based navigation (app/ui.py's NavItem/render_sidebar,
-project_subpage's nested ui.sub_pages routing, device_subpage reusing the
-project sidebar). No browser available in this environment, so these render
+project_subpage's and device_subpage's nested ui.sub_pages routing — the
+device page adds its own "Device {id}" sidebar group on top of the project
+sidebar's groups). No browser available in this environment, so these render
 headlessly and inspect the resulting nicegui element tree directly — see
 test_data_ui.py for the same approach and the reasoning behind the
 core.loop-patching / draining helpers below.
@@ -324,10 +325,10 @@ def test_project_subpage_extension_settings_card_gets_config_expansion_chrome(pr
 
 
 # ---------------------------------------------------------------------------
-# device_subpage — reuses the project sidebar, own tabs unaffected
+# device_subpage — its own "Device {id}" sidebar group + nested routing
 # ---------------------------------------------------------------------------
 
-def test_device_subpage_shows_project_sidebar_with_devices_active(project_with_device):
+def test_device_subpage_shows_device_sidebar_group_and_dashboard_by_default(project_with_device):
     project, device = project_with_device
     nav = ui.row()
     sidebar = ui.column()
@@ -339,7 +340,9 @@ def test_device_subpage_shows_project_sidebar_with_devices_active(project_with_d
         core.loop = asyncio.get_running_loop()
         with container:
             from nicegui import context
-            context.client.sub_pages_router.current_path = f'/project/{project}/device/{device}'
+            # Matches what the router would show for a real visit to this
+            # device's (default) dashboard — see _render_project_subpage.
+            context.client.sub_pages_router.current_path = f'/ui/project/{project}/device/{device}'
             await device_subpage(_page_args(), nav, sidebar, drawer, hamburger, project, device)
         await _drain()
 
@@ -348,21 +351,24 @@ def test_device_subpage_shows_project_sidebar_with_devices_active(project_with_d
     assert drawer.shown is True
     assert hamburger.visible is True
     sidebar_labels = _labels(sidebar)
-    for expected in ('Dashboard', 'Project', 'Files', 'Devices'):
+    for expected in ('Dashboard', 'Project', 'Files', 'Devices', f'Device {device}', 'General', 'Data', 'Logs'):
         assert expected in sidebar_labels
 
+    # The device's own Dashboard row is active, not the project's 'Devices' row.
     items = _find_all(sidebar, ui.item)
+    active_items = [i for i in items if 'bg-primary' in i._classes]
+    assert len(active_items) == 1 and _labels(active_items[0]) == ['Dashboard']
     devices_item = next(i for i in items if 'Devices' in _labels(i))
-    assert 'bg-primary' in devices_item._classes
+    assert 'bg-primary' not in devices_item._classes
 
-    # the device's own horizontal tab strip is untouched
-    tab_labels = [t.props.get('label') or t.props.get('name') for t in _find_all(container, ui.tab)]
-    assert 'Dashboard' in tab_labels
-    assert 'Data' in tab_labels
-    assert 'Logs' in tab_labels
+    assert 'Device status' in _labels(container)   # device_dashboard_panel's own content
+
+    # No more horizontal tab strip — the device's sections are sidebar rows now.
+    from nicegui.elements.tabs import Tabs
+    assert _find_all(container, Tabs) == []
 
 
-def test_device_general_tab_has_firmware_download_card(project_with_device):
+def test_device_general_route_has_firmware_download_card(project_with_device):
     """Regression: a 2026-08-05 refactor (commit d472c1a) silently dropped the
     device-level Firmware Download card from device_general_panel() — the
     backend (per-directory FirmwareSource) never lost the ability, only the
@@ -379,8 +385,12 @@ def test_device_general_tab_has_firmware_download_card(project_with_device):
         core.loop = asyncio.get_running_loop()
         with container:
             from nicegui import context
-            context.client.sub_pages_router.current_path = f'/project/{project}/device/{device}'
-            await device_subpage(_page_args(), nav, sidebar, drawer, hamburger, project, device, tab='General')
+            # device_subpage's own nested ui.sub_pages has no real parent
+            # SubPages ancestor in this isolated render, so root_path falls
+            # back to None — matching route needs the bare segment, same as
+            # test_project_subpage_general_route's '/settings/project'.
+            context.client.sub_pages_router.current_path = '/general'
+            await device_subpage(_page_args(), nav, sidebar, drawer, hamburger, project, device)
         await _drain()
 
     asyncio.run(run())

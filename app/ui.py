@@ -90,10 +90,8 @@ def render_sidebar(container: ui.element, heading: str, items: list[NavItem], *,
     a project tab that opens its own nested ui.sub_pages still highlights on
     any of its own sub-routes, while a plain leaf like Dashboard — whose url
     is every other item's own prefix — never wrongly outranks a more
-    specific match). Pass `active` explicitly when the real URL doesn't share
-    a prefix with any item's own — device_subpage does this: a device's own
-    URL (.../device/<id>) shares no prefix with the Devices item's
-    (.../devices), so it can't be found this way.
+    specific match). Pass `active` explicitly for a page whose real URL
+    doesn't share a prefix with any item's own, so it can't be found this way.
 
     Call again whenever client-side sub_pages navigation changes the path,
     since the active row can change without this page's own builder re-running

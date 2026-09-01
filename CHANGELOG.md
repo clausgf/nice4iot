@@ -4,6 +4,26 @@ All notable changes to this project are documented here. Per `CLAUDE.md`, every
 API change must be recorded. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.39.1] - 2026-09-01
+
+### Changed
+
+- **Device page navigation moved to the sidebar**, dropping its horizontal
+  tab strip: the device page now adds a "Device {id}" group to the project
+  sidebar (`app/core/device/ui.py::device_subpage`) with Dashboard/General/
+  Files/Data/Logs — and any extension-registered device tab — as its
+  children, the same two-level `NavItem` model `project_subpage`'s "Project
+  Settings" group already uses. Each section is now a real, bookmarkable
+  route (`.../device/<id>/general`, `/files`, ...) via a nested
+  `ui.sub_pages`, replacing the old `?tab=<label>` query-param addressing —
+  `app.routes.device_url(project_id, device_id, tab=...)`'s `tab` is now a
+  raw trailing path segment (`'general'`, `'files'`, ...) instead of a
+  display label passed as a `?tab=` query parameter, matching
+  `project_url()`; `register_device_tab()` device tabs are addressed the
+  same way. Clicking into a device no longer force-highlights the project's
+  "Devices" row; the device's own active section highlights instead, via
+  the same longest-matching-URL-prefix logic the rest of the sidebar uses.
+
 ## [0.39.0] - 2026-09-01
 
 ### Changed
