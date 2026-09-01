@@ -12,7 +12,7 @@ Four concerns, all synchronous and free of NiceGUI so they stay easy to test:
 * **Approval** — a schema is inert until its content hash is approved, so a
   device-uploaded schema cannot drive the admin's form on its own.
 * **View plan** — `plan_json_view()` combines the three into the decision the
-  detail view needs: Form tab or not, which tab is default, approval pending.
+  detail view needs: Form tab or not, approval pending.
 
 Rendering lives in `form_ui.py` / `detail_ui.py`; the field specs
 produced here are never fed to `pydantic.create_model` or niceview, which keeps
@@ -92,7 +92,10 @@ def _int(v: Any) -> int | None:
     return v if isinstance(v, int) and not isinstance(v, bool) else None
 
 
-def _empty_for(kind: str) -> Any:
+def empty_value_for_kind(kind: str) -> Any:
+    """The placeholder value a field of *kind* shows when unset — also used on
+    save to tell an untouched field apart from one the user set to that same
+    value on purpose (see detail_ui._render_json_tabs)."""
     return {'boolean': False, 'string_list': []}.get(kind, None if kind in ('integer', 'number') else '')
 
 
@@ -134,7 +137,7 @@ def fields_from_schema(schema: dict, data: dict) -> list[FormField] | None:
         if kind is None:
             continue
         default = spec.get('default')
-        value = data.get(name, default if default is not None else _empty_for(kind))
+        value = data.get(name, default if default is not None else empty_value_for_kind(kind))
         fields.append(FormField(
             key=name, kind=kind, value=value,
             label=spec.get('title') if isinstance(spec.get('title'), str) else None,
@@ -290,13 +293,13 @@ class JsonView:
     """What the JSON detail view shows for one file, decided without any NiceGUI.
 
     This is the decision table from docs/concepts.md in code: whether there is a
-    Form tab at all, which tab is default, and whether a schema is waiting for
-    approval. The renderer only switches on the result.
+    Form tab at all, and whether a schema is waiting for approval. Raw is always
+    the first tab and the default — see docs/concepts.md's "Editing files in the
+    UI" table. The renderer only switches on the result.
     """
     text: str                               # raw-editor content: pretty JSON, or the file verbatim
     data: dict                              # parsed object the form merges its values into
     fields: list[FormField] | None = None   # None → raw editor only, no Form tab
-    form_default: bool = False              # show the Form tab first
     pending_schema: Path | None = None      # unapproved schema → approval banner, raw only
     note: str | None = None                 # one line of explanation above the editor
     layout: list[list[str]] | None = None   # schema's x-ui.layout hint, or None for one row/field
@@ -336,7 +339,7 @@ def plan_json_view(path: Path, project_name: str, fallback_dir: Path | None) -> 
         schema_fields = fields_from_schema(schema, parsed) if schema is not None else None
         if schema is not None and schema_fields is not None:
             layout = layout_from_schema(schema, schema_fields)
-            return JsonView(text=pretty, data=parsed, fields=schema_fields, form_default=True, layout=layout)
+            return JsonView(text=pretty, data=parsed, fields=schema_fields, layout=layout)
         # An approved but unusable schema falls back to inference, with a note —
         # silently ignoring it would look like the schema had no effect.
         note = 'Schema present but not a usable flat-object schema; editing raw.'

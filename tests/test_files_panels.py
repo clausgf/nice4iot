@@ -207,11 +207,15 @@ def test_detail_json_tabs_sync_edits_across_switch(project_with_device):
             file_detail(adapter, 'cfg.json', ctx)
 
         tabs = _find_all(container, Tabs)[0]
+
+        # Raw is the default tab; switch to Form to edit there.
+        tabs.value = 'Form'
+        await asyncio.sleep(0)
         mode_select = _find_all(container, Select)[0]
         count_number = _find_all(container, Number)[0]
         assert mode_select.value == 'eco' and count_number.value == 3
 
-        # Edit in the (default) Form tab, then switch to Raw — the edit must show
+        # Edit in the Form tab, then switch to Raw — the edit must show
         # up, unsaved (the on-disk file is untouched).
         mode_select.value = 'turbo'
         count_number.value = 7
@@ -229,6 +233,72 @@ def test_detail_json_tabs_sync_edits_across_switch(project_with_device):
         mode_select = _find_all(container, Select)[0]
         count_number = _find_all(container, Number)[0]
         assert mode_select.value == 'eco' and count_number.value == 9
+
+    asyncio.run(run())
+
+
+def _click(button: ui.button) -> None:
+    """Fire a button's click handler the way a real websocket event would —
+    there is no browser here to click it for real."""
+    from nicegui.events import GenericEventArguments, handle_event
+    listener = next(l for l in button._event_listeners.values() if l.type == 'click')
+    handle_event(listener.handler, GenericEventArguments(sender=button, client=button.client, args=[]))
+
+
+def test_detail_form_save_omits_an_untouched_field_the_document_never_had(project_with_device):
+    """A schema field the JSON doesn't have gets an empty placeholder to show in
+    the widget (see form.empty_value_for_kind), but saving the Form tab without
+    touching it must not write that placeholder back — the file should stay
+    exactly as sparse as it was, not gain an explicit null/''/false."""
+    import json
+
+    from nicegui.elements.button import Button
+    from nicegui.elements.number import Number
+
+    from app.core.file.form import approve_schema
+
+    project, device = project_with_device
+    path = device_dir(project, device) / 'cfg.json'
+    path.write_text('{"mode": "eco"}')
+    schema = device_dir(project, device) / 'cfg.schema.json'
+    schema.write_text("""{"type":"object","properties":{
+        "mode":  {"type":"string","enum":["eco","turbo"]},
+        "count": {"type":"integer"}}}""")
+    approve_schema(schema, project)
+
+    from app.core.file.detail_ui import file_detail
+    from app.core.file.overlay import FileCtx, OverlayDirectoryAdapter
+    from app.util import is_valid_upload_filename
+
+    ctx = FileCtx(project, device, False, underlay_dir=project_dir(project))
+    adapter = OverlayDirectoryAdapter(device_dir(project, device), project_dir(project),
+                                      suffix=None, name_filter=is_valid_upload_filename)
+    container = ui.column()
+
+    async def run() -> None:
+        from nicegui import core
+        core.loop = asyncio.get_running_loop()
+
+        with container:
+            file_detail(adapter, 'cfg.json', ctx)
+
+        from nicegui.elements.tabs import Tabs
+        tabs = _find_all(container, Tabs)[0]
+        tabs.value = 'Form'
+        await asyncio.sleep(0)
+
+        # Raw and Form each have their own Save button (both render eagerly,
+        # Raw first — see _render_json_tabs); the Form one is the second.
+        save_button = [b for b in _find_all(container, Button) if b.text == 'Save'][1]
+        _click(save_button)
+        await asyncio.sleep(0)
+        assert json.loads(path.read_text()) == {'mode': 'eco'}   # count still absent
+
+        count_number = _find_all(container, Number)[0]
+        count_number.value = 5
+        _click(save_button)
+        await asyncio.sleep(0)
+        assert json.loads(path.read_text()) == {'mode': 'eco', 'count': 5}   # now explicit
 
     asyncio.run(run())
 

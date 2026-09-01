@@ -18,7 +18,10 @@ All device endpoints require `Authorization: Bearer <device_token>`.
 | `PUT` | `/api/file/{project}/{device}/{filename}` | Upload a file |
 | `GET` | `/api/forward/{project}/{device}/{name}/{path}` | Proxy request to configured upstream |
 
-Interactive API docs: `http://localhost:8000/docs`
+Interactive API docs (Swagger UI): `http://localhost:8000/docs`. Raw OpenAPI
+schema (for client codegen, contract tests, ...): `http://localhost:8000/openapi.json`.
+This page covers device-facing conventions; the OpenAPI doc is authoritative for
+request/response schemas and status codes.
 
 ## Reporting firmware version (optional)
 
@@ -114,6 +117,34 @@ firmware version and board (from the `system`-kind push's cached snapshot, see
 below), and the **Data** tab can overlay a vertical marker wherever a chosen
 label's value changed (*Label markers* selector, backed by the full local
 label history).
+
+### The `system` telemetry kind
+
+`kind=system` is nice4iot-reserved: the server snapshots each push of this
+kind wholesale into the device's runtime sidecar (`.runtime.json`) for O(1)
+access from the UI (Device Dashboard Status card, Devices table), instead of
+scanning the metrics history. A field a push omits is absent from the
+snapshot, not stale from a previous push — the snapshot always reflects
+exactly the last `system` write.
+
+[arduino4iot](https://github.com/clausgf/arduino4iot)'s `postSystemTelemetry()`
+uses this kind and reports these well-known keys — a convention, not enforced
+by the server:
+
+| Key | Type | Meaning |
+|---|---|---|
+| `battery_V` | numeric | Battery voltage. |
+| `wifi_rssi` | numeric | Wi-Fi signal strength (dBm). |
+| `boot_count` | numeric | Number of boots since first provisioning. |
+| `active_ms` | numeric | Time spent awake this cycle (ms). |
+| `board` | string (label) | Hardware board identifier. |
+| `firmware_version` | string (label) | See [Reporting firmware version](#reporting-firmware-version-optional) — reserved, updates the device's runtime firmware state. |
+| `firmware_id`, `firmware_sha256` | string (label) | Optional build identifiers, alongside `firmware_version`. |
+
+A project extension that pushes its own telemetry (e.g. nicepaper's `epaper`
+kind) registers its kind via `app.extensions.register_telemetry_cache_kind()`
+to get the same wholesale-snapshot caching, keyed by kind, instead of
+overloading the reserved `system` kind.
 
 ---
 

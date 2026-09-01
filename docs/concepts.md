@@ -124,13 +124,18 @@ What a file opens as:
 
 | File | Default view | Also available |
 |---|---|---|
-| JSON with an approved schema | **Form** | Raw (CodeMirror) |
-| Flat JSON, no schema | Raw | Form (types inferred from the values) |
+| JSON with an approved schema | **Raw** (CodeMirror) | Form |
+| Flat JSON, no schema | **Raw** | Form (types inferred from the values) |
 | Non-flat JSON, recognised text | Raw | — |
 | Image (png/jpg/gif/webp ≤ 2 MB) | Preview | — |
 | Anything else | — | download only |
 
-"Flat JSON" means a top-level object whose values are all scalars or string arrays. Saving the **form** writes back only the fields it shows and preserves every other key in the file, so a schema that covers part of a document is data-safe; the raw editor writes the whole document verbatim.
+Raw is always the first tab and the one shown by default, even when a schema
+makes a Form tab available. "Flat JSON" means a top-level object whose values
+are all scalars or string arrays. Saving the **form** writes back only the
+fields it shows and preserves every other key in the file, so a schema that
+covers part of a document is data-safe; the raw editor writes the whole
+document verbatim.
 
 ### Schema-driven JSON forms
 
@@ -156,6 +161,8 @@ Not supported: nested objects · arrays of non-strings · `$ref` · `pattern` ·
 **The Raw tab always renders**, even when a schema-driven Form tab fails to — a widget the schema subset lets through but the rendering layer rejects (e.g. a future case like the empty-enum one above) shows its error inline in the Form tab instead of taking the whole detail view down.
 
 **Layout.** An optional top-level `x-ui.layout` groups fields into rows: a list of rows, each a list of property names sharing one row (`[["panel", "rotation"], ["image_path"]]`). Names that aren't a property the schema subset produced are dropped, and any property the layout doesn't mention still gets its own row — so a stale or partial hint can reorder/group fields but never hide or duplicate one. Absent or malformed `x-ui.layout` keeps the default: one field per row.
+
+**Missing vs. empty on save.** A schema field the document doesn't have gets its `default` (or a kind-specific placeholder — `''`, `0`-less/`None`, `false`, `[]`) so the widget has something to show. Saving the Form tab only writes that field back if it's already in the document, or the user changed it away from the placeholder — a field the document never had stays absent unless you actually set it, instead of the Form tab silently densifying the JSON with nulls/`""`/`false` for fields nobody touched. A field already in the document stays as explicitly settable as before (including back to `""`/`0`/`false`).
 
 **Approval.** A device holds a valid token, so a schema it uploads is untrusted input that would otherwise shape an admin's form. An uploaded schema is therefore **inert until a user approves it**, and approval is bound to the schema's **content hash**: if the device changes the file, the hash changes, the approval lapses and the UI asks again. A schema created or edited in the UI is admin provenance and is approved at save time. Approved hashes live in `<project>/.schema_approvals.json`.
 

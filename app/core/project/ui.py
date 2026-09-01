@@ -94,7 +94,7 @@ def project_nav_items(project_id: str, extension_tab_defs: Sequence[tuple[str, s
                       settings_card_defs: Sequence[tuple[str, object]] = ()) -> list[NavItem]:
     """The project sidebar's rows — a 'Project' group (Dashboard/Files/Devices),
     one group per enabled extension (its project tabs, in registration order),
-    and a trailing 'Settings' group (the old General tab's sections, plus any
+    and a trailing 'Project Settings' group (the old General tab's sections, plus any
     extension-registered 'settings' cards, each its own child page — see
     SETTINGS_SECTIONS). Shared with device_subpage, which shows the same
     sidebar (with 'Devices' as the active row) while drilled into a device,
@@ -120,7 +120,7 @@ def project_nav_items(project_id: str, extension_tab_defs: Sequence[tuple[str, s
         )),
         *(NavItem(extension_name, 'extension', children=tuple(items))
           for extension_name, items in extension_groups.items()),
-        NavItem('Settings', 'settings', children=tuple(settings_children)),
+        NavItem('Project Settings', 'settings', children=tuple(settings_children)),
     ]
 
 
@@ -291,13 +291,13 @@ async def project_dashboard_panel(project_id: str, args: PageArguments) -> None:
 
 # ***************************************************************************
 
-# (slug, label, icon) for each of the "Settings" sidebar group's built-in
+# (slug, label, icon) for each of the "Project Settings" sidebar group's built-in
 # children, in sidebar order. A child's page may stack more than one of the
 # old General-tab expansions (all expanded by default, since there's only
 # ever one or a few per page now, unlike the old single crowded General tab)
 # — see _settings_section_renderers().
 SETTINGS_SECTIONS: tuple[tuple[str, str, str], ...] = (
-    ('project', 'Project', 'info'),
+    ('project', 'General', 'info'),
     ('provisioning', 'Provisioning', 'verified_user'),
     ('forwarding', 'Forwarding', 'call_split'),
     ('telemetry', 'Telemetry', 'insights'),

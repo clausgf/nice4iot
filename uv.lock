@@ -1424,8 +1424,8 @@ wheels = [
 
 [[package]]
 name = "nicepaper"
-version = "0.32.2"
-source = { git = "https://github.com/clausgf/nicepaper.git#a07e2a546a4b03d6fa3edc54e4c21031458fc0cc" }
+version = "0.33.0"
+source = { git = "https://github.com/clausgf/nicepaper.git#1d6d263023ebac4964cfecce836aed97112be84f" }
 dependencies = [
     { name = "aiofiles" },
     { name = "aiohttp" },

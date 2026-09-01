@@ -4,6 +4,44 @@ All notable changes to this project are documented here. Per `CLAUDE.md`, every
 API change must be recorded. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.39.0] - 2026-09-01
+
+### Changed
+
+- **Project sidebar renamed**: the trailing "Settings" group is now
+  "Project Settings", and its first entry ("Project") is back to "General"
+  (`app/core/project/ui.py` — `SETTINGS_SECTIONS`, `project_nav_items()`;
+  routes/slugs unchanged).
+- **File Editor's Raw tab is now always first and the default view**, even
+  for a JSON file with an approved schema — previously a schema-driven
+  form opened first. `JsonView.form_default` is gone
+  (`app/core/file/form.py`, `app/core/file/detail_ui.py`); see
+  `docs/concepts.md`'s "Editing files in the UI" table.
+- `docs/device-api.md`: added a reference to the raw OpenAPI schema
+  (`/openapi.json`, alongside the existing `/docs` Swagger UI link) and a
+  new "The `system` telemetry kind" section documenting the well-known
+  `battery_V`/`wifi_rssi`/`boot_count`/`active_ms`/`board`/`firmware_*`
+  keys arduino4iot's system push reports, and how an extension registers
+  its own kind for the same wholesale-snapshot caching.
+- Bumped `nicepaper` to 0.33.0: `image.png` gained a `force` query
+  parameter for an unconditional re-render (used by the Displays detail's
+  "Current" preview to avoid showing a stale image), panel-type selects
+  now show the catalog's `panel_id` alongside its name, Room Displays rows
+  flag a configured/reported panel mismatch, and booking data can be
+  reloaded on demand bypassing the iCal cache. No nice4iot changes needed.
+
+### Fixed
+
+- **Saving a schema-driven Form no longer densifies the JSON with
+  nulls/`""`/`false` for fields the document never had.** A schema field
+  missing from the file gets an empty placeholder value to show in its
+  widget (new `form.empty_value_for_kind()`), but the Form tab's save
+  handler now only writes that field back if it was already present, or
+  the user actually changed it away from the placeholder
+  (`app/core/file/detail_ui.py::_render_json_tabs`). A field already in
+  the document stays as explicitly settable as before (including back to
+  `""`/`0`/`false`).
+
 ## [0.38.4] - 2026-09-01
 
 ### Changed

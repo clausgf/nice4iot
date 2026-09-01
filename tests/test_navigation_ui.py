@@ -94,7 +94,7 @@ def test_project_nav_items_built_in_and_extension():
     items = project_nav_items('proj', [('epaper', 'E-Paper', 'tv', object())],
                               [('Some Card', object())])
     labels = [i.label for i in items]
-    assert labels == ['Project', 'epaper', 'Settings']
+    assert labels == ['Project', 'epaper', 'Project Settings']
 
     project_group = items[0]
     assert project_group.url is None  # a group, not a leaf — see app.ui.NavItem
@@ -112,9 +112,9 @@ def test_project_nav_items_built_in_and_extension():
     settings = items[2]
     assert settings.url is None
     child_labels = [c.label for c in settings.children]
-    assert child_labels[:2] == ['Project', 'Provisioning']
+    assert child_labels[:2] == ['General', 'Provisioning']
     assert 'Some Card' in child_labels
-    project_child = next(c for c in settings.children if c.label == 'Project')
+    project_child = next(c for c in settings.children if c.label == 'General')
     assert project_child.url == project_url('proj', tab='settings/project')
     card_child = next(c for c in settings.children if c.label == 'Some Card')
     assert card_child.url == project_url('proj', tab='settings/tab/some-card')
@@ -138,7 +138,7 @@ def test_project_nav_items_separate_groups_per_extension():
         ('weather', 'Forecast', 'cloud', fn),
     ])
     labels = [i.label for i in items]
-    assert labels == ['Project', 'epaper', 'weather', 'Settings']
+    assert labels == ['Project', 'epaper', 'weather', 'Project Settings']
 
 
 # ---------------------------------------------------------------------------

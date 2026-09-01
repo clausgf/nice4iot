@@ -21,7 +21,7 @@ from typing import Any, Callable
 from nicegui import ui
 
 from app.core.file.backend import publish_file_now
-from app.core.file.form import JsonView, approve_schema, plan_json_view
+from app.core.file.form import JsonView, approve_schema, empty_value_for_kind, plan_json_view
 from app.core.file.form_ui import render_form_fields
 from app.core.file.overlay import FileCtx, OverlayDirectoryAdapter, OverlayFileEntry
 from app.util import atomic_write, human_size
@@ -214,13 +214,21 @@ def _render_json_tabs(entry: OverlayFileEntry, ctx: FileCtx, view: JsonView,
             return
         form_collect[:] = [collect]
 
+        kinds = {f.key: f.kind for f in fields}
+
         def _save() -> None:
             if (values := collect()) is None:
                 return
             # Merge into the live object: overwrite only the form's keys, keep the
-            # rest (a schema may cover only part of the file).
+            # rest (a schema may cover only part of the file). A key the document
+            # never had and whose widget is still at its kind's empty placeholder
+            # stays absent — so opening and saving the Form tab doesn't densify
+            # the JSON with nulls/""/false for fields nobody touched.
             merged = dict(live)
-            merged.update(values)
+            for key, value in values.items():
+                if key not in live and value == empty_value_for_kind(kinds[key]):
+                    continue
+                merged[key] = value
             _commit(entry, ctx, json.dumps(merged, indent=2, ensure_ascii=False) + '\n', refresh)
 
         _save_button(entry, _save)
@@ -245,15 +253,15 @@ def _render_json_tabs(entry: OverlayFileEntry, ctx: FileCtx, view: JsonView,
         _save_button(entry, _save)
 
     with ui.tabs().classes('w-full') as tabs:
-        form_tab = ui.tab('Form')
         raw_tab = ui.tab('Raw')
-    with ui.tab_panels(tabs, value=(form_tab if view.form_default else raw_tab)).classes('w-full'):
-        with ui.tab_panel(form_tab):
-            form_panel()
+        form_tab = ui.tab('Form')
+    with ui.tab_panels(tabs, value=raw_tab).classes('w-full'):
         with ui.tab_panel(raw_tab):
             raw_panel()
+        with ui.tab_panel(form_tab):
+            form_panel()
 
-    active = {'name': 'Form' if view.form_default else 'Raw'}
+    active = {'name': 'Raw'}
 
     def _on_tab_change(e: Any) -> None:
         previous, active['name'] = active['name'], e.value
