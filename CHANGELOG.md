@@ -4,6 +4,33 @@ All notable changes to this project are documented here. Per `CLAUDE.md`, every
 API change must be recorded. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.39.2] - 2026-09-02
+
+### Changed
+
+- **Device page gained a "Device {id} Settings" sidebar group**, splitting
+  the old flat device Settings/General page (Device / Authentication
+  Tokens / Firmware Seed / Firmware Download / Danger Zone) into its own
+  routed children — mirroring how `SETTINGS_SECTIONS` already did this for
+  the project page (`app/core/device/ui.py` gains
+  `DEVICE_SETTINGS_SECTIONS` + `_device_settings_section_renderers()`,
+  replacing `device_general_panel()`). "Device" and "Danger Zone" stay
+  bundled onto one "General" child page, same as the project's own
+  "General" section bundles General/Files/Extensions/Danger Zone.
+  `register_device_card('settings', ...)` cards now get their own routed
+  child page here too (`.../device/<id>/settings/tab/<slug>`), the same
+  convention `register_project_card('settings', ...)` already used. The
+  device sidebar's top-level groups are now ordered
+  `Project → Device {id} → [project extensions] → Device {id} Settings →
+  Project Settings` — content groups first, settings groups last, each
+  narrowing then widening in scope.
+- Removed `app.core.project.ui.find_nav_item()`: dead code since the
+  device-sidebar refactor (0.39.1) removed its only caller.
+- Bumped `coverage`, `protobuf`, `pydantic`, `pydantic-core` and
+  `python-engineio` to their latest resolvable versions (`uv lock
+  --upgrade`); `niceview` and `nicepaper` were already pinned to their
+  latest commits, no change.
+
 ## [0.39.1] - 2026-09-01
 
 ### Changed

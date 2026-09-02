@@ -96,10 +96,8 @@ def project_nav_items(project_id: str, extension_tab_defs: Sequence[tuple[str, s
     one group per enabled extension (its project tabs, in registration order),
     and a trailing 'Project Settings' group (the old General tab's sections, plus any
     extension-registered 'settings' cards, each its own child page — see
-    SETTINGS_SECTIONS). Shared with device_subpage, which shows the same
-    sidebar (with 'Devices' as the active row) while drilled into a device,
-    rather than growing a third sidebar level of its own — see
-    find_nav_item() for locating a row nested under one of these groups."""
+    SETTINGS_SECTIONS). device_subpage builds on this list, inserting its own
+    'Device {id}' group for the device's own sections."""
     settings_children = [
         NavItem(label, icon, project_url(project_id, tab=f'settings/{slug}'))
         for slug, label, icon in SETTINGS_SECTIONS
@@ -123,13 +121,6 @@ def project_nav_items(project_id: str, extension_tab_defs: Sequence[tuple[str, s
         NavItem('Project Settings', 'settings', children=tuple(settings_children)),
     ]
 
-
-def find_nav_item(items: list[NavItem], label: str) -> NavItem:
-    """Locate a row by label anywhere in items — top-level or nested one level
-    under a group (see project_nav_items(), NavItem: "only one level of
-    nesting is supported"). Raises StopIteration if not found, same as a bare
-    next(...) would."""
-    return next(item for parent in items for item in (parent.children or (parent,)) if item.label == label)
 
 
 async def project_subpage(args: PageArguments, nav: ui.element, sidebar: ui.element,

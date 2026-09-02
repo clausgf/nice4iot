@@ -193,10 +193,9 @@ from app.extensions import (
 
 Cards render inside the existing **Dashboard**, or the settings area, of a
 project or device page, alongside the built-in cards — a project's
-**Settings** sidebar group (its own child page per card), a device's flat
-**General** tab (both still called "General" in the device UI; only the
-project page moved to the Settings sidebar). The two sections have
-different conventions:
+**Project Settings** sidebar group and a device's **Device {id} Settings**
+sidebar group, each its own child page per card. The two sections have
+the same conventions:
 
 ```python
 def register_project_card(section: Literal['dashboard', 'settings'],

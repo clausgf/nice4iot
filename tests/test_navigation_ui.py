@@ -351,7 +351,9 @@ def test_device_subpage_shows_device_sidebar_group_and_dashboard_by_default(proj
     assert drawer.shown is True
     assert hamburger.visible is True
     sidebar_labels = _labels(sidebar)
-    for expected in ('Dashboard', 'Project', 'Files', 'Devices', f'Device {device}', 'General', 'Data', 'Logs'):
+    for expected in ('Dashboard', 'Project', 'Files', 'Devices', f'Device {device}', 'Data', 'Logs',
+                     f'Device {device} Settings', 'General', 'Authentication Tokens',
+                     'Firmware Seed', 'Firmware Download', 'Project Settings'):
         assert expected in sidebar_labels
 
     # The device's own Dashboard row is active, not the project's 'Devices' row.
@@ -368,13 +370,10 @@ def test_device_subpage_shows_device_sidebar_group_and_dashboard_by_default(proj
     assert _find_all(container, Tabs) == []
 
 
-def test_device_general_route_has_firmware_download_card(project_with_device):
-    """Regression: a 2026-08-05 refactor (commit d472c1a) silently dropped the
-    device-level Firmware Download card from device_general_panel() — the
-    backend (per-directory FirmwareSource) never lost the ability, only the
-    UI wiring did, unnoticed for 15+ releases since nothing rendered this
-    panel in a test."""
-    project, device = project_with_device
+def _render_device_settings_route(project: str, device: str, path: str):
+    """Render device_subpage at a Device {id} Settings child route and return
+    its config_expansion() titles. *path* is the bare route segment, not the
+    full URL — see test_project_subpage_general_route for why."""
     nav = ui.row()
     sidebar = ui.column()
     drawer = _FakeToggle()
@@ -389,16 +388,31 @@ def test_device_general_route_has_firmware_download_card(project_with_device):
             # SubPages ancestor in this isolated render, so root_path falls
             # back to None — matching route needs the bare segment, same as
             # test_project_subpage_general_route's '/settings/project'.
-            context.client.sub_pages_router.current_path = '/general'
+            context.client.sub_pages_router.current_path = path
             await device_subpage(_page_args(), nav, sidebar, drawer, hamburger, project, device)
         await _drain()
 
     asyncio.run(run())
-
     # config_expansion() titles are Quasar-rendered (the expansion's own
     # `text`, a prop), not plain ui.label/item_label text — see
     # test_project_subpage_extension_settings_card_gets_config_expansion_chrome.
     from nicegui.elements.expansion import Expansion
-    expansion_titles = [e.text for e in _find_all(container, Expansion)]
-    assert 'Firmware Seed' in expansion_titles
-    assert 'Firmware Download' in expansion_titles
+    return [e.text for e in _find_all(container, Expansion)]
+
+
+def test_device_settings_general_route_has_device_and_danger_zone_cards(project_with_device):
+    project, device = project_with_device
+    titles = _render_device_settings_route(project, device, '/settings/device')
+    assert 'General' in titles
+    assert 'Danger Zone' in titles
+
+
+def test_device_settings_firmware_route_has_firmware_download_card(project_with_device):
+    """Regression: a 2026-08-05 refactor (commit d472c1a) silently dropped the
+    device-level Firmware Download card from the device Settings — the
+    backend (per-directory FirmwareSource) never lost the ability, only the
+    UI wiring did, unnoticed for 15+ releases since nothing rendered this
+    panel in a test."""
+    project, device = project_with_device
+    assert 'Firmware Seed' in _render_device_settings_route(project, device, '/settings/firmware-seed')
+    assert 'Firmware Download' in _render_device_settings_route(project, device, '/settings/firmware')

@@ -49,21 +49,21 @@ async def device_subpage(
     device_id: str,
 ) -> None:
     """Render the device page: the project sidebar plus a "Device {id}" group
-    for this device's own sections, and nested routing for them — the same
-    two-level NavItem model project_subpage's "Project Settings" group uses,
-    and the same nested-ui.sub_pages routing project_subpage's sections use
-    (each section gets a real, bookmarkable URL instead of the old ?tab=<label>).
+    for this device's own content and a "Device {id} Settings" group for its
+    config sections — the same two-level NavItem model and nested-ui.sub_pages
+    routing project_subpage's "Project" / "Project Settings" groups use (each
+    section gets a real, bookmarkable URL, not the old ?tab=<label>).
     """
     refresh_breadcrumbs(nav, project_id=project_id, device_id=device_id)
 
     from app.core.project.ui import project_nav_items, slugify_tab_label  # local: project.ui imports this module
     project_tab_defs = await anyio.to_thread.run_sync(lambda: get_project_tabs(project_id))
-    settings_card_defs = await anyio.to_thread.run_sync(lambda: get_project_settings_cards(project_id))
+    project_settings_card_defs = await anyio.to_thread.run_sync(lambda: get_project_settings_cards(project_id))
     extension_tab_defs = await anyio.to_thread.run_sync(lambda: get_device_tabs(project_id))
+    device_settings_card_defs = await anyio.to_thread.run_sync(lambda: get_device_settings_cards(project_id))
 
     device_children = (
         NavItem('Dashboard', 'dashboard', device_url(project_id, device_id)),
-        NavItem('General', 'info', device_url(project_id, device_id, tab='general')),
         NavItem('Files', 'folder', device_url(project_id, device_id, tab='files')),
         NavItem('Data', 'insights', device_url(project_id, device_id, tab='data')),
         NavItem('Logs', 'article', device_url(project_id, device_id, tab='logs')),
@@ -71,11 +71,25 @@ async def device_subpage(
         NavItem(label, icon, device_url(project_id, device_id, tab=slugify_tab_label(label)))
         for label, icon, _fn in extension_tab_defs
     )
-    project_items = project_nav_items(project_id, project_tab_defs, settings_card_defs)
-    # Inserted right after the 'Project' group (Dashboard/Files/Devices), before
-    # any extension/Settings groups — same position 'Devices' has within it.
-    nav_items = [project_items[0], NavItem(f'Device {device_id}', 'developer_board',
-                                            children=device_children), *project_items[1:]]
+    device_settings_children = tuple(
+        NavItem(label, icon, device_url(project_id, device_id, tab=f'settings/{slug}'))
+        for slug, label, icon in DEVICE_SETTINGS_SECTIONS
+    ) + tuple(
+        NavItem(title, 'extension', device_url(project_id, device_id, tab=f'settings/tab/{slugify_tab_label(title)}'))
+        for title, _fn in device_settings_card_defs
+    )
+    project_items = project_nav_items(project_id, project_tab_defs, project_settings_card_defs)
+    # project_items is always [Project, *extension groups, Project Settings] —
+    # Device/Device Settings slot in around it: content groups first (Project,
+    # Device, extensions), settings groups last (Device Settings, Project
+    # Settings), narrowing then widening in scope either side of the divide.
+    nav_items = [
+        project_items[0],
+        NavItem(f'Device {device_id}', 'developer_board', children=device_children),
+        *project_items[1:-1],
+        NavItem(f'Device {device_id} Settings', 'settings', children=device_settings_children),
+        project_items[-1],
+    ]
     show_sidebar(drawer, hamburger, sidebar, project_id, nav_items)
     # Clicking a sidebar row navigates within this same device_subpage render
     # (the nested ui.sub_pages below swaps content in place) — device_subpage
@@ -85,9 +99,6 @@ async def device_subpage(
 
     async def _dashboard_route() -> None:
         await device_dashboard_panel(project_id, device_id, args)
-
-    async def _general_route() -> None:
-        await device_general_panel(project_id, device_id, args)
 
     async def _files_route() -> None:
         await device_files_panel(project_id, device_id)
@@ -103,12 +114,26 @@ async def device_subpage(
             await maybe_await(call_with_page_args(render_fn, args, project_id, device_id))
         return _route
 
+    def _settings_card_route(title, render_fn):
+        """An extension 'settings' card (register_device_card): fields only,
+        nice4iot supplies the same config_expansion chrome the built-in
+        sections get — see project_subpage's _settings_card_route."""
+        async def _route() -> None:
+            with config_expansion(title, value=True):
+                await maybe_await(call_with_page_args(render_fn, args, project_id, device_id))
+        return _route
+
     routes: dict = {
-        '/': _dashboard_route, '/general': _general_route, '/files': _files_route,
-        '/data': _data_route, '/logs': _logs_route,
+        '/': _dashboard_route, '/files': _files_route, '/data': _data_route, '/logs': _logs_route,
     }
     for label, _icon, render_fn in extension_tab_defs:
         routes[f'/{slugify_tab_label(label)}'] = _tab_route(render_fn)
+
+    settings_renderers = _device_settings_section_renderers(project_id, device_id)
+    for slug, _label, _icon in DEVICE_SETTINGS_SECTIONS:
+        routes[f'/settings/{slug}'] = settings_renderers[slug]
+    for title, render_fn in device_settings_card_defs:
+        routes[f'/settings/tab/{slugify_tab_label(title)}'] = _settings_card_route(title, render_fn)
 
     with ui.column().classes('w-full'):
         ui.sub_pages(routes).classes('w-full')
@@ -258,33 +283,50 @@ async def _timeline_card(device: Device) -> None:
 
 
 # ***************************************************************************
-# Device General Panel (Settings → General)
+# Device Settings sections (Device {id} Settings sidebar group)
 # ***************************************************************************
 
-async def device_general_panel(project_name: str, device_name: str, args: PageArguments) -> None:
-    """Content of the General tab — device settings, tokens, danger zone."""
-    with ui.grid().classes('grid-cols-1 lg:grid-cols-2 gap-4 w-full'):
-        with config_expansion('Device'):
+# (slug, label, icon) for each of the "Device {id} Settings" sidebar group's
+# built-in children, in sidebar order — mirrors project.ui.SETTINGS_SECTIONS.
+# 'device' bundles the device's own card and Danger Zone onto one page, same
+# as SETTINGS_SECTIONS' 'project' entry bundles General/Files/Extensions/
+# Danger Zone — see _device_settings_section_renderers().
+DEVICE_SETTINGS_SECTIONS: tuple[tuple[str, str, str], ...] = (
+    ('device', 'General', 'info'),
+    ('tokens', 'Authentication Tokens', 'key'),
+    ('firmware-seed', 'Firmware Seed', 'memory'),
+    ('firmware', 'Firmware Download', 'cloud_download'),
+)
+
+
+def _device_settings_section_renderers(project_name: str, device_name: str) -> dict[str, object]:
+    """One render_fn per Device Settings child (see DEVICE_SETTINGS_SECTIONS),
+    each wrapped in the same config_expansion chrome the old General tab
+    used, always expanded (value=True) — see project.ui._settings_section_renderers."""
+    async def _device() -> None:
+        with config_expansion('General', value=True):
             _device_general_card(project_name, device_name)
-        with config_expansion('Authentication Tokens'):
+        with config_expansion('Danger Zone', value=True):
+            await _device_danger_card(project_name, device_name)
+
+    async def _tokens() -> None:
+        with config_expansion('Authentication Tokens', value=True):
             _device_tokens_card(project_name, device_name)
-        with config_expansion('Firmware Seed'):
+
+    async def _firmware_seed() -> None:
+        with config_expansion('Firmware Seed', value=True):
             await device_seed_override_card(device_dir(project_name, device_name),
                                             project_name=project_name, device_name=device_name)
-        with config_expansion('Firmware Download'):
+
+    async def _firmware() -> None:
+        with config_expansion('Firmware Download', value=True):
             # Device-level firmware source pulls into the device dir — an
             # unconfigured device serves the project's pulled firmware.bin via
             # the normal file-serving fallback (see app/api/file.py).
             await firmware_source_card(device_dir(project_name, device_name),
                                        project_name=project_name, device_name=device_name)
-        for title, render_fn in await anyio.to_thread.run_sync(lambda: get_device_settings_cards(project_name)):
-            # Match the device page's built-in expansions (subtitle1), not the
-            # config_expansion default (h6, used on the project page).
-            with config_expansion(title):
-                await maybe_await(call_with_page_args(render_fn, args, project_name, device_name))
-        # Danger Zone always last, after any extension cards (matches the project page).
-        with config_expansion('Danger Zone'):
-            await _device_danger_card(project_name, device_name)
+
+    return {'device': _device, 'tokens': _tokens, 'firmware-seed': _firmware_seed, 'firmware': _firmware}
 
 
 def _device_general_card(project_name: str, device_name: str) -> None:

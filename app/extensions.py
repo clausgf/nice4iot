@@ -161,9 +161,9 @@ def register_project_card(section: CardSection, render_fn: Callable[[str], Any],
 
 def register_device_card(section: CardSection, render_fn: Callable[[str, str], Any], *,
                           title: str | None = None) -> None:
-    """Register a card rendered on the device Dashboard or its General tab
-    (the device page still uses a flat tab strip, not a Settings sidebar
-    group like the project page).
+    """Register a card rendered on the device Dashboard or in its "Device {id}
+    Settings" sidebar group, as its own child page (same routing as
+    register_project_card()'s 'settings' cards).
 
     render_fn(project_name, device_name), same conventions (and the same
     title= rule for 'settings') as register_project_card().
@@ -202,7 +202,7 @@ def get_device_dashboard_cards(project_name: str) -> list[Callable[[str, str], A
 
 
 def get_device_settings_cards(project_name: str) -> list[tuple[str, Callable[[str, str], Any]]]:
-    """Return (title, render_fn) for General-tab cards enabled for project_name."""
+    """Return (title, render_fn) for Device Settings-group cards enabled for project_name."""
     enabled = _enabled_extensions(project_name)
     return [(title, fn) for ext, title, fn in _device_settings_cards if ext in enabled]
 
