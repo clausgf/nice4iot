@@ -37,6 +37,8 @@ _user_menu_items: list[tuple[str, str, str | None, Callable[[], Any]]] = []  # (
 _project_tabs: list[tuple[str, str, str, Callable[[str], Any]]] = []  # (extension_name, label, icon, render_fn)
 _device_tabs: list[tuple[str, str, str, Callable[[str, str], Any]]] = []
 
+_extension_groups: dict[str, tuple[str, str]] = {}  # extension_name -> (label, icon)
+
 _project_pages: dict[str, Callable[[str], Any]] = {}  # extension_name -> render_fn
 
 _device_provisioned_callbacks: list[tuple[str, Callable[[Device], None]]] = []
@@ -311,6 +313,26 @@ def get_device_tabs(project_name: str) -> list[tuple[str, str, Callable[[str, st
     return [(label, icon, fn) for ext, label, icon, fn in _device_tabs if ext in enabled]
 
 
+def register_extension_group(label: str, *, icon: str = _DEFAULT_TAB_ICON) -> None:
+    """Set the label/icon of this extension's own group in the project
+    sidebar (the group register_project_tab() entries are nested under).
+
+    Optional — without it, the group falls back to the extension's
+    directory/module name and a generic icon (see get_extension_group_display()).
+    Has no effect unless the extension also registers at least one project
+    tab, since that's the only thing that creates the group in the first
+    place (app.core.project.ui.project_nav_items()).
+    """
+    _extension_groups[_extension_name()] = (label, icon)
+
+
+def get_extension_group_display(extension_name: str) -> tuple[str, str]:
+    """Return (label, icon) for extension_name's project-sidebar group —
+    whatever it passed to register_extension_group(), or (extension_name,
+    the default tab icon) if it never called that."""
+    return _extension_groups.get(extension_name, (extension_name, _DEFAULT_TAB_ICON))
+
+
 # ---------------------------------------------------------------------------
 # Standalone project pages
 # ---------------------------------------------------------------------------
@@ -466,6 +488,7 @@ def _clear_registries() -> None:
     _user_menu_items.clear()
     _project_tabs.clear()
     _device_tabs.clear()
+    _extension_groups.clear()
     _project_pages.clear()
     _device_provisioned_callbacks.clear()
     _telemetry_cache_kinds.clear()

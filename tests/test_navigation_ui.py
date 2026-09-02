@@ -113,7 +113,7 @@ def test_project_nav_items_built_in_and_extension():
     settings = items[2]
     assert settings.url is None
     child_labels = [c.label for c in settings.children]
-    assert child_labels[:2] == ['General', 'Provisioning']
+    assert child_labels[:2] == ['General', 'Provisioning Tokens']
     assert 'Some Card' in child_labels
     project_child = next(c for c in settings.children if c.label == 'General')
     assert project_child.url == project_url('proj', tab='settings/project')
@@ -140,6 +140,17 @@ def test_project_nav_items_separate_groups_per_extension():
     ])
     labels = [i.label for i in items]
     assert labels == ['Project', 'epaper', 'weather', 'Project Settings']
+
+
+def test_project_nav_items_uses_registered_extension_group_label_and_icon():
+    from app.extensions import register_extension_group, registering
+
+    fn = object()
+    with registering('epaper'):
+        register_extension_group('E-Paper', icon='tv')
+    items = project_nav_items('proj', [('epaper', 'Rooms', 'meeting_room', fn)])
+    ext_group = next(i for i in items if i.label == 'E-Paper')
+    assert ext_group.icon == 'tv'
 
 
 # ---------------------------------------------------------------------------
@@ -262,6 +273,47 @@ def test_project_subpage_missing_project_hides_sidebar(projects_dir):
     assert 'does not exist' in ' '.join(_labels(container))
 
 
+def test_project_subpage_breadcrumb_has_project_switcher(project_with_device):
+    from app.core.project.backend import create_project
+    project, _device = project_with_device
+    create_project('other')
+
+    nav, _sidebar, _drawer, _hamburger, _container = _render_project_subpage(project)
+
+    selects = _find_all(nav, ui.select)
+    assert len(selects) == 1
+    project_select = selects[0]
+    assert project_select.value == project
+    assert set(project_select.options) == {project, 'other'}
+
+
+def test_device_subpage_breadcrumb_has_project_and_device_switchers(project_with_device):
+    project, device = project_with_device
+    create_device(Device(project_name=project, name='dev2'))
+    nav = ui.row()
+    sidebar = ui.column()
+    drawer = _FakeToggle()
+    hamburger = _FakeToggle()
+    container = ui.column()
+
+    async def run() -> None:
+        core.loop = asyncio.get_running_loop()
+        with container:
+            from nicegui import context
+            context.client.sub_pages_router.current_path = f'/ui/project/{project}/device/{device}'
+            await device_subpage(_page_args(), nav, sidebar, drawer, hamburger, project, device)
+        await _drain()
+
+    asyncio.run(run())
+
+    selects = _find_all(nav, ui.select)
+    assert len(selects) == 2
+    project_select, device_select = selects
+    assert project_select.value == project
+    assert device_select.value == device
+    assert set(device_select.options) == {device, 'dev2'}
+
+
 def test_project_subpage_general_route(project_with_device):
     project, _device = project_with_device
     nav = ui.row()
@@ -353,7 +405,7 @@ def test_device_subpage_shows_device_sidebar_group_and_dashboard_by_default(proj
     sidebar_labels = _labels(sidebar)
     for expected in ('Dashboard', 'Project', 'Files', 'Devices', f'Device {device}', 'Data', 'Logs',
                      f'Device {device} Settings', 'General', 'Authentication Tokens',
-                     'Firmware Seed', 'Firmware Download', 'Project Settings'):
+                     'Firmware', 'Project Settings'):
         assert expected in sidebar_labels
 
     # The device's own Dashboard row is active, not the project's 'Devices' row.
@@ -412,7 +464,9 @@ def test_device_settings_firmware_route_has_firmware_download_card(project_with_
     device-level Firmware Download card from the device Settings — the
     backend (per-directory FirmwareSource) never lost the ability, only the
     UI wiring did, unnoticed for 15+ releases since nothing rendered this
-    panel in a test."""
+    panel in a test. Firmware Download and Firmware Seed share one sidebar
+    route ('firmware') and page, Firmware Download listed first."""
     project, device = project_with_device
-    assert 'Firmware Seed' in _render_device_settings_route(project, device, '/settings/firmware-seed')
-    assert 'Firmware Download' in _render_device_settings_route(project, device, '/settings/firmware')
+    titles = _render_device_settings_route(project, device, '/settings/firmware')
+    assert 'Firmware Download' in titles
+    assert 'Firmware Seed' in titles

@@ -22,6 +22,7 @@ from app.extensions import (
     get_device_dashboard_cards,
     get_device_settings_cards,
     get_device_tabs,
+    get_extension_group_display,
     get_global_cards,
     get_project_dashboard_cards,
     get_project_settings_cards,
@@ -34,6 +35,7 @@ from app.extensions import (
     register_device_card,
     register_device_provisioned_callback,
     register_device_tab,
+    register_extension_group,
     register_global_card,
     register_project_card,
     register_project_page,
@@ -271,6 +273,26 @@ def test_device_tab_custom_icon(project):
         register_device_tab('Extra', fn, icon='star')
     _enable(project, 'ext1')
     assert get_device_tabs(project) == [('Extra', 'star', fn)]
+
+
+# ---------------------------------------------------------------------------
+# register_extension_group — project-sidebar group label/icon
+# ---------------------------------------------------------------------------
+
+def test_extension_group_display_defaults_to_extension_name():
+    assert get_extension_group_display('ext1') == ('ext1', 'extension')
+
+
+def test_extension_group_display_uses_registered_label_and_icon():
+    with registering('ext1'):
+        register_extension_group('Ext One', icon='star')
+    assert get_extension_group_display('ext1') == ('Ext One', 'star')
+
+
+def test_extension_group_display_default_icon():
+    with registering('ext1'):
+        register_extension_group('Ext One')
+    assert get_extension_group_display('ext1') == ('Ext One', 'extension')
 
 
 # ---------------------------------------------------------------------------

@@ -3,25 +3,61 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Generator
 
+import anyio
 from nicegui import context, ui
+from nicegui.events import ValueChangeEventArguments
 
 from app.routes import device_url, project_url
 
 # ***************************************************************************
 
-def refresh_breadcrumbs(nav: ui.element, project_id: str | None = None, device_id: str | None = None) -> None:
+_BREADCRUMB_SELECT_PROPS = 'borderless dense options-dense popup-content-style=min-width:12em'
+_BREADCRUMB_SELECT_STYLE = 'width: 9em'
+
+
+async def refresh_breadcrumbs(nav: ui.element, project_id: str | None = None, device_id: str | None = None) -> None:
+    """(Re)populate `nav`'s breadcrumb segments: a project switcher (all
+    projects, searchable — GitHub's repo-switcher dropdown, not a plain
+    link), and — once inside a device page — a device switcher scoped to
+    project_id, same idea. Picking a different entry jumps straight to that
+    project's/device's own dashboard, not to an equivalent sub-route: there
+    may not be one (e.g. switching away from a device settings page that
+    has no counterpart on the target project).
+
+    Unlike the rest of this module, this is async: get_projects()/
+    get_devices() do filesystem IO (Async IO rule, CLAUDE.md). Only called
+    once per project_subpage/device_subpage render — not on every in-page
+    sub-route change — so the extra IO isn't on any navigation hot path.
+    """
     nav.clear()
     with nav:
         if project_id is not None:
+            from app.core.project.backend import get_projects
             ui.label('/').classes('text-h6 text-white')
-            ui.label(project_id).classes('text-h6 cursor-pointer text-white') \
-                .tooltip('Project page') \
-                .on('click', lambda: ui.navigate.to(project_url(project_id)))
+            projects = await anyio.to_thread.run_sync(get_projects)
+
+            def _on_project_change(e: ValueChangeEventArguments) -> None:
+                if e.value != project_id:
+                    ui.navigate.to(project_url(e.value))
+
+            ui.select([p.name for p in projects], value=project_id, with_input=True,
+                     on_change=_on_project_change) \
+                .props(_BREADCRUMB_SELECT_PROPS).classes('text-h6 text-white') \
+                .style(_BREADCRUMB_SELECT_STYLE)
+
             if device_id is not None:
+                from app.core.device.backend import get_devices
                 ui.label('/').classes('text-h6 text-white')
-                ui.label(device_id).classes('text-h6 cursor-pointer text-white') \
-                    .tooltip('Device page') \
-                    .on('click', lambda: ui.navigate.to(device_url(project_id, device_id)))
+                devices = await anyio.to_thread.run_sync(lambda: get_devices(project_id))
+
+                def _on_device_change(e: ValueChangeEventArguments) -> None:
+                    if e.value != device_id:
+                        ui.navigate.to(device_url(project_id, e.value))
+
+                ui.select([d.name for d in devices], value=device_id, with_input=True,
+                         on_change=_on_device_change) \
+                    .props(_BREADCRUMB_SELECT_PROPS).classes('text-h6 text-white') \
+                    .style(_BREADCRUMB_SELECT_STYLE)
 
 # ***************************************************************************
 

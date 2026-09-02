@@ -54,7 +54,7 @@ async def device_subpage(
     routing project_subpage's "Project" / "Project Settings" groups use (each
     section gets a real, bookmarkable URL, not the old ?tab=<label>).
     """
-    refresh_breadcrumbs(nav, project_id=project_id, device_id=device_id)
+    await refresh_breadcrumbs(nav, project_id=project_id, device_id=device_id)
 
     from app.core.project.ui import project_nav_items, slugify_tab_label  # local: project.ui imports this module
     project_tab_defs = await anyio.to_thread.run_sync(lambda: get_project_tabs(project_id))
@@ -80,15 +80,16 @@ async def device_subpage(
     )
     project_items = project_nav_items(project_id, project_tab_defs, project_settings_card_defs)
     # project_items is always [Project, *extension groups, Project Settings] —
-    # Device/Device Settings slot in around it: content groups first (Project,
-    # Device, extensions), settings groups last (Device Settings, Project
-    # Settings), narrowing then widening in scope either side of the divide.
+    # Device/Device Settings slot in around it, in the fixed order Project -
+    # Extensions - Device - Project Settings - Device Settings: content groups
+    # (Project, extensions, Device) first, settings groups (Project Settings,
+    # Device Settings) last.
     nav_items = [
         project_items[0],
-        NavItem(f'Device {device_id}', 'developer_board', children=device_children),
         *project_items[1:-1],
-        NavItem(f'Device {device_id} Settings', 'settings', children=device_settings_children),
+        NavItem(f'Device {device_id}', 'developer_board', children=device_children),
         project_items[-1],
+        NavItem(f'Device {device_id} Settings', 'settings', children=device_settings_children),
     ]
     show_sidebar(drawer, hamburger, sidebar, project_id, nav_items)
     # Clicking a sidebar row navigates within this same device_subpage render
@@ -294,8 +295,7 @@ async def _timeline_card(device: Device) -> None:
 DEVICE_SETTINGS_SECTIONS: tuple[tuple[str, str, str], ...] = (
     ('device', 'General', 'info'),
     ('tokens', 'Authentication Tokens', 'key'),
-    ('firmware-seed', 'Firmware Seed', 'memory'),
-    ('firmware', 'Firmware Download', 'cloud_download'),
+    ('firmware', 'Firmware', 'memory'),
 )
 
 
@@ -313,11 +313,6 @@ def _device_settings_section_renderers(project_name: str, device_name: str) -> d
         with config_expansion('Authentication Tokens', value=True):
             _device_tokens_card(project_name, device_name)
 
-    async def _firmware_seed() -> None:
-        with config_expansion('Firmware Seed', value=True):
-            await device_seed_override_card(device_dir(project_name, device_name),
-                                            project_name=project_name, device_name=device_name)
-
     async def _firmware() -> None:
         with config_expansion('Firmware Download', value=True):
             # Device-level firmware source pulls into the device dir — an
@@ -325,8 +320,11 @@ def _device_settings_section_renderers(project_name: str, device_name: str) -> d
             # the normal file-serving fallback (see app/api/file.py).
             await firmware_source_card(device_dir(project_name, device_name),
                                        project_name=project_name, device_name=device_name)
+        with config_expansion('Firmware Seed', value=True):
+            await device_seed_override_card(device_dir(project_name, device_name),
+                                            project_name=project_name, device_name=device_name)
 
-    return {'device': _device, 'tokens': _tokens, 'firmware-seed': _firmware_seed, 'firmware': _firmware}
+    return {'device': _device, 'tokens': _tokens, 'firmware': _firmware}
 
 
 def _device_general_card(project_name: str, device_name: str) -> None:

@@ -4,6 +4,41 @@ All notable changes to this project are documented here. Per `CLAUDE.md`, every
 API change must be recorded. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.40.0] - 2026-09-02
+
+### Added
+
+- **`app.extensions.register_extension_group(label, *, icon='extension')`**:
+  lets an extension name and icon its own project-sidebar group (the one
+  its `register_project_tab()` entries nest under), instead of always
+  showing the extension's raw directory/module name with a generic icon.
+  Read back via the new `get_extension_group_display(extension_name)`. See
+  `docs/extensions.md`.
+
+### Changed
+
+- **Breadcrumb project/device switchers**: the project and (on a device
+  page) device breadcrumb segments in the header are now searchable
+  dropdowns (`app.ui.refresh_breadcrumbs`, now `async`) instead of plain
+  links back to their own dashboard — GitHub's repo-switcher pattern.
+  Picking a different project/device jumps straight to its dashboard, not
+  to an equivalent sub-route.
+- **Sidebar renames and reordering**: Project Settings' "Provisioning" child
+  is now "Provisioning Tokens" (sidebar row and card title); its "Telemetry"
+  child is now "Telemetry & Logging" (sidebar row only — the "Telemetry" and
+  "Logging" cards on that page keep their own titles). Project Settings'
+  Firmware page now shows Firmware Download before Firmware Seed. Device
+  Settings' separate "Firmware Seed" and "Firmware Download" sidebar rows
+  are merged into one "Firmware" row/page (route `.../settings/firmware`,
+  replacing `.../settings/firmware-seed`), Firmware Download listed first —
+  matching Project Settings' single "Firmware" row. Device page top-level
+  sidebar groups are now ordered `Project → [project extensions] →
+  Device {id} → Project Settings → Device {id} Settings` (previously
+  `Project → Device {id} → [project extensions] → Device {id} Settings →
+  Project Settings`).
+- Bumped `nicepaper` from v0.33.0 to v0.35.0 (`uv lock --upgrade-package
+  nicepaper`).
+
 ## [0.39.2] - 2026-09-02
 
 ### Changed

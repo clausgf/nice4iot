@@ -336,6 +336,26 @@ a Material icon name — a project tab's sidebar row always shows one (default
 `'extension'` if you don't have a more fitting choice); a device tab shows
 it next to its label the same way the built-in tabs do.
 
+**Naming the group.** A project tab's group header defaults to your
+extension's directory/module name (e.g. `epaper`). To show something nicer,
+register a label/icon for the group itself, once, from anywhere in
+`register(app)`:
+
+```python
+from app.extensions import register_extension_group
+
+def register(app):
+    register_extension_group('E-Paper', icon='tv')
+    register_project_tab('Rooms', _rooms_tab, icon='meeting_room')
+    register_project_tab('Screens', _screens_tab, icon='wallpaper')
+```
+
+Both tabs above still nest under one group (their shared extension name), now
+titled "E-Paper" with a `tv` icon instead of the default. Only meaningful for
+extensions that register at least one project tab — that's what creates the
+group in the first place; a device tab's row isn't grouped this way (see
+above), so it's unaffected.
+
 A project tab's URL is `.../project/<id>/tab/<slug>`; a device tab's is
 `.../project/<id>/device/<id>/<slug>` — same slugifying (your label
 lowercased, anything that isn't `[a-z0-9]` collapsed to a single `-`,
@@ -556,6 +576,7 @@ from nicegui import ui
 from app.extensions import (
     mount_extension_router, register_project_card, register_global_card,
     register_project_tab, register_project_page, register_device_provisioned_callback,
+    register_extension_group,
 )
 from app.mqtt.backend import register_topic_handler
 from app.paths import extension_project_dir
@@ -593,6 +614,7 @@ def register(app: FastAPI) -> None:
     mount_extension_router(app, router)
     register_project_card('dashboard', _dashboard_card)
     register_global_card('E-Paper', _global_card)
+    register_extension_group('E-Paper', icon='tv')
     register_project_tab('E-Paper', _screens_tab)
     register_project_page(_kiosk_view)  # /ui/project/<project_name>/ext/epaper
     register_topic_handler('status', _on_status)  # ext/epaper/+/status

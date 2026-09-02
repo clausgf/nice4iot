@@ -27,8 +27,8 @@ from app.core.project.backend import create_project, delete_project, get_project
 from app.core.alarm.ui import alarm_config_card, dashboard_alarms_card
 from app.exceptions import NotFoundError
 from app.extensions import (
-    call_with_page_args, get_project_dashboard_cards, get_project_settings_cards,
-    get_project_tabs, get_registered_extension_names, maybe_await,
+    call_with_page_args, get_extension_group_display, get_project_dashboard_cards,
+    get_project_settings_cards, get_project_tabs, get_registered_extension_names, maybe_await,
 )
 from niceview import ModelForm
 from niceview.util import confirm_dialog, input_dialog
@@ -42,7 +42,7 @@ log = logging.getLogger("uvicorn")
 async def all_projects_subpage(args: PageArguments, nav: ui.element, sidebar: ui.element,
                                drawer: ui.left_drawer, hamburger: ui.element):
     log.debug(f'project_main_page {args=}')
-    refresh_breadcrumbs(nav)
+    await refresh_breadcrumbs(nav)
     hide_sidebar(drawer, hamburger, sidebar)
 
     async def _new_project():
@@ -93,11 +93,13 @@ def slugify_tab_label(label: str) -> str:
 def project_nav_items(project_id: str, extension_tab_defs: Sequence[tuple[str, str, str, object]],
                       settings_card_defs: Sequence[tuple[str, object]] = ()) -> list[NavItem]:
     """The project sidebar's rows — a 'Project' group (Dashboard/Files/Devices),
-    one group per enabled extension (its project tabs, in registration order),
-    and a trailing 'Project Settings' group (the old General tab's sections, plus any
-    extension-registered 'settings' cards, each its own child page — see
-    SETTINGS_SECTIONS). device_subpage builds on this list, inserting its own
-    'Device {id}' group for the device's own sections."""
+    one group per enabled extension (its project tabs, in registration order;
+    labeled/iconed via register_extension_group(), falling back to the
+    extension's own name), and a trailing 'Project Settings' group (the old
+    General tab's sections, plus any extension-registered 'settings' cards,
+    each its own child page — see SETTINGS_SECTIONS). device_subpage builds
+    on this list, inserting its own 'Device {id}' group for the device's own
+    sections."""
     settings_children = [
         NavItem(label, icon, project_url(project_id, tab=f'settings/{slug}'))
         for slug, label, icon in SETTINGS_SECTIONS
@@ -116,7 +118,7 @@ def project_nav_items(project_id: str, extension_tab_defs: Sequence[tuple[str, s
             NavItem('Files', 'folder', project_url(project_id, tab='files')),
             NavItem('Devices', 'devices', project_url(project_id, tab='devices')),
         )),
-        *(NavItem(extension_name, 'extension', children=tuple(items))
+        *(NavItem(*get_extension_group_display(extension_name), children=tuple(items))
           for extension_name, items in extension_groups.items()),
         NavItem('Project Settings', 'settings', children=tuple(settings_children)),
     ]
@@ -132,7 +134,7 @@ async def project_subpage(args: PageArguments, nav: ui.element, sidebar: ui.elem
         ui.label(f'Project "{project_id}" does not exist.').classes('text-h6 text-negative')
         return
 
-    refresh_breadcrumbs(nav, project_id=project_id)
+    await refresh_breadcrumbs(nav, project_id=project_id)
 
     extension_tab_defs = await anyio.to_thread.run_sync(lambda: get_project_tabs(project_id))
     settings_card_defs = await anyio.to_thread.run_sync(lambda: get_project_settings_cards(project_id))
@@ -289,9 +291,9 @@ async def project_dashboard_panel(project_id: str, args: PageArguments) -> None:
 # — see _settings_section_renderers().
 SETTINGS_SECTIONS: tuple[tuple[str, str, str], ...] = (
     ('project', 'General', 'info'),
-    ('provisioning', 'Provisioning', 'verified_user'),
+    ('provisioning', 'Provisioning Tokens', 'verified_user'),
     ('forwarding', 'Forwarding', 'call_split'),
-    ('telemetry', 'Telemetry', 'insights'),
+    ('telemetry', 'Telemetry & Logging', 'insights'),
     ('firmware', 'Firmware', 'memory'),
     ('alarms', 'Alarms', 'notifications'),
 )
@@ -314,7 +316,7 @@ def _settings_section_renderers(project_id: str) -> dict[str, object]:
             await danger_card(project_id)
 
     async def _provisioning() -> None:
-        with config_expansion('Provisioning', value=True):
+        with config_expansion('Provisioning Tokens', value=True):
             await ProvisioningCard(project_id)
 
     async def _forwarding() -> None:
@@ -328,11 +330,11 @@ def _settings_section_renderers(project_id: str) -> dict[str, object]:
             LoggingCard(project_id)
 
     async def _firmware() -> None:
-        with config_expansion('Firmware Seed', value=True):
-            await seed_settings_card(project_dir(project_id))
         with config_expansion('Firmware Download', value=True):
             await firmware_source_card(project_dir(project_id),
                                        project_name=project_id, device_name=None)
+        with config_expansion('Firmware Seed', value=True):
+            await seed_settings_card(project_dir(project_id))
 
     async def _alarms() -> None:
         with config_expansion('Alarms', value=True):
