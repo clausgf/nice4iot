@@ -11,8 +11,24 @@ from app.routes import device_url, project_url
 
 # ***************************************************************************
 
-_BREADCRUMB_SELECT_PROPS = 'borderless dense options-dense popup-content-style=min-width:12em'
-_BREADCRUMB_SELECT_STYLE = 'width: 9em'
+_BREADCRUMB_SELECT_PROPS = ('borderless dense options-dense color=white input-style=color:white '
+                           'popup-content-class="bg-black text-white" '
+                           'popup-content-style=min-width:12em')
+"""Closed-state text needs input-style, not just color= (which only
+reaches .q-field__control, not the <input> actually holding the displayed
+value) — white, since the header background is always the primary blue
+regardless of the app's own light/dark toggle. The open popup is likewise
+forced dark unconditionally, via plain color classes rather than the
+'dark' prop (whose broader side effects — borders, ripple colors — looked
+worse)."""
+
+
+def _breadcrumb_select_width(value: str) -> str:
+    """Closed-state width tracks the selected value's own length in `ch`
+    units — a fixed width either clips long names or wastes space on short
+    ones. The open popup is sized independently (popup-content-style
+    above), so it stays comfortably readable regardless."""
+    return f'width: {len(value) + 3}ch'
 
 
 async def refresh_breadcrumbs(nav: ui.element, project_id: str | None = None, device_id: str | None = None) -> None:
@@ -42,8 +58,8 @@ async def refresh_breadcrumbs(nav: ui.element, project_id: str | None = None, de
 
             ui.select([p.name for p in projects], value=project_id, with_input=True,
                      on_change=_on_project_change) \
-                .props(_BREADCRUMB_SELECT_PROPS).classes('text-h6 text-white') \
-                .style(_BREADCRUMB_SELECT_STYLE)
+                .props(_BREADCRUMB_SELECT_PROPS).classes('text-h6') \
+                .style(_breadcrumb_select_width(project_id))
 
             if device_id is not None:
                 from app.core.device.backend import get_devices
@@ -56,8 +72,8 @@ async def refresh_breadcrumbs(nav: ui.element, project_id: str | None = None, de
 
                 ui.select([d.name for d in devices], value=device_id, with_input=True,
                          on_change=_on_device_change) \
-                    .props(_BREADCRUMB_SELECT_PROPS).classes('text-h6 text-white') \
-                    .style(_BREADCRUMB_SELECT_STYLE)
+                    .props(_BREADCRUMB_SELECT_PROPS).classes('text-h6') \
+                    .style(_breadcrumb_select_width(device_id))
 
 # ***************************************************************************
 

@@ -4,6 +4,25 @@ All notable changes to this project are documented here. Per `CLAUDE.md`, every
 API change must be recorded. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.40.1] - 2026-09-02
+
+### Fixed
+
+- Breadcrumb project/device switchers (`app.ui.refresh_breadcrumbs`,
+  0.40.0): closed-state text was unreadable black-on-blue instead of
+  white, and the open dropdown had turned plain light-themed rather than
+  the dark, high-contrast popup the header calls for. Fixed via Quasar's
+  `input-style`/`popup-content-class` props rather than the `dark` prop
+  (whose broader side effects caused the original ugliness); the dark
+  popup is now applied unconditionally, independent of the app's own
+  light/dark toggle. Closed-state width now tracks the selected value's
+  own length instead of a fixed size.
+
+### Changed
+
+- Bumped `nicepaper` from v0.35.0 to v0.35.2 (`uv lock --upgrade-package
+  nicepaper`).
+
 ## [0.40.0] - 2026-09-02
 
 ### Added
